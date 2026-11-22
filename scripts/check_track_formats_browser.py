@@ -92,15 +92,14 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 page.goto(f'http://127.0.0.1:{static.server_port}/')
                 check.menu('File', 'Attach')
                 check.settle()
-                dialog = page.get_by_role('dialog', name='Tracks and layers', exact=True)
+                dialog = page.get_by_role('dialog', name='1D tracks', exact=True)
 
                 def open_manager():
-                    check.menu('View', 'Tracks and layers…')
+                    check.menu('View', '1D tracks…')
                     dialog.wait_for()
-                    dialog.get_by_role('tab', name='1D tracks', exact=True).click()
 
                 def close_manager():
-                    dialog.get_by_role('button', name='Close tracks and layers', exact=True).click()
+                    dialog.get_by_role('button', name='Close manager', exact=True).click()
                     dialog.wait_for(state='hidden')
                     check.settle()
 

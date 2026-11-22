@@ -46,13 +46,32 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
   private final String endColorRGBAString;
   @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
   private final Double gamma;
+  @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+  private final java.util.List<Double> curve;
+
+  public static java.util.List<Double> readCurve(JsonObject json) {
+    if (!json.containsKey("curve") || json.getValue("curve") == null) return null;
+    final var points = json.getJsonArray("curve");
+    if (points.size() > 128) throw new IllegalArgumentException("Too many color curve points");
+    final var values = new java.util.ArrayList<Double>();
+    for (Object value : points) {
+      if (!(value instanceof Number n)) throw new IllegalArgumentException("Invalid color curve coordinate");
+      values.add(n.doubleValue());
+    }
+    return SimpleLinearGradient.validateCurve(values);
+  }
 
   public SimpleLinearGradientDTO(String startColorHEX, String endColorHEX, double minSignal, double maxSignal) {
     this(startColorHEX, endColorHEX, minSignal, maxSignal, 1.0d);
   }
 
   public SimpleLinearGradientDTO(String startColorHEX, String endColorHEX, double minSignal, double maxSignal, double gamma) {
+    this(startColorHEX,endColorHEX,minSignal,maxSignal,gamma,null);
+  }
+
+  private SimpleLinearGradientDTO(String startColorHEX, String endColorHEX, double minSignal, double maxSignal, double gamma, java.util.List<Double> curve) {
     super("SimpleLinearGradient");
+    this.curve = curve;
     SimpleLinearGradient.validateGamma(gamma);
     this.gamma = gamma == 1.0d ? null : gamma;
     this.startColorRGBAString = startColorHEX;
@@ -69,7 +88,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
       String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getStartColor().getRed(), cmap.getStartColor().getGreen(), cmap.getStartColor().getBlue(), ((double) cmap.getStartColor().getAlpha() / 255.0d)),
       String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getEndColor().getRed(), cmap.getEndColor().getGreen(), cmap.getEndColor().getBlue(), ((double) cmap.getEndColor().getAlpha() / 255.0d)),
       cmap.getMinSignal(),
-      cmap.getMaxSignal(), cmap.getGamma()
+      cmap.getMaxSignal(), cmap.getGamma(), cmap.getCurve()
     );
   }
 
@@ -78,7 +97,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
       json.getString("startColorRGBAString"),
       json.getString("endColorRGBAString"),
       json.getDouble("minSignal"),
-      json.getDouble("maxSignal"), json.getDouble("gamma", 1.0d)
+      json.getDouble("maxSignal"), json.getDouble("gamma", 1.0d), readCurve(json)
     );
   }
 
@@ -104,7 +123,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
         alphaChannel(endColorMatcher.group("alpha"))
       ),
       this.minSignal,
-      this.maxSignal, this.gamma == null ? 1.0d : this.gamma
+      this.maxSignal, this.gamma == null ? 1.0d : this.gamma, this.curve
     );
   }
 

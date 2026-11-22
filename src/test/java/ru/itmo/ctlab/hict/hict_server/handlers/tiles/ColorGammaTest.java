@@ -62,6 +62,26 @@ class ColorGammaTest {
     }
   }
 
+  @Test void multipointCurveSurvivesSessionsAndAgreesWithTheGraph() {
+    var points = java.util.List.of(0.2,0.7,0.6,0.3);
+    var gradient = new SimpleLinearGradient(32,Color.BLACK,Color.WHITE,0,1,1,points);
+    var options = new SimpleVisualizationOptions(-1,-1,false,false,false,gradient);
+    var restored = (SimpleLinearGradient)SessionVisualizationCodec.decode(SessionVisualizationCodec.encode(options)).getColormap();
+    assertEquals(points,restored.getCurve());
+    var expr = new JsonObject().put("type","colormap").put("mode","LINEAR")
+      .put("input",new JsonObject().put("type","source").put("source","PRIMARY"))
+      .put("startColor","#000000ff").put("endColor","#ffffffff").put("minSignal",0).put("maxSignal",1)
+      .put("curve",new io.vertx.core.json.JsonArray(points));
+    var graph = RenderPipelineConfig.fromJson(new JsonObject().put("enabled",true)
+      .put("upperExpression",expr).put("lowerExpression",expr.copy()));
+    for (double value : new double[]{0,0.1,0.2,0.4,0.6,0.8,1}) {
+      var context = new RenderPipelineConfig.MutablePixelContext();context.primaryValue=value;
+      assertEquals(restored.mapSignal(value).getRed(),new Color(graph.evaluateArgb(true,context,options),true).getRed(),1);
+    }
+    assertEquals(0.5,SimpleLinearGradient.transfer(0.4,1,points),1e-12);
+    assertThrows(IllegalArgumentException.class,()->SimpleLinearGradient.validateCurve(java.util.List.of(0.7,1.0,0.5,0.1)));
+  }
+
   @Test void nativeAndJavaGammaColorsAgreeAndNeverModifyTheirInput() {
     var service = NativeProcessingService.getInstance();
     try {

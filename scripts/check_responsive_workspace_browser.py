@@ -175,13 +175,10 @@ def main():
                 check.settle()
 
                 def prepare():
-                    check.menu("View", "Tracks and layers…")
+                    check.menu("View", "Sources and layers…")
                     dialog = page.get_by_role(
-                        "dialog", name="Tracks and layers", exact=True
+                        "dialog", name="Sources and layers", exact=True
                     )
-                    dialog.get_by_role(
-                        "tab", name="Sources and layers", exact=True
-                    ).click()
                     dialog.get_by_role("button", name="Browse…", exact=True).click()
                     picker = page.get_by_role(
                         "dialog", name="Select secondary data source", exact=True
@@ -194,7 +191,9 @@ def main():
                     expect(
                         dialog.get_by_text("Attached: " + secondary, exact=True)
                     ).to_be_visible()
-                    dialog.get_by_role("tab", name="1D tracks", exact=True).click()
+                    dialog.get_by_role("button",name="Close",exact=True).click()
+                    check.menu("View","1D tracks…")
+                    dialog=page.get_by_role("dialog",name="1D tracks",exact=True)
                     dialog.get_by_role("button", name="Browse…", exact=True).click()
                     picker = page.get_by_role(
                         "dialog", name="Select 1D track file", exact=True

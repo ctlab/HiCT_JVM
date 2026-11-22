@@ -6,6 +6,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
+import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.SimpleLinearGradientDTO;
 import java.awt.Color;
 
 /** Lossless session representation, separate from the legacy UI color-string DTO. */
@@ -18,6 +19,7 @@ public final class SessionVisualizationCodec {
     var palette = new JsonObject().put("type", "SimpleLinearGradient").put("bitDepth", gradient.getBitDepth())
       .put("startColor", color(gradient.getStartColor())).put("endColor", color(gradient.getEndColor()))
       .put("minSignal", gradient.getMinSignal()).put("maxSignal", gradient.getMaxSignal());
+    if (gradient.getCurve() != null) palette.put("curve",new JsonArray(gradient.getCurve()));
     if (gradient.getGamma() != 1.0d) palette.put("gamma", gradient.getGamma());
     return new JsonObject().put("preLogBase", options.getPreLogBase()).put("postLogBase", options.getPostLogBase())
       .put("applyCoolerWeights", options.isApplyCoolerWeights()).put("resolutionScaling", options.isResolutionScaling())
@@ -45,7 +47,7 @@ public final class SessionVisualizationCodec {
     return new SimpleVisualizationOptions(pre, post, bool(json, "applyCoolerWeights"), bool(json, "resolutionScaling"),
       bool(json, "resolutionLinearScaling"), bool(json, "autoThresholdEnabled"), quantile, mode, policy,
       new SimpleLinearGradient((int)bits, color(gradient, "startColor"), color(gradient, "endColor"), min, max,
-        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d));
+        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d, SimpleLinearGradientDTO.readCurve(gradient)));
   }
 
   private static JsonArray color(Color color) {

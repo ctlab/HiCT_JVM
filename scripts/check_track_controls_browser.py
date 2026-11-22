@@ -38,9 +38,12 @@ def main():
             ),
         )
         check = BrowserCheck(page, output)
-        dialog = page.get_by_role("dialog").filter(
-            has=page.get_by_role("heading", name="Tracks and layers", exact=True)
-        )
+        dialog = page.locator('.track-manager-root')
+        def switch_manager(name):
+            if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
+            close_manager()
+            check.menu("View",name+"…")
+            dialog.wait_for()
 
         def api(path, payload=None):
             response = page.request.post(args.api + path, data=payload or {})
@@ -52,7 +55,7 @@ def main():
             return response.text()
 
         def open_manager():
-            check.menu("View", "Tracks and layers…")
+            check.menu("View", "1D tracks…")
             dialog.wait_for(state="visible")
 
         def close_manager():
@@ -61,7 +64,7 @@ def main():
             check.settle()
 
         def browse(index, heading, filename):
-            dialog.get_by_role('tab',name='1D tracks' if index==0 else 'Sources and layers',exact=True).click()
+            switch_manager('1D tracks' if index==0 else 'Sources and layers')
             dialog.get_by_role("button", name="Browse…", exact=True).click()
             picker = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=heading, exact=True)
@@ -182,7 +185,7 @@ def main():
             results.append({"track": tracks[0], "feature": feature})
 
         def choose_weights(source):
-            dialog.get_by_role('tab',name='1D tracks',exact=True).click()
+            switch_manager('1D tracks')
             dialog.get_by_label('Add track',exact=True).select_option('weights')
             dialog.get_by_label('Weights from',exact=True).select_option(source)
             return dialog.get_by_role('button',name='Add weights',exact=True)
@@ -259,7 +262,7 @@ def main():
             )
             results.append({"secondaryWeights": weight_values("SECONDARY")})
             remove_weights('SECONDARY')
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            switch_manager('Sources and layers')
             dialog.get_by_role('button',name='Detach',exact=True).click()
             choose_weights('PRIMARY')
             expect(dialog.locator('#track-weight-source option[value=SECONDARY]')).to_be_disabled()

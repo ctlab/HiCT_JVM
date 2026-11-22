@@ -68,6 +68,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
         final long bins = map.getOriginalDescriptors().values().stream()
           .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
         stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
+        if (stripes > 1_000_000L) throw new IllegalArgumentException("Fine resolution exceeds the overlay stripe limit. Select a coarser level.");
         syntheticStripes = Math.addExact(syntheticStripes,stripes);
         if (Math.multiplyExact(syntheticStripes,ESTIMATED_BYTES_PER_STRIPE) > Runtime.getRuntime().maxMemory()/4)
           throw new IllegalArgumentException("The fine-resolution overlay metadata exceeds the available heap. Select fewer fine levels.");

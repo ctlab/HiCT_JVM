@@ -52,11 +52,12 @@ with h5py.File(sys.argv[1],'r+') as f:
                 page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page.add_init_script("window.__workspaceErrors=[];window.addEventListener('error',event=>{if(event instanceof ErrorEvent)window.__workspaceErrors.push(event.message);},true)")
                 page.route('http://localhost:5000/**',lambda r:r.continue_(url=api.url+r.request.url.removeprefix('http://localhost:5000')))
-                check=BrowserCheck(page,out);dialog=page.get_by_role('dialog',name='Tracks and layers',exact=True)
-                def manager():check.menu('View','Tracks and layers…');dialog.wait_for()
+                check=BrowserCheck(page,out);dialog=page.locator('.track-manager-root')
+                def manager():check.menu('View','1D tracks…');dialog.wait_for()
                 def tab(name):
-                    control=dialog.get_by_role('tab',name=name,exact=True);control.click();expect(control).to_have_attribute('aria-selected','true')
-                    expect(dialog.get_by_role('tabpanel',name=name,exact=True)).to_be_visible()
+                    if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
+                    close();check.menu('View',name+'…');dialog.wait_for()
+                    if name=='1D tracks': dialog.get_by_label('Add track',exact=True).select_option('weights')
                 def close():dialog.get_by_role('button',name='Close',exact=True).click();dialog.wait_for(state='hidden');check.settle()
                 def browse(title,filename):
                     dialog.get_by_role('button',name='Browse…',exact=True).click()
@@ -75,18 +76,15 @@ with h5py.File(sys.argv[1],'r+') as f:
                 try:
                     page.goto(url);page.evaluate("api=>window.__hictBenchmark.open('tiny-weighted.hict.hdf5',api)",api.url);check.settle();manager()
                     def tabs():
-                        expect(dialog.get_by_role('tab',name='1D tracks',exact=True)).to_have_attribute('aria-selected','true')
+                        expect(dialog.get_by_role('tab')).to_have_count(0)
                         expect(dialog.get_by_role('button',name='Attach',exact=True)).not_to_be_visible()
-                        dialog.get_by_label('Display name',exact=True).fill('Keep draft')
-                        first=dialog.get_by_role('tab',name='1D tracks',exact=True);first.focus();page.keyboard.press('ArrowRight')
-                        expect(dialog.get_by_role('tab',name='Sources and layers',exact=True)).to_be_focused()
+                        tab('Sources and layers')
                         expect(dialog.get_by_role('button',name='Attach',exact=True)).to_be_visible()
                         expect(dialog.get_by_label('Track file',exact=True)).not_to_be_visible()
-                        page.keyboard.press('Home');expect(first).to_be_focused()
-                        expect(dialog.get_by_label('Display name',exact=True)).to_have_value('Keep draft')
-                        page.keyboard.press('End');page.keyboard.press('ArrowRight');expect(first).to_be_focused()
+                        tab('1D tracks')
+                        dialog.get_by_label('Add track',exact=True).select_option('file')
                         dialog.get_by_label('Display name',exact=True).fill('Workspace annotations')
-                    check.step('separate-tabs-keyboard-focus-and-retained-form',tabs)
+                    check.step('separate-track-and-source-managers',tabs)
                     def add_file():
                         browse('Select 1D track file','workspace-annotations.bed')
                         dialog.get_by_role('button',name='Add file',exact=True).click()

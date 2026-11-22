@@ -48,8 +48,7 @@ def main():
                     'pixels': pixels, 'clientContigs': contigs}
 
         def choose(filename):
-            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
             dialog.get_by_role('button', name='Browse…', exact=True).click()
             picker = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Select secondary data source', exact=True))
             picker.locator('span[title]').filter(has_text=re.compile('^' + re.escape(filename) + '$')).click()
@@ -73,10 +72,9 @@ def main():
             expected = list(reversed([1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11]))
             assert before['pixels'] == {'primary': expected, 'secondary': expected}
             page.get_by_role('link', name='View', exact=True).click()
-            page.get_by_role('link', name='Tracks and layers…', exact=True).click()
+            page.get_by_role('link', name='Sources and layers…', exact=True).click()
             if args.secondary_drives_assembly:
-                dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-                dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+                dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')):
                     dialog.get_by_label('Assembly source',exact=True).select_option('SECONDARY')
                 page.wait_for_function("()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction===0")
@@ -122,8 +120,7 @@ def main():
             assert client_contigs == expected_contigs
             assert post('/secondary/status')['filename'] == 'tiny-unrelated.hict.hdf5'
             result['checks'].append('confirmed mismatched replacement applies the returned assembly to the client')
-            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
             for source in ('PRIMARY', 'SECONDARY'):
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')) as switched:
                     dialog.get_by_label('Assembly source',exact=True).select_option(source)

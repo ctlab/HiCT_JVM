@@ -39,6 +39,7 @@ public class SimpleLinearGradient extends DoubleColormap {
   private final double minSignal;
   private final double maxSignal;
   private final double gamma;
+  private final java.util.List<Double> curve;
   private final double signalRange;
   private final double[] deltaComponents;
   private final int componentCount;
@@ -50,9 +51,15 @@ public class SimpleLinearGradient extends DoubleColormap {
 
   public SimpleLinearGradient(final int bitDepth, final @NotNull Color startColor, final @NotNull Color endColor,
                               final double minSignal, final double maxSignal, final double gamma) {
+    this(bitDepth, startColor, endColor, minSignal, maxSignal, gamma, null);
+  }
+
+  public SimpleLinearGradient(int bitDepth, Color startColor, Color endColor, double minSignal,
+                              double maxSignal, double gamma, java.util.List<Double> curve) {
     super(bitDepth);
     validateGamma(gamma);
     this.gamma = gamma;
+    this.curve = validateCurve(curve);
     this.startColor = startColor;
     this.endColor = endColor;
     this.minSignal = minSignal;
@@ -71,6 +78,31 @@ public class SimpleLinearGradient extends DoubleColormap {
     }
   }
 
+  /** Alternating normalized input and output coordinates, with implicit (0,0) and (1,1). */
+  public static java.util.List<Double> validateCurve(java.util.List<Double> points) {
+    if (points == null) return null;
+    if (points.size() % 2 != 0 || points.size() > 128) throw new IllegalArgumentException("Invalid color curve length");
+    double previous = 0;
+    for (int i=0; i<points.size(); i+=2) {
+      double x = points.get(i), y = points.get(i+1);
+      if (!(x > previous && x < 1 && y >= 0 && y <= 1)) throw new IllegalArgumentException("Invalid color curve point");
+      previous = x;
+    }
+    return java.util.List.copyOf(points);
+  }
+
+  public static double transfer(double x, double gamma, java.util.List<Double> points) {
+    if (points == null) return gamma == 1 ? x : Math.pow(x,gamma);
+    double left = 0, lower = 0;
+    for (int i=0; i < points.size(); i+=2) {
+      double right = points.get(i), upper = points.get(i+1);
+      if (x <= right) return lower + (upper-lower)*(x-left)/(right-left);
+      left = right;
+      lower = upper;
+    }
+    return lower + (1-lower)*(x-left)/(1-left);
+  }
+
   public static void validateGamma(double gamma) {
     if (!Double.isFinite(gamma) || gamma < 0.05d || gamma > 100.0d)
       throw new IllegalArgumentException("Color gamma must be finite and between 0.05 and 100");
@@ -79,7 +111,7 @@ public class SimpleLinearGradient extends DoubleColormap {
   @Override
   public @NotNull Color mapSignal(final double value) {
     final var linear = Math.max(0.0d, Math.min((value - this.minSignal) / this.signalRange, 1.0d));
-    final var standardized = this.gamma == 1.0d ? linear : Math.pow(linear, this.gamma);
+    final var standardized = transfer(linear,gamma,curve);
     final var components = new float[componentCount];
     for (int i = 0; i < componentCount; i++) {
       components[i] = (float) (Double.max(0, ((double) startComponents[i] + this.deltaComponents[i] * standardized)));

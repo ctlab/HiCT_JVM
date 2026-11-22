@@ -3611,15 +3611,16 @@ public class Track1DManager implements AutoCloseable {
                                          boolean hasStructuredFeatures,
                                          @NotNull RenderStyle preferredRenderStyle,
                                          @NotNull Map<String, long[]> prefixEnds,
+                                         @NotNull Map<String, long[]> sortedEnds,
                                          @NotNull ParseReport report) implements TrackDataSource {
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style) {
-      this(features, count, signals, structured, style, indexEnds(features), ParseReport.EMPTY);
+      this(features, count, signals, structured, style, ParseReport.EMPTY);
     }
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style,
                                    ParseReport report) {
-      this(features, count, signals, structured, style, indexEnds(features), report);
+      this(features, count, signals, structured, style, indexEnds(features), indexSortedEnds(features), report);
     }
     @Override
     public @NotNull ParseReport importReport() {
@@ -3634,6 +3635,26 @@ public class Track1DManager implements AutoCloseable {
       });
       return result;
     }
+    private static Map<String, long[]> indexSortedEnds(Map<String, List<FeatureRange>> features) {
+      var result = new HashMap<String, long[]>();
+      features.forEach((source, ranges) ->
+        result.put(source, ranges.stream().mapToLong(FeatureRange::end).sorted().toArray()));
+      return result;
+    }
+
+    // Count half-open source intervals using immutable endpoint ranks. Edits only
+    // change the assembly-to-source mapping, including at a newly split bin.
+    private long countOverlaps(String source, SourceInterval interval) {
+      var ends = sortedEnds.get(source);
+      int lo = 0, hi = ends.length;
+      while (lo < hi) {
+        int mid = (lo + hi) >>> 1;
+        if (ends[mid] <= interval.start()) lo = mid + 1;
+        else hi = mid;
+      }
+      return lowerBoundByStart(featuresBySource.get(source), interval.end()) - lo;
+    }
+
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
@@ -4023,58 +4044,48 @@ public class Track1DManager implements AutoCloseable {
           safeWidth * FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL
         )
       );
-      final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
-      forEachProjectedFeature(
-        sourceToAssemblySegments,
-        queryStartPx,
-        queryEndPx,
-        bpResolution,
-        projected::add,
-        maxDirectFeatures + 1
-      );
-      projected.sort(
-        Comparator.comparingLong(ProjectedFeature::startPx)
-          .thenComparingLong(ProjectedFeature::endPx)
-      );
-      if (projected.size() <= maxDirectFeatures) {
-        return toBins(projected);
-      }
-      final int structuredFeatureLimit = Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES);
-      if (maxDirectFeatures < structuredFeatureLimit) {
-        final var structuredProjected = new ArrayList<ProjectedFeature>(Math.min(structuredFeatureLimit, 16_384));
-        forEachProjectedFeature(
-          sourceToAssemblySegments,
-          queryStartPx,
-          queryEndPx,
-          bpResolution,
-          structuredProjected::add,
-          structuredFeatureLimit + 1
-        );
-        structuredProjected.sort(
-          Comparator.comparingLong(ProjectedFeature::startPx)
-            .thenComparingLong(ProjectedFeature::endPx)
-        );
-        if (structuredProjected.size() <= structuredFeatureLimit) {
-          return downsampleFeatureBins(structuredProjected, queryStartPx, queryEndPx, safeWidth);
+      long overlaps = 0;
+      for (var source : featuresBySource.keySet()) {
+        for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
+          var interval = mapVisiblePxIntervalToSegmentSource(segment, queryStartPx, queryEndPx, bpResolution);
+          if (interval.isPresent()) overlaps += countOverlaps(source, interval.get());
         }
       }
-      final var densityProjected = new ArrayList<ProjectedFeature>(Math.min(MAX_FEATURES_PER_QUERY, 65_536));
-      forEachProjectedFeature(
-        sourceToAssemblySegments,
-        queryStartPx,
-        queryEndPx,
-        bpResolution,
-        densityProjected::add,
-        MAX_FEATURES_PER_QUERY
-      );
-      return aggregateFeatures(
-        densityProjected,
-        queryStartPx,
-        queryEndPx,
-        Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS),
-        orderedSegments,
-        bpResolution
-      );
+      if (overlaps <= FEATURE_DIRECT_RENDER_MAX_FEATURES) {
+        var projected = new ArrayList<ProjectedFeature>((int) overlaps);
+        forEachProjectedFeature(sourceToAssemblySegments, queryStartPx, queryEndPx, bpResolution,
+          projected::add, FEATURE_DIRECT_RENDER_MAX_FEATURES);
+        projected.sort(Comparator.comparingLong(ProjectedFeature::startPx).thenComparingLong(ProjectedFeature::endPx));
+        return projected.size() <= maxDirectFeatures ? toBins(projected)
+          : downsampleFeatureBins(projected, queryStartPx, queryEndPx, safeWidth);
+      }
+      long span = Math.max(1L, queryEndPx - queryStartPx);
+      int buckets = (int) Math.min(span, Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS));
+      double step = (double) span / buckets;
+      var counts = new long[buckets];
+      for (var source : featuresBySource.keySet()) {
+        for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
+          long start = Math.max(queryStartPx, segment.visiblePxStart());
+          long end = Math.min(queryEndPx, segment.visiblePxEnd());
+          if (end <= start) continue;
+          int first = Math.max(0, (int) Math.floor((start - queryStartPx) / step) - 1);
+          int last = Math.min(buckets, (int) Math.ceil((end - queryStartPx) / step) + 1);
+          for (int i = first; i < last; i++) {
+            long left = queryStartPx + (long) Math.floor(i * step);
+            long right = i + 1 == buckets ? queryEndPx : queryStartPx + (long) Math.floor((i + 1) * step);
+            var interval = mapVisiblePxIntervalToSegmentSource(segment, left, right, bpResolution);
+            if (interval.isPresent()) counts[i] += countOverlaps(source, interval.get());
+          }
+        }
+      }
+      var bins = new ArrayList<TrackBin>(buckets);
+      for (int i = 0; i < buckets; i++) {
+        if (counts[i] == 0) continue;
+        long left = queryStartPx + (long) Math.floor(i * step);
+        long right = i + 1 == buckets ? queryEndPx : queryStartPx + (long) Math.floor((i + 1) * step);
+        bins.add(aggregateSignalBin(orderedSegments, bpResolution, left, right, counts[i], counts[i], null));
+      }
+      return bins;
     }
 
     private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,

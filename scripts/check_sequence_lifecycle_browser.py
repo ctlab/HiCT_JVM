@@ -145,8 +145,8 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_role('button', name=f'Hide {name} horizontally', exact=True).click()
             hidden = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
             assert not hidden
-            check.menu('View', 'Tracks and layers…')
-            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            check.menu('View', '1D tracks…')
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='1D tracks', exact=True))
             dialog.get_by_role('button', name=f'Show {name} horizontally', exact=True).click()
             restored = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
             assert restored

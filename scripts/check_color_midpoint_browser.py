@@ -241,7 +241,7 @@ def main():
                 record(
                     "threshold-and-log-axis-adjustments-keep-color-and-signal-transforms-separate"
                 )
-                page.get_by_role("button", name="Reset midpoint", exact=True).click()
+                page.get_by_role("button", name="Reset curve", exact=True).click()
                 wait()
                 assert gamma() == 1
                 assert (

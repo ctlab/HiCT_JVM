@@ -84,8 +84,8 @@ def main():
             page.unroute('**/link_fasta')
             page.keyboard.press('Escape')
 
-            menu('View', 'Tracks and layers…')
-            tracks = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            menu('View', '1D tracks…')
+            tracks = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='1D tracks', exact=True))
             tracks.get_by_role('button', name='Browse…', exact=True).first.click()
             choose(page.get_by_role('dialog').last, args.track)
             reason = 'The track contains a malformed interval.'
