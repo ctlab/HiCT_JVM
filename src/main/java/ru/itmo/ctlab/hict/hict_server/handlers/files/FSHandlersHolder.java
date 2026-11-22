@@ -377,10 +377,15 @@ public class FSHandlersHolder extends HandlersHolder {
     try (final var stream = Files.list(directory)) {
       stream.forEach(path -> {
         if (path.equals(uploadDirectory)) return;
-        if (Files.isDirectory(path)) {
-          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "directory"));
-        } else if (Files.isRegularFile(path)) {
-          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "file"));
+        try {
+          final var attrs = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+          final var target = attrs.isSymbolicLink() ? Files.readAttributes(path, BasicFileAttributes.class) : attrs;
+          if (target.isDirectory() || target.isRegularFile()) {
+            entries.add(toDetailedFileEntry(normalizedDataDirectory, path, target.isDirectory() ? "directory" : "file",
+              attrs.isSymbolicLink(), target));
+          }
+        } catch (IOException ex) {
+          log.debug("Skipping unreadable directory entry: {}", path, ex);
         }
       });
     } catch (final IOException e) {
@@ -396,29 +401,20 @@ public class FSHandlersHolder extends HandlersHolder {
 
   private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
                                                         final @NotNull java.nio.file.Path path) {
-    return toDetailedFileEntry(dataDirectory, path, Files.isDirectory(path) ? "directory" : "file");
+    try {
+      final var attrs = Files.readAttributes(path, BasicFileAttributes.class);
+      return toDetailedFileEntry(dataDirectory, path, attrs.isDirectory() ? "directory" : "file", Files.isSymbolicLink(path), attrs);
+    } catch (IOException ignored) {
+      return toDetailedFileEntry(dataDirectory, path, "file", Files.isSymbolicLink(path), null);
+    }
   }
 
-  private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
-                                                        final @NotNull java.nio.file.Path path,
-                                                        final @NotNull String type) {
-    final var relative = dataDirectory.relativize(path).toString();
-    final var fileName = path.getFileName() == null ? relative : path.getFileName().toString();
-    final var lowered = fileName.toLowerCase();
-    final int dotIndex = lowered.lastIndexOf('.');
-    final var extension = dotIndex >= 0 ? lowered.substring(dotIndex) : "";
-    final var symbolicLink = Files.isSymbolicLink(path);
-    try {
-      final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
-      return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
-    } catch (final IOException e) {
-      try {
-        final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
-      } catch (final IOException ignored) {
-        return new FileEntry(relative, fileName, -1L, 0L, extension, type, symbolicLink);
-      }
-    }
+  private static FileEntry toDetailedFileEntry(Path root, Path path, String type, boolean symlink, BasicFileAttributes attrs) {
+    final var name = path.getFileName().toString();
+    final var dot = name.lastIndexOf('.');
+    return new FileEntry(root.relativize(path).toString(), name, attrs == null ? -1L : attrs.size(),
+      attrs == null ? 0L : attrs.lastModifiedTime().toMillis(), dot < 0 ? "" : name.substring(dot).toLowerCase(java.util.Locale.ROOT),
+      type, symlink);
   }
 
   private record FileEntry(@NotNull String path,

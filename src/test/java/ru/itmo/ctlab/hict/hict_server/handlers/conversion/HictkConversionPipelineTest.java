@@ -66,6 +66,33 @@ class HictkConversionPipelineTest {
   Path tempDir;
 
   @Test
+  void importsCompressed4dnPairsUsingDefaultAndExplicitBinSizes() throws Exception {
+    final var manager = new ExternalToolchainManager();
+    org.junit.jupiter.api.Assumptions.assumeTrue(manager.inspect().hictkAvailable(), "hictk unavailable");
+    final var input = tempDir.resolve("input.pairs.gz");
+    try (var compressed = new java.util.zip.GZIPOutputStream(Files.newOutputStream(input))) {
+      compressed.write("""
+        ## pairs format v1.0.0
+        #chromsize: chr1 20000
+        #columns: readID chr1 pos1 chr2 pos2 strand1 strand2
+        r1\tchr1\t1\tchr1\t9500\t+\t-
+        """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    for (final long expected : List.of(1000L, 2000L)) {
+      final var output = tempDir.resolve("pairs-" + expected + ".hict.hdf5");
+      final var opts = new ConversionOptions(input, output, List.of(expected), 4, 6,
+        ConversionOptions.CompressionAlgorithm.DEFLATE, "", false, 2, true, true, false, false, ConversionOptions.ExportMode.AUTO);
+      final var load = expected == 1000L ? HictkLoadOptions.EMPTY : new HictkLoadOptions(null, null, expected, false, false);
+      new HictkConversionPipeline(manager).convert(ConversionDirection.PAIRS_TO_HICT, opts,
+        manager.requireHictkToolchain(), ignored -> {}, ignored -> {}, () -> false, load);
+      try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(output, 1, 2))) {
+        assertTrue(file.getResolutionsList().contains(expected));
+        assertEquals(20000L, file.getAssemblyInfo().contigs().getFirst().descriptor().getLengthBp());
+      }
+    }
+  }
+
+  @Test
   void importsMultiResolutionCoolerThroughItsSelectedGroup() throws Exception {
     final var manager = new ExternalToolchainManager();
     org.junit.jupiter.api.Assumptions.assumeTrue(manager.inspect().hictkAvailable(), "hictk payload unavailable on this platform");

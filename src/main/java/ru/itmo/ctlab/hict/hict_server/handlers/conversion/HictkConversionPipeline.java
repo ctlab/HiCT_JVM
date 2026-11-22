@@ -726,6 +726,16 @@ public final class HictkConversionPipeline {
                                                               final @NotNull Path inputPath,
                                                               final @NotNull HictkLoadOptions requested,
                                                               final @NotNull Path tmpDirectory) throws IOException {
+    if (direction == ConversionDirection.PAIRS_TO_HICT) {
+      if (requested.binTablePath() != null) {
+        if (requested.binSize() != null || requested.chromSizesPath() != null)
+          throw new IllegalArgumentException("Choose a bin table or a fixed bin size for pairs conversion.");
+        return requested;
+      }
+      // 4DN pairs contain chromosome lengths but have no native bin resolution.
+      final long size = requested.binSize() == null ? 1000L : requirePositiveBinSize(requested.binSize(), direction);
+      return new HictkLoadOptions(null, requested.chromSizesPath(), size, requested.oneBased(), requested.countAsFloat());
+    }
     final var binTable = requested.binTablePath() != null
       ? requested.binTablePath()
       : discoverSibling(inputPath, List.of(".bed", ".bins.bed", ".bin_table.bed"));
@@ -771,7 +781,6 @@ public final class HictkConversionPipeline {
         requested.oneBased(),
         requested.countAsFloat()
       );
-      case PAIRS_TO_HICT -> requested;
       default -> throw new IllegalArgumentException("Unsupported hictk load direction: " + direction.wireName());
     };
   }
