@@ -17,7 +17,7 @@ SCALE = 10_000
 SCHEMA = "hict-sequence-overlay-v1"
 # Keep in sync with AssemblyAnalysisPlan's custom source-bin layout.
 SEQUENCE_STRIPE_WIDTH = 256
-MAX_SYNTHETIC_BINS = 4_000_000
+MAX_STRIPES = 1_000_000  # Bound metadata allocations in standalone adapter calls.
 
 
 def canonical_json(value):
@@ -58,7 +58,7 @@ def _sequence_grid(source, base, resolution):
     lengths = [int(value) for value in source['contig_info/contig_length_bp']]
     counts = [(length + resolution - 1) // resolution for length in lengths]
     size = sum(counts)
-    if not 0 < size <= MAX_SYNTHETIC_BINS:
+    if not 0 < size <= MAX_STRIPES * SEQUENCE_STRIPE_WIDTH:
         raise ValueError('Custom resolution exceeds the source bin budget')
     width = SEQUENCE_STRIPE_WIDTH
     stripe_count = (size + width - 1) // width

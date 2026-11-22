@@ -9,7 +9,8 @@ import java.util.*;
 public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level> levels) {
   // Keep this layout in sync with overlay_store.py. Stored map levels use their own ATUs.
   private static final int SEQUENCE_STRIPE_WIDTH = 256;
-  private static final long MAX_SYNTHETIC_BINS = 4_000_000L;
+  // Per-stripe Java descriptors, ATUs and contig mappings are resident; unit weight rows are shared.
+  private static final long ESTIMATED_BYTES_PER_STRIPE = 1024;
 
   public record Region(long start, long end) {
     public Region { if (start < 0 || end <= start) throw new IllegalArgumentException("Choose a nonempty sequence interval"); }
@@ -58,7 +59,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
     long windows = 0;
     long cells = 0;
     long outputBytes = 0;
-    long syntheticBins = 0;
+    long syntheticStripes = 0;
     for (long bp : resolutions) {
       final var order = map.getResolutionToIndex().get(bp);
       if (bp <= 0) throw new IllegalArgumentException("Resolution must be positive: " + bp);
@@ -66,13 +67,10 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       if (order == null) {
         final long bins = map.getOriginalDescriptors().values().stream()
           .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
-        syntheticBins = Math.addExact(syntheticBins, bins);
-        if (syntheticBins > MAX_SYNTHETIC_BINS) {
-          throw new IllegalArgumentException("At " + bp + " bp, custom resolutions need more than " + MAX_SYNTHETIC_BINS
-            + " source bins. Choose a coarser resolution or open a smaller assembly.");
-        }
         stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
-        // All installed stripe weights are materialized by the reader.
+        syntheticStripes = Math.addExact(syntheticStripes,stripes);
+        if (Math.multiplyExact(syntheticStripes,ESTIMATED_BYTES_PER_STRIPE) > Runtime.getRuntime().maxMemory()/4)
+          throw new IllegalArgumentException("The fine-resolution overlay metadata exceeds the available heap. Select fewer fine levels.");
         outputBytes = Math.addExact(outputBytes, Math.multiplyExact(stripes, 4096L));
       } else {
         stripes = map.getStripeCount()[order];
@@ -80,8 +78,8 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       final long rowBins = estimateAxis(tuples, rows, order, bp);
       final long colBins = rows.equals(columns) ? rowBins : estimateAxis(tuples, columns, order, bp);
       final long levelCells = Math.multiplyExact(rowBins, colBins);
-      final long rowStripes = Math.min(rowBins, stripes);
-      final long colStripes = Math.min(colBins, stripes);
+      final long rowStripes = Math.min(stripes, estimateStripes(tuples, rows, order, bp));
+      final long colStripes = rows.equals(columns) ? rowStripes : Math.min(stripes, estimateStripes(tuples, columns, order, bp));
       final long maxBlocks = Math.multiplyExact(rowStripes, colStripes);
       final long bytes = Math.addExact(Math.multiplyExact(levelCells, 4L * 3 * Long.BYTES),
         Math.multiplyExact(maxBlocks, (64L * 3 + 2) * Long.BYTES));
@@ -91,6 +89,24 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       levelEstimate.accept(bp, new ResourceEstimate(windows, cells, outputBytes));
     }
     return new ResourceEstimate(windows, cells, outputBytes);
+  }
+
+  private static long estimateStripes(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {
+    long result = 0, start = 0;
+    for (var tuple : tuples) {
+      var descriptor = tuple.descriptor();
+      long end = Math.addExact(start, descriptor.getLengthBp());
+      long span = Math.min(end,region.end) - Math.max(start,region.start);
+      if (span > 0) {
+        long bins = Math.ceilDiv(span,bp) + 1;
+        // One extra stripe accounts for an unaligned first bin, including reversed fragments.
+        long stripes = order == null ? Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH) + 1 : descriptor.getAtus().get(order).size();
+        result = Math.addExact(result, Math.min(bins,stripes));
+      }
+      if (end >= region.end) break;
+      start = end;
+    }
+    return result;
   }
 
   private static long estimateAxis(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {
