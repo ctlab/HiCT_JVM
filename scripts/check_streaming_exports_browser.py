@@ -25,6 +25,7 @@ def digest(path):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for key in ('jar','webui','data-dir','output'):parser.add_argument('--'+key,required=True)
+    parser.add_argument("--browser-executable")
     args=parser.parse_args();data,out=Path(args.data_dir).absolute(),Path(args.output).absolute()
     if any(p!=p.resolve() or not p.is_relative_to('/tmp') for p in (data,out)):parser.error('Use fresh nonsymlinked /tmp directories')
     data.mkdir(parents=True,exist_ok=False);out.mkdir(parents=True,exist_ok=False)
@@ -39,11 +40,11 @@ def main():
     try:
         with HictTestServer(args.jar,data,out/'server.log') as app,sync_playwright() as pw:
             app.http('/open',{'filename':native.name});app.http('/link_fasta',{'fastaFilename':'sequence.fa'})
-            context=pw.chromium.launch_persistent_context(str(out/'chromium-profile'),headless=True,viewport={'width':1600,'height':1100},accept_downloads=True);page=context.pages[0]
+            context=pw.chromium.launch_persistent_context(str(out/'chromium-profile'),headless=True,executable_path=args.browser_executable,viewport={'width':1600,'height':1100},accept_downloads=True);page=context.pages[0]
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             forwarding=lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000'))
             page.route('http://localhost:5000/**',forwarding)
-            check=BrowserCheck(page,out);page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            check=BrowserCheck(page,out);page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             # Do not intercept the large response: qualify the actual fetch network path.
             page.evaluate('host=>window.__hictBenchmark.manager().networkManager.onHostChanged(host)',app.url)
             page.unroute('http://localhost:5000/**',forwarding)

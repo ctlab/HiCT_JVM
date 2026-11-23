@@ -1111,6 +1111,7 @@ tasks.register("buildWebUI") {
         }
         project.exec {
           commandLine(npmExecutable, "run", "build")
+          environment("HICT_DOCS_DIR", file("docs").absolutePath)
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
@@ -1195,6 +1196,7 @@ tasks.register("buildWebUI") {
 
       project.exec {
         commandLine(npmExecutable, "run", "build")
+        environment("HICT_DOCS_DIR", file("docs").absolutePath)
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
@@ -1271,7 +1273,10 @@ tasks.named<ProcessResources>("processResources") {
     into("webui/docs")
     filter { line -> if (line.startsWith("version: ")) "version: '${buildVersion(readVersion())}'" else line }
   }
-  from(files("docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) { into("webui/docs") }
+  from(files("docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) {
+    into("webui/docs")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  }
   doLast { destinationDir.resolve("backend-revision.txt").writeText(backendRevision.get() + "\n") }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")

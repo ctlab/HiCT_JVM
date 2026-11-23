@@ -60,7 +60,7 @@ def main():
                 ("hictk", True, True, True, 0),
                 ("hictk", False, False, False, 9),
             ):
-                check.menu("File", "Export matrix")
+                check.menu("File", "Export matrix…")
                 dialog = page.get_by_role("dialog").filter(
                     has=page.get_by_role(
                         "heading", name="Export matrix to Cooler", exact=True

@@ -98,7 +98,7 @@ with sync_playwright() as pw:
         page.wait_for_function("window.__hictBenchmark")
         started = time.monotonic()
         page.get_by_role("link", name="File", exact=True).click()
-        page.get_by_role("link", name="Open Examples…", exact=True).click()
+        page.get_by_role("link", name="Examples…", exact=True).click()
         dialog = page.get_by_role("dialog", name="Examples", exact=True)
         card = dialog.locator(f'[data-example="{args.example}"]')
         card.get_by_role("button", name="Open example", exact=True).click()
@@ -114,7 +114,7 @@ with sync_playwright() as pw:
         clicks = page.evaluate("window.quickStartClicks")
         assert clicks == ["File", "Open Examples…", "Open example"], clicks
         assert (
-            page.get_by_role("dialog", name="Open File Wizard", exact=True).count() == 0
+            page.get_by_role("dialog", name="Open with options", exact=True).count() == 0
         )
         state = page.evaluate(
             """() => {const m=window.__hictBenchmark.manager();return {
@@ -322,7 +322,7 @@ with sync_playwright() as pw:
             journey.append("Save, Close and Open session retain the layout and FASTA")
             page.get_by_role("link", name="Assembly", exact=True).click()
             with page.expect_download() as agp_download:
-                page.get_by_role("link", name="Export to AGP", exact=True).click()
+                page.get_by_role("link", name="Export AGP…", exact=True).click()
             agp_path = out / "first-run.agp"
             agp_download.value.save_as(agp_path)
             components = [

@@ -38,7 +38,7 @@ def main():
             check=BrowserCheck(page,out);requests=[];expected_errors=[];downloads=[]
             page.on('download',lambda item:downloads.append(item.suggested_filename))
             page.on('request',lambda r:requests.append(r.url))
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''()=>{
               const q=window.__fileQA={pickerMode:'save',writeMode:'save',files:{},calls:[],opened:[],readbacks:0,aborts:0};
               window.__qaSavePicker=async options=>{
@@ -67,7 +67,7 @@ def main():
                 assert response.value.ok;check.settle();assert dirty()
             def saved_count():return page.evaluate('Object.keys(window.__fileQA.files).length')
             def save_session():
-                mode();check.menu('File','Save session')
+                mode();check.menu('File','Save session…')
                 page.get_by_role('button',name='Open saved session',exact=True).last.wait_for();check.settle();assert not dirty()
                 page.evaluate('window.__fileQA.lastSession=window.__fileQA.last')
                 return page.evaluate('async()=>JSON.parse(await window.__fileQA.files[window.__fileQA.last].text())')
@@ -77,29 +77,29 @@ def main():
             def error_dialog():
                 dialog=page.get_by_role('alertdialog',name='Session could not be saved',exact=True);dialog.wait_for();return dialog
             def examples():
-                check.menu('File','Open Examples…');dialog=page.get_by_role('dialog',name='Examples',exact=True);dialog.wait_for()
+                check.menu('File','Examples…');dialog=page.get_by_role('dialog',name='Examples',exact=True);dialog.wait_for()
                 page.screenshot(path=str(out/'file-examples.png'));page.keyboard.press('Escape')
             check.step('file-open-examples',examples)
             reverse()
             def cancelled():
                 mode('cancel');before=saved_count();snapshots=sum(url.endswith('/session/snapshot') for url in requests)
-                check.menu('File','Save session');check.settle()
+                check.menu('File','Save session…');check.settle()
                 assert dirty() and saved_count()==before and sum(url.endswith('/session/snapshot') for url in requests)==snapshots
-                check.menu('File','Close');dialog=page.get_by_role('alertdialog',name='Unsaved assembly edits',exact=True)
+                check.menu('File','Close map');dialog=page.get_by_role('alertdialog',name='Unsaved assembly edits',exact=True)
                 dialog.get_by_role('button',name='Save session',exact=True).click();check.settle();assert dialog.is_visible() and dirty()
                 dialog.get_by_role('button',name='Cancel',exact=True).click()
             check.step('cancelled-session-does-not-save-or-close',cancelled)
             def denied():
-                mode('deny');check.menu('File','Save session');dialog=error_dialog();assert 'Picker denied' in dialog.inner_text()
+                mode('deny');check.menu('File','Save session…');dialog=error_dialog();assert 'Picker denied' in dialog.inner_text()
                 assert dirty();page.screenshot(path=str(out/'picker-denied-dialog.png'));dialog.get_by_role('button',name='OK',exact=True).click()
             check.step('denied-picker-does-not-download',denied)
             def failed_close():
-                mode(write='fail-close');before=saved_count();check.menu('File','Save session');dialog=error_dialog()
+                mode(write='fail-close');before=saved_count();check.menu('File','Save session…');dialog=error_dialog()
                 assert 'Simulated close failure' in dialog.inner_text() and dirty() and saved_count()==before
                 assert page.evaluate('window.__fileQA.aborts')==1;dialog.get_by_role('button',name='OK',exact=True).click()
             check.step('failed-write-close-keeps-edits-unsaved',failed_close)
             def failed_guard_save():
-                mode(write='fail-close');check.menu('File','Close')
+                mode(write='fail-close');check.menu('File','Close map')
                 dialog=page.get_by_role('alertdialog',name='Unsaved assembly edits',exact=True)
                 dialog.get_by_role('button',name='Save session',exact=True).click();check.settle()
                 dialog.get_by_role('alert').wait_for();assert 'Simulated close failure' in dialog.inner_text()
@@ -111,7 +111,7 @@ def main():
                 saved=save_session();assert saved['version']==4 and saved['snapshot']['assemblyVerified']
                 artifact('session.json');assert page.evaluate('window.__fileQA.calls.at(-1).id')=='hict-session'
                 assert page.evaluate('window.__fileQA.calls.at(-1).activation')
-                check.menu('File','Close');check.menu('File','Open session')
+                check.menu('File','Close map');check.menu('File','Open session…')
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
                 assert not dirty() and page.evaluate('window.__fileQA.opened.at(-1).id')=='hict-session'
                 assert page.evaluate('window.__fileQA.opened.at(-1).startIn')=='chosen-hict_session.json'
@@ -125,7 +125,7 @@ def main():
                 assert page.evaluate('window.__fileQA.readbacks')>before and not dirty()
             check.step('saved-session-notification-opens-written-file',notification)
             def concurrent_edit():
-                reverse();mode(write='wait-close');check.menu('File','Save session')
+                reverse();mode(write='wait-close');check.menu('File','Save session…')
                 page.wait_for_function('typeof window.__fileQA.releaseWrite==="function"')
                 reverse();page.evaluate('window.__fileQA.releaseWrite()');check.settle();assert dirty()
                 page.get_by_text('The session was saved, but newer edits remain unsaved. Save again before continuing.',exact=True).last.wait_for()
@@ -136,7 +136,7 @@ def main():
                 mode();check.menu('Assembly','Export FASTA…');page.wait_for_function('window.__fileQA.last==="chosen-assembly.fasta"')
                 path=artifact('assembly.fasta');actual=''.join(line for line in path.read_text().splitlines() if not line.startswith('>'))
                 assert actual==expected
-                check.menu('Assembly','Export to AGP');page.wait_for_function('window.__fileQA.last==="chosen-assembly.agp"');artifact('assembly.agp')
+                check.menu('Assembly','Export AGP…');page.wait_for_function('window.__fileQA.last==="chosen-assembly.agp"');artifact('assembly.agp')
                 calls=page.evaluate('window.__fileQA.calls');assert any(c['id']=='hict-fasta' for c in calls) and any(c['id']=='hict-agp' for c in calls)
             check.step('assembly-fasta-agp-use-save-destinations',assembly_files)
             def select_region():page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds({columnStart:8,columnEnd:36,rowStart:8,rowEnd:36})')
@@ -168,11 +168,11 @@ def main():
             check.step('png-svg-pdf-user-actions-use-destinations',figures)
             def fallback():
                 reverse();page.evaluate('window.showSaveFilePicker=undefined')
-                with page.expect_download() as download:check.menu('File','Save session')
+                with page.expect_download() as download:check.menu('File','Save session…')
                 download.value.save_as(out/'fallback-session.json');check.settle();assert dirty()
                 assert json.loads((out/'fallback-session.json').read_text())['version']==4
                 page.get_by_text('Session download started.',exact=False).last.wait_for()
-                check.menu('File','Close');dialog=page.get_by_role('alertdialog',name='Unsaved assembly edits',exact=True)
+                check.menu('File','Close map');dialog=page.get_by_role('alertdialog',name='Unsaved assembly edits',exact=True)
                 with page.expect_download() as download:dialog.get_by_role('button',name='Save session',exact=True).click()
                 download.value.save_as(out/'fallback-guard-session.json');check.settle();assert dialog.is_visible() and dirty()
                 page.screenshot(path=str(out/'fallback-save-guard.png'));dialog.get_by_role('button',name='Cancel',exact=True).click()
@@ -180,18 +180,18 @@ def main():
             check.step('browser-download-fallback-is-not-confirmed-save',fallback)
             def folders():
                 field=page.get_by_placeholder('Relative folder or file path under DATA_DIR')
-                check.menu('File','Open…');field.fill('maps');field.press('Enter');check.settle();check.choose_file('sequence.hict.hdf5')
+                check.menu('File','Open map…');field.fill('maps');field.press('Enter');check.settle();check.choose_file('sequence.hict.hdf5')
                 with page.expect_response('**/open') as response:page.get_by_role('button',name='Load',exact=True).click()
                 assert response.value.ok;check.settle()
-                check.menu('File','Open…');field.wait_for();check.settle();assert field.input_value()=='maps'
+                check.menu('File','Open map…');field.wait_for();check.settle();assert field.input_value()=='maps'
                 assert page.get_by_role('button',name='Load',exact=True).is_enabled()
                 page.screenshot(path=str(out/'remembered-map-file.png'))
                 page.get_by_role('button',name='Dismiss',exact=True).click()
-                check.menu('Assembly','Link FASTA');field.wait_for();check.settle();assert field.input_value()==''
+                check.menu('Assembly','Link FASTA…');field.wait_for();check.settle();assert field.input_value()==''
                 field.fill('seqs');field.press('Enter');check.settle();check.choose_file('sequence.fa')
                 with page.expect_response('**/link_fasta') as response:page.get_by_role('button',name='Load',exact=True).click()
                 assert response.value.ok;check.settle()
-                check.menu('Assembly','Link FASTA');field.wait_for();check.settle();assert field.input_value()=='seqs';page.get_by_role('button',name='Dismiss',exact=True).click()
+                check.menu('Assembly','Link FASTA…');field.wait_for();check.settle();assert field.input_value()=='seqs';page.get_by_role('button',name='Dismiss',exact=True).click()
             check.step('server-file-folders-remembered-per-kind',folders)
             assert hashlib.sha256(native.read_bytes()).hexdigest()==digest
             assert not check.errors,check.errors

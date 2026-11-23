@@ -34,7 +34,7 @@ def main():
         def attach():
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
         def capture():
             return page.evaluate('''async () => {

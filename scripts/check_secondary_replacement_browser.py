@@ -66,7 +66,7 @@ def main():
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             before = snapshot()
             expected = list(reversed([1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11]))

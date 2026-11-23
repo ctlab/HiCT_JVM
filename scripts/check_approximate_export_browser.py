@@ -49,7 +49,7 @@ def main():
                 url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check = BrowserCheck(page,output)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File','Attach'); check.settle()
+            check.menu('File','Join running session'); check.settle()
             for offset in (5,3):
                 page.evaluate('''async offset => {
                     const m=window.__hictBenchmark.manager();
@@ -60,11 +60,11 @@ def main():
                 check.settle()
             app.http('/reverse_selection_range', {'startBP':0,'endBP':17})
             # Refresh the browser history and oriented descriptors before exporting.
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             snapshot = json.loads(app.http('/session/snapshot', {'verifyAssemblyRoundTrip':True}))['primary']
             oracle = output/'oracle.json'
             oracle.write_text(json.dumps({'contacts':original,'agp':snapshot['agp']}))
-            check.menu('File','Export matrix')
+            check.menu('File','Export matrix…')
             dialog = page.get_by_role('dialog').filter(has=page.get_by_text('Export matrix to Cooler',exact=True))
             checkbox = dialog.locator('#export-approximate-rebin')
             assert not checkbox.is_checked()
@@ -134,7 +134,7 @@ def main():
             # Reopen the real exported file, then save and restore its provenance.
             page.get_by_role('dialog',name='Background jobs').get_by_role('button',name='Close',exact=True).click()
             with page.expect_download() as saved_before_import:
-                check.menu('File','Save session')
+                check.menu('File','Save session…')
             saved_before_import.value.save_as(output/'before-reimport-session.json')
             imported_name = 'reopened-'+output.name+'.hict.hdf5'
             imported_job = json.loads(app.http('/convert/jobs',{'filename':name,'outputFilename':imported_name,
@@ -172,19 +172,19 @@ def main():
             assert not (data/secondary_name).exists()
             shutil.copyfile(data/imported_name,data/secondary_name)
             app.http('/secondary/open',{'filename':secondary_name})
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             secondary_chip = page.locator('.file-chip--static').filter(has_text='Secondary (estimated):')
             secondary_chip.wait_for()
             assert 'uniform-independent-endpoints-v1' in secondary_chip.get_attribute('title')
             with page.expect_download() as downloaded_session:
-                check.menu('File','Save session')
+                check.menu('File','Save session…')
             imported_session = output/'reopened-session.json'; downloaded_session.value.save_as(imported_session)
             saved_caps = json.loads(imported_session.read_text())['snapshot']['primary']['capabilities']
             assert saved_caps['approximation']==caps['approximation']
             assert json.loads(imported_session.read_text())['snapshot']['secondary']['capabilities']['approximation']==caps['approximation']
-            check.menu('File','Close')
+            check.menu('File','Close map')
             with page.expect_file_chooser() as chooser:
-                check.menu('File','Open session')
+                check.menu('File','Open session…')
             chooser.value.set_files(imported_session)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for()
             estimated_chip.wait_for(); check.settle()
@@ -192,7 +192,7 @@ def main():
             assert json.loads(app.http('/attach',{}))['openFileResponse']['capabilities']['approximation']==caps['approximation']
             page.screenshot(path=str(output/'reopened-estimated-session.png'))
             # Ordinary export preserves these stored estimates without applying another model.
-            check.menu('File','Export matrix')
+            check.menu('File','Export matrix…')
             dialog = page.get_by_role('dialog').filter(has=page.get_by_text('Export matrix to Cooler',exact=True))
             assert not dialog.locator('#export-approximate-rebin').is_checked()
             dialog.locator('#export-balance-coolers').uncheck()

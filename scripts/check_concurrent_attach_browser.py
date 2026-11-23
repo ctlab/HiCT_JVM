@@ -55,7 +55,7 @@ def main():
         def attach(page):
             page.get_by_role("link", name="File", exact=True).click()
             with page.expect_response("**/attach"):
-                page.get_by_role("link", name="Attach", exact=True).click()
+                page.get_by_role("link", name="Join running session", exact=True).click()
             page.get_by_text(f"Attached to session {filename}", exact=True).wait_for()
             page.locator('.open-progress-modal').wait_for(state='hidden')
             page.wait_for_function("!window.__hictBenchmark.manager().getView().getAnimating()")
@@ -71,7 +71,7 @@ def main():
             a.wait_for_function("window.__hictBenchmark")
             a.evaluate("arg=>window.__hictBenchmark.open(arg.filename,arg.api)", {"filename": filename, "api": args.api})
             a.wait_for_timeout(1500)
-            button = a.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = a.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             a.evaluate("""() => {const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;

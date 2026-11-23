@@ -62,7 +62,7 @@ def main():
                     return response.json() if response.body() else None
 
                 def pick(name):
-                    check.menu("File", "Open…")
+                    check.menu("File", "Open map…")
                     picker = page.get_by_role("dialog").filter(
                         has=page.get_by_role(
                             "heading", name="Open Hi-C dataset", exact=True
@@ -239,7 +239,7 @@ def main():
                     )
                     page.screenshot(path=str(output / (filename + ".png")))
                     jobs_before = {item["jobId"] for item in post("/convert/jobs/list")}
-                    check.menu("File", "Close")
+                    check.menu("File", "Close map")
                     page.get_by_role(
                         "heading", name="No contact map open", exact=True
                     ).wait_for()

@@ -38,7 +38,7 @@ def main():
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)
         page.wait_for_timeout(1500)
-        nan = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+        nan = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
         if nan.is_visible():
             nan.click()
         page.evaluate("""async () => {const m=window.__hictBenchmark.manager();
@@ -262,7 +262,7 @@ def main():
         record_result({"test": "Reload fetches changed server branches without reviving the stale preset draft"})
 
         with page.expect_response(lambda response: '/render_pipeline/reset' in response.url and response.request.method == 'POST') as response:
-            page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Reset', exact=True).click()
+            page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Reset to default', exact=True).click()
         assert response.value.ok
         reset = response.value.json()
         page.wait_for_timeout(400)

@@ -428,7 +428,6 @@ public class MatrixQueries {
     throw new IllegalArgumentException("No non-empty contig in query segment");
   }
 
-  // TODO: Implement
   public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;

@@ -2,10 +2,14 @@
 
 ## Open a map
 
+The portable Launcher uses loopback by default. If you run `start-server`
+directly, it binds to `0.0.0.0`. Set `HICT_BIND_HOST=127.0.0.1` to accept
+connections from this computer only.
+
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press
 Enter. The picker lists files inside the server's data directory. Use
 **Open with options…** for `.hic`, `.cool` and `.mcool` conversion and optional
-inputs. **File → Open Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
+inputs. **File → Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
 or tardigrade with matching FASTA. Borrelia downloads about 2.31 MB and yeast
 about 170.76 MB. The Borrelia preparation selects its 19 mapped replicons and
 changes their headers while preserving every original base. Downloads need
@@ -13,7 +17,7 @@ internet access. Completed local examples remain usable offline.
 
 Opening fits the initial color range to the visible signal. Excluded weighted
 bins are masked. The one-line note offers Change when you want another policy.
-A second browser can attach to the server's current map. Changes share one server
+Use **File → Join running session** to show the current map in another window. Changes share one server
 assembly and save-conflict protection applies.
 The active Hi-C map, linked FASTA, and loaded AGP appear beside **Jobs**.
 

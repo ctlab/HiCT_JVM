@@ -122,7 +122,7 @@ def main():
                 };
             }""")
             nan = page.get_by_role(
-                "button", name="Do not use Cooler weights", exact=True
+                "button", name="Show raw contacts (no balancing)", exact=True
             )
             if nan.is_visible():
                 nan.click()
@@ -134,8 +134,8 @@ def main():
                 v.currentViewState.selectionBorders.rightBP=[1040000,1040000];
             }""")
             check.settle()
-            check.menu("Tools", "Generate ModDotPlot…")
-            dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
             selected = dialog.locator(".resolution-options input:checked").evaluate_all(
                 "(items)=>items.map(i=>Number(i.value))"
             )
@@ -150,7 +150,7 @@ def main():
                 lambda response: response.url.endswith("/sequence/moddotplot/jobs")
             ) as submitted:
                 dialog.get_by_role(
-                    "button", name="Generate ModDotPlot", exact=True
+                    "button", name="Generate", exact=True
                 ).click()
             identity_id = submitted.value.json()["jobId"]
             dialog.locator("footer").get_by_role(
@@ -160,7 +160,7 @@ def main():
             # Start a separate search before opening either job from the Jobs list.
             check.menu("Tools", "Find sequences in linked FASTA…")
             search = page.get_by_role(
-                "dialog", name="Find sequences in the linked FASTA", exact=True
+                "dialog", name="Find sequences", exact=True
             )
             search.get_by_label("FASTA records, or one DNA sequence per line").fill(
                 "GAGAGAGAGAGA"
@@ -169,7 +169,7 @@ def main():
             with page.expect_response(
                 lambda response: response.url.endswith("/sequence/search/jobs")
             ) as submitted:
-                search.get_by_role("button", name="Find sequences", exact=True).click()
+                search.get_by_role("button", name="Search", exact=True).click()
             search_id = submitted.value.json()["jobId"]
             search.locator("footer").get_by_role(
                 "button", name="Close", exact=True
@@ -249,7 +249,7 @@ def main():
             assert graph()["upperExpression"]["type"] == "pixel_blend"
             result["checks"].append({"manualJobOpeningRetainsOverlayPreference": True})
             # Exercise the same default-resolution behavior in alignment dotplot generation.
-            check.menu("Tools", "Generate dotplot from active assembly…")
+            check.menu("Tools", "Dotplot from current assembly…")
             alignment = page.get_by_role("dialog").filter(
                 has=page.locator("#dotplot-display")
             )
@@ -265,7 +265,7 @@ def main():
                 "button", name="Close", exact=True
             ).click()
             result["checks"].append({"alignmentDefaultResolutions": actual})
-            check.menu("Tools", "Generate dotplot from FASTA files…")
+            check.menu("Tools", "Dotplot from FASTA files…")
             legacy = page.get_by_role("dialog").filter(
                 has=page.get_by_role(
                     "heading", name="Generate self-alignment dotplots", exact=True

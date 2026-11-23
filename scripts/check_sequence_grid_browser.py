@@ -51,7 +51,7 @@ def main():
                 url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check = BrowserCheck(page,output)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File','Attach'); check.settle()
+            check.menu('File','Join running session'); check.settle()
 
             def decode(url):
                 return page.evaluate('''async url => {
@@ -101,7 +101,7 @@ def main():
                 }''',offset)
                 check.settle()
             app.http('/reverse_selection_range',{'startBP':0,'endBP':17})
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             results = []
             preview_native = preview_sequence = None
             for enabled in (False,True):

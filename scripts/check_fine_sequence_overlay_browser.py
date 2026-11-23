@@ -184,13 +184,13 @@ def main():
             )
             check.settle()
             nan = page.get_by_role(
-                "button", name="Do not use Cooler weights", exact=True
+                "button", name="Show raw contacts (no balancing)", exact=True
             )
             if nan.is_visible():
                 nan.click()
             select(435400, 436376, 438700, 439700)
-            check.menu("Tools", "Generate ModDotPlot…")
-            dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
             sizes = dialog.get_by_label("ModDotPlot window sizes (bp)", exact=True)
             sizes.fill("37, 50, 250")
             sizes.press("Tab")
@@ -209,7 +209,7 @@ def main():
                 .is_visible()
             )
             assert dialog.get_by_role(
-                "button", name="Generate ModDotPlot", exact=True
+                "button", name="Generate", exact=True
             ).is_disabled()
             sizes.fill("37, 50")
             dialog.get_by_label("Analysis scope").select_option("assembly")
@@ -231,7 +231,7 @@ def main():
                 )
             ) as submitted:
                 dialog.get_by_role(
-                    "button", name="Generate ModDotPlot", exact=True
+                    "button", name="Generate", exact=True
                 ).click()
             assert submitted.value.ok, submitted.value.text()
             assert submitted.value.request.post_data_json["resolutions"] == [37, 50]
@@ -256,9 +256,9 @@ def main():
             # Ch1 has identical 601 bp intervals at offsets 435535 and 438780.
             # Their separation makes the hit visible on either side of the diagonal.
             select(435535, 436136, 438780, 439381)
-            check.menu("Tools", "Generate dotplot from active assembly…")
+            check.menu("Tools", "Dotplot from current assembly…")
             dialog = page.get_by_role(
-                "dialog", name="Generate dotplot from active assembly", exact=True
+                "dialog", name="Dotplot from current assembly", exact=True
             )
             sizes = dialog.get_by_label("Dotplot resolutions (bp/bin)")
             sizes.fill("1 50")
@@ -275,7 +275,7 @@ def main():
                 )
             ) as submitted:
                 dialog.get_by_role(
-                    "button", name="Generate dotplot from active assembly", exact=True
+                    "button", name="Generate", exact=True
                 ).click()
             assert submitted.value.ok, submitted.value.text()
             assert submitted.value.request.post_data_json["resolutions"] == [
@@ -306,13 +306,13 @@ def main():
             page.set_viewport_size({"width": 1440, "height": 900})
             check.settle()
             with page.expect_download() as download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             saved = out/"fine-overlay-session.json"
             download.value.save_as(saved)
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.get_by_role("heading", name="No contact map open").wait_for()
             with page.expect_file_chooser() as chosen:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chosen.value.set_files(saved)
             page.get_by_text("Session restored. Undo history starts from the restored assembly.").wait_for()
             observe("dotplot", levels, 1, 1000, (435835,439080), "restored")

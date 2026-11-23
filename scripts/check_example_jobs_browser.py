@@ -273,7 +273,7 @@ def main():
                     )
 
                 def open_catalog():
-                    check.menu("File", "Open Examples…")
+                    check.menu("File", "Examples…")
                     dialog = page.get_by_role("dialog", name="Examples", exact=True)
                     expect(dialog).to_be_visible()
                     return dialog
@@ -758,7 +758,7 @@ def main():
 
                     def save_session(name):
                         with page.expect_download() as download:
-                            check.menu("File", "Save session")
+                            check.menu("File", "Save session…")
                         target = out / (name + ".json")
                         download.value.save_as(target)
                         return target, json.loads(target.read_text())
@@ -1151,15 +1151,16 @@ def main():
                                     "button", name="Open result", exact=True
                                 ).click()
                             wizard = page.get_by_role(
-                                "dialog", name="Open File Wizard", exact=True
+                                "dialog", name="Open with options", exact=True
                             )
                             expect(wizard).to_be_visible(timeout=60000)
                             return wizard
 
                         wizard = open_wizard()
                         wizard.get_by_role(
-                            "button", name=re.compile(r"1D tracks$")
+                            "button", name=re.compile(r"Review & open$")
                         ).click()
+                        check.advanced()
                         expect(wizard.locator(".wizard-track-item")).to_have_count(1)
                         expect(wizard.locator(".wizard-track-item")).to_contain_text(
                             "annotations.bed"
@@ -1203,9 +1204,9 @@ def main():
                         wizard.get_by_role("button", name="Cancel", exact=True).click()
                         wizard = open_wizard()
                         wizard.get_by_role(
-                            "button", name=re.compile(r"Final checks$")
+                            "button", name=re.compile(r"Review & open$")
                         ).click()
-                        finish = wizard.get_by_role("button", name="Finish", exact=True)
+                        finish = wizard.get_by_role("button", name="Open map", exact=True)
                         expect(finish).to_be_enabled()
                         finish.click()
                         expect(wizard).to_have_count(0, timeout=90000)
@@ -1285,7 +1286,7 @@ def main():
                             )
                             catalog_file.unlink()
                             with page.expect_file_chooser() as chooser:
-                                check.menu("File", "Open session")
+                                check.menu("File", "Open session…")
                             chooser.value.set_files(saved_path)
                             page.get_by_text(
                                 "Session restored. Undo history starts from the restored assembly.",

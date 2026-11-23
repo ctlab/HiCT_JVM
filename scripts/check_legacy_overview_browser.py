@@ -50,7 +50,7 @@ def main():
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("([name, api])=>window.__hictBenchmark.open(name, api)",
                       [snapshot["primary"]["filename"], args.api])
-        weights = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+        weights = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
         if weights.is_visible():
             weights.click()
         filename = legacy.relative_to(data).as_posix()

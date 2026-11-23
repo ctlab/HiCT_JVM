@@ -125,16 +125,22 @@ def main():
                     "Dev",
                     "Help",
                 ]:
-                    toggle = page.locator(".navbar-bar .navbar-nav").get_by_role(
-                        "link", name=name, exact=True
-                    )
+                    if name == "Selection":
+                        toggle = page.locator(".header-ribbon").get_by_role(
+                            "button", name=name, exact=True
+                        )
+                    else:
+                        toggle = page.locator(".navbar-bar .navbar-nav").get_by_role(
+                            "link", name=name, exact=True
+                        )
                     toggle.click()
                     menu = toggle.locator("..").locator(".dropdown-menu.show")
                     menu.wait_for()
-                    page.wait_for_function(
-                        """name=>{const a=[...document.querySelectorAll('.navbar-bar .navbar-nav > li > a')].find(e=>e.textContent.trim()===name),m=a?.parentElement.querySelector('.dropdown-menu.show');if(!m)return false;const b=m.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth+1&&b.top>=0&&b.bottom<=innerHeight+1;}""",
-                        arg=name,
-                    )
+                    assert menu.evaluate("""element => {
+                        const bounds = element.getBoundingClientRect();
+                        return bounds.left >= 0 && bounds.right <= innerWidth + 1 &&
+                            bounds.top >= 0 && bounds.bottom <= innerHeight + 1;
+                    }"""), name
                     items = menu.locator(
                         'a.dropdown-item:not(.disabled):not([aria-disabled="true"]),button.dropdown-item:not([disabled]):not(.disabled),input:not([disabled])'
                     )
@@ -230,7 +236,7 @@ def main():
                     ).click()
                     alignment = page.get_by_role(
                         "menuitemcheckbox",
-                        name="Automatically align visible FASTA",
+                        name="Align visible FASTA automatically",
                         exact=True,
                     )
                     if alignment.get_attribute("aria-checked") == "true":
@@ -352,7 +358,7 @@ def main():
                     page.set_viewport_size({"width": 1024, "height": 768})
                     page.set_viewport_size({"width": 800, "height": 600})
                     page.reload()
-                    check.menu("File", "Attach")
+                    check.menu("File", "Join running session")
                     check.settle()
                     expect(
                         page.get_by_role("button", name="Hide side panel", exact=True)
@@ -361,7 +367,7 @@ def main():
                         "button", name="Hide side panel", exact=True
                     ).click()
                     page.reload()
-                    check.menu("File", "Attach")
+                    check.menu("File", "Join running session")
                     check.settle()
                     expect(
                         page.get_by_role("button", name="Show side panel", exact=True)

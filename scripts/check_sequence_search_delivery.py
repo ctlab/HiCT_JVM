@@ -36,7 +36,7 @@ def main():
             page.wait_for_function('window.__hictBenchmark')
             page.evaluate('api => window.__hictBenchmark.open("combined_ind2_4DN.hict.hdf5", api)', args.api)
             page.wait_for_timeout(1000)
-            nan = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+            nan = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
             if nan.is_visible():
                 nan.click()
             response = page.request.post(args.api + '/link_fasta', data={'fastaFilename': 'quad_combined_ind2.fasta'})
@@ -54,7 +54,7 @@ def main():
                 }''')
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
-                dialog = page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True)
+                dialog = page.get_by_role('dialog', name='Find sequences', exact=True)
                 dialog.get_by_label('FASTA records, or one DNA sequence per line').fill(
                     '>acceptance query\n' + (absent_query if scenario == 'no-match' else match.group()))
                 dialog.get_by_label('Search scope', exact=True).select_option('assembly' if scenario == 'whole' else 'selection')
@@ -76,7 +76,7 @@ def main():
                 if scenario == 'slow-track-query':
                     page.route('**/tracks/query_1d', hold_query)
                 with page.expect_response(lambda r: r.url.endswith('/sequence/search/jobs')) as submitted:
-                    dialog.get_by_role('button', name='Find sequences', exact=True).click()
+                    dialog.get_by_role('button', name='Search', exact=True).click()
                 job_id = submitted.value.json()['jobId']
                 if scenario == 'no-match':
                     dialog.get_by_text('No matching sequence found. No track was added.', exact=True).wait_for()

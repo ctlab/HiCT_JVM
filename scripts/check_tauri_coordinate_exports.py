@@ -148,7 +148,7 @@ class NativeCheck:
             'tauri:options': {'application': self.args.binary}}}})
         self.session = value['sessionId']
         (self.output / 'session.json').write_text(json.dumps(value, indent=2) + '\n')
-        until(lambda: self.js('return document.body.innerText.includes("Attach to open session");'))
+        until(lambda: self.js('return document.body.innerText.includes("Join running session");'))
         self.click('Help')
         self.click('Connection…')
         element = self.element('css selector', '#api-gateway-input')
@@ -156,7 +156,7 @@ class NativeCheck:
         api = self.environment['api']
         self.command('POST', '/element/' + element + '/value', {'text': api, 'value': list(api)})
         self.click('Connect')
-        self.click('Attach to open session')
+        self.click('Join running session')
         until(lambda: self.js('return document.body.innerText.includes("Assembly:");'))
         assert self.js('return window.__HICT_TAURI_EXPORT_STREAM_VERSION__') == 1
 

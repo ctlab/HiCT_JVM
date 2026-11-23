@@ -60,11 +60,11 @@ def main():
             check.reverse()
             changed = assembly()
             assert before["agpSha256"] != changed["agpSha256"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             prompt = page.get_by_role("alertdialog", name="Unsaved assembly edits")
             prompt.get_by_role("button", name="Cancel", exact=True).click()
             assert assembly()["agpSha256"] == changed["agpSha256"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             with page.expect_download() as saved:
                 prompt.get_by_role("button", name="Save session", exact=True).click()
             session = output / "offline-session.json"
@@ -74,10 +74,10 @@ def main():
             ).wait_for()
             page.reload()
             with page.expect_file_chooser() as cancelled:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             cancelled.value.set_files([])
             with page.expect_file_chooser() as chooser:
-                page.get_by_role("button", name="Load saved session…", exact=True).click()
+                page.get_by_role("button", name="Open session…", exact=True).click()
             chooser.value.set_files(session)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

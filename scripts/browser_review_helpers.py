@@ -12,7 +12,7 @@ def expand_slider_limits(page):
 def link_fasta(page, filename):
     """Use the same linkage path as the user, including frontend capability updates."""
     page.get_by_role("link", name="Assembly", exact=True).click()
-    page.get_by_role("link", name="Link FASTA", exact=True).click()
+    page.get_by_role("link", name="Link FASTA…", exact=True).click()
     dialog = page.locator(".modal.show").filter(has_text="Select FASTA file")
     file = PurePosixPath(filename)
     if str(file.parent) != ".":

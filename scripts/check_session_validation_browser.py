@@ -33,7 +33,7 @@ def main():
             assert response.ok, response.text()
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             page.evaluate('() => {window.__sessionValidationManager=window.__hictBenchmark.manager();}')
 
@@ -73,7 +73,7 @@ def main():
             for name, document, field in cases:
                 page.get_by_role('link', name='File', exact=True).click()
                 with page.expect_file_chooser() as chooser:
-                    page.get_by_role('link', name='Open session', exact=True).click()
+                    page.get_by_role('link', name='Open session…', exact=True).click()
                 chooser.value.set_files({'name': name + '.json', 'mimeType': 'application/json', 'buffer': json.dumps(document).encode()})
                 page.get_by_text('Invalid session', exact=False).filter(has_text=field).last.wait_for(state='visible')
                 assert snapshot() == before, name
@@ -83,12 +83,12 @@ def main():
             page.remove_listener('request', record_mutation)
             page.get_by_role('link', name='File', exact=True).click()
             with page.expect_download() as download:
-                page.get_by_role('link', name='Save session', exact=True).click()
+                page.get_by_role('link', name='Save session…', exact=True).click()
             download.value.save_as(str(output / 'saved-session.json'))
             page.screenshot(path=str(output / 'rejected-sessions.png'))
             page.get_by_role('link', name='File', exact=True).click()
             with page.expect_file_chooser() as chooser:
-                page.get_by_role('link', name='Open session', exact=True).click()
+                page.get_by_role('link', name='Open session…', exact=True).click()
             legacy_path = output / 'legacy-session-v2.json'
             legacy_path.write_text(json.dumps({'version': 2, 'filename': 'tiny-primary.hict.hdf5',
                 'view': {'center': before['center'], 'resolution': before['resolution']}}))

@@ -39,7 +39,7 @@ def main():
             page.route('http://localhost:5000/**',lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000')))
             check=BrowserCheck(page,out);submitted=[];results=[]
             page.on('request',lambda r:submitted.append({'body':r.post_data_json,'headers':r.headers}) if r.url.endswith('/sequence/repeat_period') and 'startBp' in r.post_data_json else None)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             def state():return page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager;return {selection:l.currentViewState.sequenceMeasurement??null,region:l.getRegionBounds()??null,entities:l.currentViewState.selectedContigIds,view:l.captureViewPosition()};}''')
             def focus(bp):
                 page.evaluate('''bp=>window.__hictBenchmark.manager().viewAndLayersManager.restoreViewPosition({centerBp:[bp,bp],resolution:1/2000})''',bp);check.settle()
@@ -168,11 +168,11 @@ def main():
             check.step('measurement-free-image-export',clean_export)
             def session():
                 focus(3894);select(3888,3900)
-                with page.expect_download() as download:check.menu('File','Save session')
+                with page.expect_download() as download:check.menu('File','Save session…')
                 path=out/'measured-session.json';download.value.save_as(path)
                 assert 'sequenceMeasurement' not in path.read_text()
-                check.menu('File','Close')
-                with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+                check.menu('File','Close map')
+                with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
                 chooser.value.set_files(path)
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
                 assert state()['selection'] is None and not card().count()

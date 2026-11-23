@@ -551,7 +551,7 @@ def main():
                 # Save flushes the pending debounce before capturing options and the graph.
                 set_upper(45, False)
                 with page.expect_download() as download:
-                    check.menu("File", "Save session")
+                    check.menu("File", "Save session…")
                 saved = out / "pending-draft-session.json"
                 download.value.save_as(saved)
                 session = json.loads(saved.read_text())

@@ -56,7 +56,7 @@ def main():
             page.on('request', lambda request: requests.append(request.post_data_json)
                     if request.url.endswith('/split_contig_at_bp') else None)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File', 'Attach'); check.settle()
+            check.menu('File', 'Join running session'); check.settle()
             def lengths():
                 return page.evaluate('window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.map(d=>d.contigLengthBp)')
             def focus(bp, resolution=1/2000):
@@ -164,11 +164,11 @@ def main():
             sequence(reverse)
             page.screenshot(path=str(output/'one-base-gff-cut.png'))
             with page.expect_download() as saved:
-                check.menu('File', 'Save session')
+                check.menu('File', 'Save session…')
             session = output/'feature-cuts-session.json'; saved.value.save_as(session)
-            check.menu('File', 'Close')
+            check.menu('File', 'Close map')
             with page.expect_file_chooser() as chooser:
-                check.menu('File', 'Open session')
+                check.menu('File', 'Open session…')
             chooser.value.set_files(session)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
             check.settle()

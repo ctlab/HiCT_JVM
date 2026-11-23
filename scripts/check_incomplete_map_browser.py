@@ -54,7 +54,7 @@ def main():
             before = state()
             assert before["dirty"]
             for attempt in range(2):
-                check.menu("File", "Open…")
+                check.menu("File", "Open map…")
                 check.choose_file("incomplete.hict.hdf5")
                 with page.expect_response(
                     lambda response: response.url.endswith("/open")

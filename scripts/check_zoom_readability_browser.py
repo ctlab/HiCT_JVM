@@ -16,7 +16,7 @@ from PIL import Image
 from playwright.sync_api import sync_playwright
 
 
-def main():
+def main(default_normalizations=("file", "sqrt")):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("url", "api", "output"):
         parser.add_argument("--" + name, required=True)
@@ -30,7 +30,7 @@ def main():
         "--normalizations",
         nargs="+",
         choices=["file", "sqrt"],
-        default=["file", "sqrt"],
+        default=default_normalizations,
     )
     parser.add_argument("--floor", type=float, default=0.5)
     args = parser.parse_args()

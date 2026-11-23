@@ -187,7 +187,7 @@ def main():
                     result["warmFinePaintSeconds"] = time.monotonic()-warm_start
                 page.get_by_role("link", name="View", exact=True).click()
                 page.get_by_role(
-                    "link", name="Restrict Resolutions…", exact=True
+                    "link", name="Restrict resolutions…", exact=True
                 ).click()
                 # Transient locator handles retain detached nodes in the inspector.
                 # Keep these memory measurements to primitive DOM results and real input.
@@ -290,7 +290,7 @@ def main():
                     dialog.get_by_role("button", name="Close", exact=True).last.click()
                     expect(dialog).to_have_count(0)
                 page.get_by_role("link", name="File", exact=True).click()
-                page.get_by_role("link", name="Close", exact=True).click()
+                page.get_by_role("link", name="Close map", exact=True).click()
                 page.wait_for_function("!window.__hictBenchmark.manager()")
                 cdp.send("Runtime.discardConsoleEntries")
                 cdp.send("HeapProfiler.collectGarbage")

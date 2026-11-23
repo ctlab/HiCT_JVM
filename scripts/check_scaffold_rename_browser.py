@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 
 
 def main():
@@ -26,6 +27,7 @@ def main():
         page.set_default_timeout(60000)
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.on('console', lambda message: errors.append(message.text) if message.type == 'error' else None)
+        install_download_picker(page)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
         page.route('http://localhost:5000/**', lambda route: route.continue_(
             url=args.api + route.request.url.removeprefix('http://localhost:5000')))
@@ -34,7 +36,7 @@ def main():
             page.wait_for_function('window.__hictBenchmark')
             page.evaluate('api=>window.__hictBenchmark.open("combined_ind2_4DN.hict.hdf5",api)', args.api)
             page.wait_for_timeout(1000)
-            nan = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+            nan = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
             if nan.is_visible(): nan.click()
             page.wait_for_function("window.__hictBenchmark.manager().scaffoldHolder.scaffoldTable.size>0")
             before = page.evaluate('''() => {const v=window.__hictBenchmark.manager().getView();return [v.getCenter(),v.getResolution()]}''')

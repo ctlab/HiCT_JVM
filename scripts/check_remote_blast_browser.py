@@ -159,7 +159,7 @@ def main():
                     "FASTA records, or one DNA sequence per line", exact=True
                 ).fill(query_text)
                 expect(
-                    search.get_by_role("button", name="Find sequences", exact=True)
+                    search.get_by_role("button", name="Search", exact=True)
                 ).to_be_disabled()
                 return search
 
@@ -175,7 +175,7 @@ def main():
                     lambda response: response.url.endswith("/sequence/search/jobs")
                 ) as response:
                     search.get_by_role(
-                        "button", name="Find sequences", exact=True
+                        "button", name="Search", exact=True
                     ).click()
                 assert response.value.status == 202, response.value.text()
                 assert "x-hict-history-revision" not in response.value.request.headers
@@ -324,7 +324,7 @@ def main():
                 )
                 check.menu("Tools", "Find sequences in linked FASTA…")
                 local_dialog = page.get_by_role(
-                    "dialog", name="Find sequences in the linked FASTA", exact=True
+                    "dialog", name="Find sequences", exact=True
                 )
                 local_dialog.get_by_label("Matching", exact=True).select_option("blast")
                 expect(

@@ -180,7 +180,7 @@ def main():
                 record("snapshot-controls-fit-a-640-pixel-window")
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 close_export()
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 prompt = page.get_by_role(
                     "alertdialog", name="Unsaved figure snapshots", exact=True
                 )
@@ -350,7 +350,7 @@ def main():
                         close:async()=>{if(window.__snapshotWrite.hold)await new Promise(resolve=>{window.__snapshotWrite.pending=true;window.__snapshotWrite.release=resolve})},abort:async()=>{}
                     }),getFile:async()=>new File([window.__snapshotWrite.text],'snapshots-session.json',{type:'application/json'})});
                 }""")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function(
                     "()=>!window.__hictBenchmark.manager().figureSnapshots.dirty"
                 )
@@ -363,12 +363,12 @@ def main():
                 session_path = out / "snapshots-session.json"
                 session_path.write_text(session_text)
                 page.evaluate("window.showSaveFilePicker=undefined")
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 expect(
                     page.get_by_role("heading", name="No contact map open", exact=True)
                 ).to_be_visible()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(session_path)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly.",
@@ -444,7 +444,7 @@ def main():
                 )
                 count_before_bad = len(restore_requests)
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(bad_path)
                 page.get_by_text(
                     "Invalid figure snapshot: unsupported scene element script",
@@ -467,7 +467,7 @@ def main():
                         close:async()=>{if(window.__snapshotWrite.hold)await new Promise(resolve=>{window.__snapshotWrite.pending=true;window.__snapshotWrite.release=resolve})},abort:async()=>{}
                     }),getFile:async()=>new File([window.__snapshotWrite.text],'snapshots-session.json',{type:'application/json'})});
                 }""")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function("window.__snapshotWrite.pending")
                 open_export()
                 snapshot("Newer while saving")
@@ -491,7 +491,7 @@ def main():
                     == 4
                 )
                 record("late-session-write-does-not-mark-newer-snapshots-saved")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function(
                     "()=>!window.__hictBenchmark.manager().figureSnapshots.dirty"
                 )

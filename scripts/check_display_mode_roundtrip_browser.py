@@ -78,13 +78,13 @@ def main():
 
         def save_session(name):
             with page.expect_download() as event:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / (name + ".json")
             event.value.save_as(path)
             return path, json.loads(path.read_text())
 
         def scaffold_boundary_signals():
-            check.menu("Assembly", "Load AGP")
+            check.menu("Assembly", "Load AGP…")
             check.choose_file("tiny-two-scaffolds.agp")
             with page.expect_response("**/load_agp") as loaded:
                 page.get_by_role("button", name="Load", exact=True).click()
@@ -272,10 +272,10 @@ def main():
                     document["snapshot"]["visualizationOptions"]["signalDisplayMode"]
                     == "OBSERVED_OVER_EXPECTED"
                 )
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 page.get_by_role("heading", name="No contact map open").wait_for()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(path)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly."

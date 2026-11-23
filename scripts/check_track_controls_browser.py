@@ -224,7 +224,7 @@ def main():
             assert len(api('/tracks/list'))==1
 
         def backgrounds():
-            dialog.locator('summary').filter(has_text='Track appearance').click()
+            check.advanced()
             dialog.locator("#track-bg-inherit").uncheck()
             panel = dialog.locator(".alert").filter(
                 has=page.get_by_text("Track panel background", exact=True)
@@ -242,7 +242,7 @@ def main():
             check.settle()
             assert_background([18, 52, 86, 255])
             open_manager()
-            dialog.locator('summary').filter(has_text='Track appearance').click()
+            check.advanced()
             expect(color).to_have_value("#123456")
             dialog.locator("#track-bg-inherit").check()
             expect(color).to_be_disabled()

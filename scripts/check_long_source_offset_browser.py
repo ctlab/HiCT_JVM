@@ -42,7 +42,7 @@ def main():
             check = BrowserCheck(page, output)
             app.http('/open', {'filename': 'long-source.hict.hdf5'})
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File', 'Attach')
+            check.menu('File', 'Join running session')
             check.settle()
 
             for position, offset in ((0, 2_500_000_001), (-1, 1)):
@@ -63,16 +63,16 @@ def main():
                         {'offset': 2_500_000_002, 'length': 500_000_015}]
             assert state() == expected, state()
             with page.expect_download() as download:
-                check.menu('File', 'Save session')
+                check.menu('File', 'Save session…')
             saved = output / 'long-offset-session.json'
             download.value.save_as(saved)
             envelope = json.loads(saved.read_text())
             snapshot = envelope['snapshot']['primary']
             assert snapshot['splitEdits'][-1]['sourceOffsetBp'] == 2_500_000_001
             assert snapshot['assemblyInfo']['contigDescriptors'][-1]['contigOffsetInSource'] == 2_500_000_002
-            check.menu('File', 'Close')
+            check.menu('File', 'Close map')
             with page.expect_file_chooser() as chooser:
-                check.menu('File', 'Open session')
+                check.menu('File', 'Open session…')
             chooser.value.set_files(saved)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
             check.settle()

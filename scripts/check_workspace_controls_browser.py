@@ -396,12 +396,12 @@ def main():
                 == "Release landmark"
             )
             with page.expect_download() as session_download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             session_path = output / "named-bookmark-session.json"
             session_download.value.save_as(session_path)
             saved = json.loads(session_path.read_text())
             assert saved["client"]["savedLocations"][0]["name"] == "Release landmark"
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.get_by_role(
                 "heading", name="No contact map open", exact=True
             ).wait_for()
@@ -415,7 +415,7 @@ def main():
                 == 0
             )
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(session_path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

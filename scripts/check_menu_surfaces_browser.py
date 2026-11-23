@@ -120,7 +120,7 @@ def main():
                 page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
                 page.wait_for_function('window.__hictBenchmark')
                 page.evaluate('args=>window.__hictBenchmark.open(args.file,args.api)', vars(args))
-                prompt = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+                prompt = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
                 if prompt.is_visible():
                     prompt.click()
                 before_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})
@@ -154,9 +154,9 @@ def main():
                         target.wait_for_function("document.querySelector('#pipeline-enabled')?.checked")
                         result['pipelineEnabled'] = 'matches server'
                     if case['id'] in ('menu-12', 'menu-13', 'menu-14'):
-                        link = target.get_by_role('button', name='Link FASTA…', exact=True)
+                        link = target.get_by_role('dialog').get_by_role('button', name='Link FASTA…', exact=True)
                         link.wait_for(state='visible', timeout=30000)
-                        submit_name = 'Find sequences' if case['id'] == 'menu-12' else case['heading']
+                        submit_name = 'Search' if case['id'] == 'menu-12' else 'Generate'
                         assert target.get_by_role('button', name=submit_name, exact=True).is_disabled()
                         result['missingFastaGuidance'] = 'visible with computation disabled'
                 if case['heading'] is not None:
@@ -192,7 +192,7 @@ def main():
                 result['controls'] = controls
                 target.screenshot(path=str(output / (case['id'] + '.png')))
                 if case['id'] in ('menu-12', 'menu-13', 'menu-14'):
-                    target.get_by_role('button', name='Link FASTA…', exact=True).click()
+                    target.get_by_role('dialog').get_by_role('button', name='Link FASTA…', exact=True).click()
                     target.get_by_role('heading', name='Select FASTA file', exact=True).wait_for(state='visible')
                     result['missingFastaRecovery'] = 'link action opens FASTA selector'
                     child = target.get_by_role('dialog').filter(has=target.get_by_role('heading', name='Select FASTA file', exact=True))

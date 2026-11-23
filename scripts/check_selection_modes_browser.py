@@ -45,7 +45,7 @@ def main():
             page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check=BrowserCheck(page,out);edits=[]
             page.on('request',lambda r:edits.append(r.post_data_json) if r.url.endswith('/reverse_selection_range') else None)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''async()=>{const m=window.__hictBenchmark.manager(),a=m.networkManager.requestManager;
                 m.eventManager.applyAssemblyInfo(await a.splitContigAtBp(0,1000));
                 const id=m.contigDimensionHolder.contigDescriptors[1].contigId;
@@ -69,7 +69,7 @@ def main():
                 for key,value in values.items():dialog.locator('#region-'+key).fill(str(value))
             def export_fasta(filename, coords):
                 with page.expect_response('**/get_fasta_for_selection') as response, page.expect_download() as download:
-                    page.get_by_role('button', name='Export FASTA for selection', exact=True).click()
+                    page.get_by_role('button', name='Export FASTA for selection…', exact=True).click()
                 assert response.value.ok, response.value.text()
                 request = response.value.request.post_data_json
                 assert [request[key] for key in ['fromBpX', 'fromBpY', 'toBpX', 'toBpY']] == coords, request
@@ -223,7 +223,8 @@ def main():
 
                 page.mouse.click(*point(500, 500), button='right')
                 menu = page.get_by_role('menu', name='Assembly actions')
-                menu.get_by_role('menuitem', name='Copy selection as PNG').click()
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                menu.get_by_role('menuitem', name='Region as image', exact=True).click()
                 page.get_by_text('Selection copied as PNG', exact=True).wait_for()
                 png = page.evaluate('''async () => {
                     const [item] = await navigator.clipboard.read();
@@ -252,7 +253,7 @@ def main():
             check.step('stale-coordinates-rejected',stale_dialog)
 
             def selected_fasta_with_explicit_gap():
-                check.menu('Assembly', 'Load AGP')
+                check.menu('Assembly', 'Load AGP…')
                 check.choose_file('selection-gap.agp')
                 with page.expect_response('**/load_agp') as loaded:
                     page.get_by_role('button', name='Load', exact=True).click()

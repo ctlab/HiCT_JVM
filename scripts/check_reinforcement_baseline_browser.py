@@ -68,7 +68,7 @@ def main():
             for label in ("fresh-browser", "repeat-open"):
                 opened = time.monotonic()
                 page.evaluate("args=>window.__hictBenchmark.open(args.filename,args.api)", vars(args))
-                button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+                button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
                 if button.is_visible():
                     button.click()
                 # Use a declared raw-count graph for reproducible navigation measurements.

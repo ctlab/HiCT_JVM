@@ -39,7 +39,7 @@ def main():
             page.wait_for_function('window.__hictBenchmark')
             page.evaluate('api => window.__hictBenchmark.open("combined_ind2_4DN.hict.hdf5", api)', args.api)
             page.wait_for_timeout(1500)
-            nan = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+            nan = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
             if nan.is_visible():
                 nan.click()
             response = page.request.post(args.api + '/link_fasta', data={'fastaFilename': 'quad_combined_ind2.fasta'})
@@ -58,7 +58,7 @@ def main():
             }''')
             page.get_by_role('link', name='Tools', exact=True).click()
             page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
-            dialog = page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True)
+            dialog = page.get_by_role('dialog', name='Find sequences', exact=True)
             page.wait_for_function("!document.querySelector('#search-mode option[value=blast]').disabled")
             dialog.get_by_label('FASTA records, or one DNA sequence per line').fill(
                 f'>acceptance_forward Known source interval\n{query}\n>acceptance_reverse Reverse complement\n{reverse}')
@@ -67,7 +67,7 @@ def main():
             dialog.get_by_label('Save reusable BED under DATA_DIR').check()
             dialog.get_by_label('BED output path').fill('acceptance/blast.bed')
             dialog.get_by_label('Overwrite', exact=True).check()
-            dialog.get_by_role('button', name='Find sequences', exact=True).click()
+            dialog.get_by_role('button', name='Search', exact=True).click()
             dialog.wait_for(state='hidden', timeout=180000)
             bed = data / 'acceptance/blast.bed'
             assert bed.is_file()

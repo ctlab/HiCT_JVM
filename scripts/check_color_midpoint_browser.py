@@ -396,7 +396,7 @@ def main():
                 )
                 pixels = tile().tobytes()
                 with page.expect_download() as event:
-                    check.menu("File", "Save session")
+                    check.menu("File", "Save session…")
                 saved = out / "gamma-session.json"
                 event.value.save_as(saved)
                 doc = json.loads(saved.read_text())
@@ -405,10 +405,10 @@ def main():
                     and doc["snapshot"]["renderPipeline"]["lowerExpression"]["gamma"]
                     == 0.5
                 )
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 page.get_by_role("heading", name="No contact map open").wait_for()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(saved)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly.",

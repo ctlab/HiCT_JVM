@@ -370,7 +370,7 @@ def main():
 
         def native_session():
             with page.expect_download() as download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / "full-graph-session.json"
             download.value.save_as(path)
             document = json.loads(path.read_text())
@@ -378,13 +378,13 @@ def main():
             saved = next(item for item in library if item["name"] == preset_name)
             assert saved["renderPipeline"] == baseline["saved"]["renderPipeline"]
             preserved_id = saved["option_id"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.wait_for_function("!window.__hictBenchmark.manager()")
             page.evaluate(
                 "Object.keys(sessionStorage).filter(key=>key.startsWith('hict.renderPipeline.editor.v1:')).forEach(key=>sessionStorage.removeItem(key))"
             )
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",
@@ -444,13 +444,13 @@ def main():
                 saved["renderPipeline"] == deep
             ), "A stale shallow layout must not replace a deeper applied graph"
             with page.expect_download() as download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / "deep-graph-session.json"
             download.value.save_as(path)
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.wait_for_function("!window.__hictBenchmark.manager()")
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

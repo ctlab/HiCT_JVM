@@ -134,6 +134,13 @@ def main():
                 check.settle()
                 page.locator("#export-dropdown-toggle").click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled()
+                expect(dialog).to_contain_text("Smallest export text: 6.0 pt")
+                auto = save("auto-label-size", "svg")
+                assert metadata(auto)["outputSize"]["minimumTextPoints"] == 6
+                assert "font-size" in auto.read_text()
+                check.advanced()
+                dialog.get_by_label("Label size", exact=True).select_option("captured")
+                dialog.get_by_label("Figure print size", exact=True).select_option("0")
                 original = save("captured", "png")
                 original_metadata = metadata(original)
                 original_chunks = png_chunks(original)
@@ -192,7 +199,7 @@ def main():
                     # The print readout must use physical points, not CSS px or nominal DPI.
                     expected_points = 9 * mm * 72 / (25.4 * dimensions[0])
                     expect(dialog).to_contain_text(
-                        f"Smallest vector text: {expected_points:.1f} pt at this width."
+                        f"Smallest export text: {expected_points:.1f} pt at this width."
                     )
                     assert root.attrib["width"] == str(mm) + "mm"
                     assert (

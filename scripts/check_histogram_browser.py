@@ -33,7 +33,7 @@ def main():
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)
         page.wait_for_timeout(1500)
-        nan = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+        nan = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
         if nan.is_visible():
             nan.click()
         page.get_by_role("link", name="View", exact=True).click()

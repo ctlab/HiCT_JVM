@@ -163,7 +163,7 @@ def main():
             before = page.evaluate(
                 "async () => (await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
             )
-            check.menu("File", "Open…")
+            check.menu("File", "Open map…")
             page.get_by_role("dialog").last.get_by_role(
                 "button", name="Dismiss", exact=True
             ).click()

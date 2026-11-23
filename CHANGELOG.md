@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep everyday dialog controls visible and move detailed options under Advanced. Open maps with optional sequence and layout in three steps, and read the user guide inside HiCT.
+- Group region commands into Edit, Copy, Export and Analyse. Print figures at a chosen width with an adjustable minimum label size.
 - Undo and redo from the toolbar, confirm scaffold removal, and link the matching FASTA directly from export guidance.
 - Show readable errors with diagnostic details, check for an open map before joining a running session, and show the tool log when dotplot generation fails.
 

@@ -71,7 +71,7 @@ def main():
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.evaluate("() => { window.__hictBenchmark.manager().getMap().on('rendercomplete', () => {}); }")
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             link_fasta(page, "quad_combined_ind2.fasta")
@@ -102,7 +102,7 @@ def main():
                     s.leftBP=[1000000+i*40000,1000000+i*40000];s.rightBP=[1040000+i*40000,1040000+i*40000];}""", iteration)
                 page.get_by_role("link", name="Tools", exact=True).click()
                 page.get_by_role("button", name="Generate ModDotPlot…", exact=True).click()
-                dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+                dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
                 page.get_by_label("Analysis scope").select_option("selection")
                 # This check isolates the primary triangle; selection analyses
                 # otherwise default to an intentional overlay on both halves.
@@ -114,7 +114,7 @@ def main():
                     dialog.get_by_text("Advanced", exact=True).click()
                 page.get_by_label("Worker threads").fill("4")
                 start = time.monotonic()
-                dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+                dialog.get_by_role("button", name="Generate", exact=True).click()
                 dialog.wait_for(state="hidden", timeout=180000)
                 set_view(5000, 16)
                 current = snapshot(f"generated-{iteration + 1}")

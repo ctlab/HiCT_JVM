@@ -62,7 +62,7 @@ def main():
                 url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check = BrowserCheck(page,output)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File','Attach'); check.settle()
+            check.menu('File','Join running session'); check.settle()
             for offset in (5,1):
                 page.evaluate('''async offset => {
                     const m=window.__hictBenchmark.manager();
@@ -73,7 +73,7 @@ def main():
                 check.settle()
             app.http('/reverse_selection_range',{'startBP':0,'endBP':17})
             app.http('/group_contigs_into_scaffold',{'startBP':0,'endBP':17})
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             mode = page.locator('select').filter(has=page.locator('option[value="EXPECTED"]'))
             mode.select_option('EXPECTED'); check.settle()
             assert 'repeated bin pairs share' in mode.get_attribute('title')
@@ -138,7 +138,8 @@ def main():
                 const rect=m.getMap().getViewport().getBoundingClientRect();return [rect.left+p[0],rect.top+p[1]];
             }''')
             page.mouse.click(*point,button='right')
-            page.get_by_role('menuitem',name='Signal histogram...',exact=True).click()
+            page.get_by_role("menuitem", name="Analyse", exact=True).click()
+            page.get_by_role('menuitem',name='Signal histogram…',exact=True).click()
             dialog = page.get_by_role('dialog',name='Signal histogram',exact=True)
             dialog.get_by_text('counts displayed samples.',exact=False).wait_for()
             sequence_scale=page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale')

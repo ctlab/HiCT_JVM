@@ -66,7 +66,7 @@ def main():
             )
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
-            check.menu("File", "Attach")
+            check.menu("File", "Join running session")
             page.wait_for_function(
                 "window.__hictBenchmark.manager()?.contigDimensionHolder.contig_count===4"
             )

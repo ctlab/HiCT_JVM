@@ -58,7 +58,7 @@ def main():
         assert guide_href == "./docs/user-guide.md"
         guide_text = context.request.get(args.url.rstrip("/") + "/docs/user-guide.md").text()
         assert "## Keyboard and pointer actions" in guide_text
-        page.get_by_role("link", name="About", exact=True).click()
+        page.get_by_role("link", name="About HiCT…", exact=True).click()
         dialog = page.get_by_role("dialog", name="About HiCT")
         dialog.get_by_role("heading", name="How to cite", exact=True).wait_for()
         page.wait_for_function("""() => {

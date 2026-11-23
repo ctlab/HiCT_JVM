@@ -203,7 +203,7 @@ def main():
                 assert response.value.status == 202, response.value.text()
                 job_id = response.value.json()["jobId"]
                 search.get_by_role("button", name="Close", exact=True).last.click()
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 page.wait_for_function("!window.__hictBenchmark.manager()")
                 deadline = time.monotonic() + 90
                 while time.monotonic() < deadline:

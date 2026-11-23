@@ -142,7 +142,10 @@ class BrowserCheck:
         )
 
     def menu(self, menu, action):
-        self.page.get_by_role("link", name=menu, exact=True).click()
+        trigger = self.page.get_by_role("link", name=menu, exact=True)
+        if not trigger.count():
+            trigger = self.page.get_by_role("button", name=menu, exact=True)
+        trigger.click()
         target = self.page.get_by_role("link", name=action, exact=True)
         for role in ("button", "menuitemradio", "menuitemcheckbox"):
             if target.count():

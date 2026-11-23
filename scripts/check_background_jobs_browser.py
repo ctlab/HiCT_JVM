@@ -91,7 +91,7 @@ with sync_playwright() as pw:
             "".join((data / "mixed.fa").read_text().splitlines()[1:])[:80]
         )
         dialog.get_by_label("Search scope", exact=True).select_option("assembly")
-        dialog.get_by_role("button", name="Find sequences", exact=True).click()
+        dialog.get_by_role("button", name="Search", exact=True).click()
         dialog.get_by_role("button", name="Close", exact=True).first.click()
         dialog.wait_for(state="hidden")
         search = await_kind("search")
@@ -139,7 +139,7 @@ with sync_playwright() as pw:
             checkbox.uncheck()
         dialog.locator('.resolution-options input[value="10"]').check()
         dialog.locator("#dotplot-display").select_option("none")
-        dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+        dialog.get_by_role("button", name="Generate", exact=True).click()
         dialog.get_by_role("button", name="Close", exact=True).first.click()
         identity = await_kind("moddotplot")
         dialog = panel()
@@ -278,7 +278,7 @@ with sync_playwright() as pw:
         )
         page.get_by_role("link", name="Assembly", exact=True).click()
         with page.expect_download() as agp_download:
-            page.get_by_role("link", name="Export to AGP", exact=True).click()
+            page.get_by_role("link", name="Export AGP…", exact=True).click()
         agp_file = out / "fasta-only-export.agp"
         agp_download.value.save_as(agp_file)
         agp_rows = [

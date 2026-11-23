@@ -36,7 +36,7 @@ def main():
         page.evaluate("([name,api])=>window.__hictBenchmark.open(name,api,'tiny.fa')", [source,args.api])
         check = BrowserCheck(page, output)
         check.settle()
-        check.menu("File", "Export matrix")
+        check.menu("File", "Export matrix…")
         dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Export matrix to Cooler"))
         inputs = dialog.locator("input[type=number]")
         submit = dialog.get_by_role("button", name="Export Cooler", exact=True)

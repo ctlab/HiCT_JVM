@@ -69,8 +69,8 @@ class OverlayFixture { public static void main(String[] a) {
             assert settings['mapOpen'] and not settings['fastaLinked'], settings
             assert all(settings['tools'][name]['available'] for name in ('seqkit','blastn','dotplot','moddotplot','hict-moddotplot')), settings
             for action, title, button in (
-                ('Generate ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
-                ('Generate dotplot from active assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
+                ('ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
+                ('Dotplot from current assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
                 ('Find sequences in linked FASTA…', 'Find sequences in the linked FASTA', 'Find sequences')):
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name=action, exact=True).click()
@@ -98,9 +98,9 @@ class OverlayFixture { public static void main(String[] a) {
             try:
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
-                dialog=page.get_by_role('dialog',name='Find sequences in the linked FASTA',exact=True)
+                dialog=page.get_by_role('dialog',name='Find sequences',exact=True)
                 dialog.get_by_text('This installation is missing seqkit.',exact=False).wait_for()
-                assert dialog.get_by_role('button',name='Find sequences',exact=True).is_disabled()
+                assert dialog.get_by_role('button',name='Search',exact=True).is_disabled()
                 assert dialog.locator('#search-mode option:disabled').count()==3
                 dialog.get_by_role('button',name='Close',exact=True).last.click()
             finally: page.unroute('**/sequence/settings', unavailable)
@@ -120,12 +120,12 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_label('BED output path').fill('published/search-results.bed')
             page.get_by_label('Default gap length (Ns)', exact=True).fill('0')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
-                page.get_by_role('button', name='Find sequences', exact=True).click()
+                page.get_by_role('button', name='Search', exact=True).click()
             assert response.value.status == 202, response.value.text()
             request = response.value.request.post_data_json
             assert request['forwardColor'] == '#12ab34' and request['reverseColor'] == '#3456ef', request
             assert request['outputFilename'] == 'published/search-results.bed', request
-            page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='Find sequences', exact=True).wait_for(state='hidden')
             check.settle()
             jobs = json.loads(app.http('/sequence/jobs/list', {}))
             assert len(jobs) == 1 and jobs[0]['status'] == 'finished', jobs
@@ -158,11 +158,11 @@ class OverlayFixture { public static void main(String[] a) {
             for iteration in range(2):
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
-                dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
+                dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 check.advanced()
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
                 [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-                assert dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).is_disabled()
+                assert dialog.get_by_role('button', name='Generate', exact=True).is_disabled()
                 dialog.locator('.resolution-options input[value="100"]').check()
                 assert page.get_by_label('Worker threads').input_value() in ('-1', '2')
                 page.get_by_label('Worker threads').fill('2')
@@ -172,7 +172,7 @@ class OverlayFixture { public static void main(String[] a) {
                 delta.fill('0.25')
                 assert delta.evaluate('element=>element.validity.stepMismatch')
                 before_invalid = json.loads(app.http('/sequence/jobs/list', {}))
-                dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                dialog.get_by_role('button', name='Generate', exact=True).click()
                 assert json.loads(app.http('/sequence/jobs/list', {})) == before_invalid
                 delta.fill('0.2')
                 assert delta.evaluate('element=>element.checkValidity()')
@@ -191,7 +191,7 @@ class OverlayFixture { public static void main(String[] a) {
                 if iteration:
                     page.route('**/secondary/open', review_once)
                 with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
-                    dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                    dialog.get_by_role('button', name='Generate', exact=True).click()
                 assert response.value.status == 202, response.value.text()
                 if iteration:
                     dialog.get_by_text('Review overlay compatibility', exact=True).wait_for()
@@ -436,13 +436,13 @@ class OverlayFixture { public static void main(String[] a) {
                 page.mouse.click(**point, button='right')
                 context = page.get_by_role('menu', name='Assembly actions')
                 context.wait_for()
-                assert 'Selection: active rectangle' in context.inner_text()
+                assert 'Region' in context.inner_text()
                 return context
             for format in ('PNG', 'SVG', 'PDF'):
                 context = menu()
                 with page.expect_download(timeout=90000) as download:
-                    context.get_by_role('menuitem', name='Export selection as', exact=True).click()
-                    context.get_by_role('menuitem', name=format, exact=True).click()
+                    context.get_by_role('menuitem', name='Export', exact=True).click()
+                    context.get_by_role('menuitem', name=f'Image as {format}…', exact=True).click()
                 path = out / ('selection.' + format.lower())
                 download.value.save_as(path)
                 assert path.stat().st_size > 200, str(path)
@@ -466,11 +466,11 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_label('Display completed result').select_option('none')
             previous_pipeline = json.loads(app.http('/render_pipeline/get', {}))
             with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
-                page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                page.get_by_role('dialog', name='ModDotPlot', exact=True).get_by_role('button', name='Generate', exact=True).click()
             assert response.value.status == 202, response.value.text()
             request = response.value.request.post_data_json
             assert request['scope'] == 'selection' and request['region']['rowEnd'] < 4000, request
-            page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='ModDotPlot', exact=True).wait_for(state='hidden')
             check.settle()
             assert json.loads(app.http('/render_pipeline/get', {})) == previous_pipeline, 'Do not link now must retain the current display'
         def alignment_dotplot():
@@ -479,10 +479,10 @@ class OverlayFixture { public static void main(String[] a) {
             box=page.locator('#hic-contact-map').bounding_box()
             page.mouse.click(x=box['x']+min(box['width']*.17,150)+40,y=box['y']+min(box['height']*.17,150)+40,button='right')
             page.get_by_role('menu',name='Assembly actions').get_by_role('menuitem',name='Generate dotplot for selection…',exact=True).click()
-            dialog=page.get_by_role('dialog',name='Generate dotplot from active assembly',exact=True)
+            dialog=page.get_by_role('dialog',name='Dotplot from current assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
             [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-            assert dialog.get_by_role('button', name='Generate dotplot from active assembly', exact=True).is_disabled()
+            assert dialog.get_by_role('button', name='Generate', exact=True).is_disabled()
             dialog.locator('.resolution-options input[value="100"]').check()
             check.advanced()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20'),('Sample every (bp)','50'),('Alignment threads','2')]:
@@ -490,7 +490,7 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_label('Save a reusable copy under DATA_DIR').check()
             page.get_by_label('Output path').fill('published/selection-dotplot.hict.hdf5')
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
-                dialog.get_by_role('button',name='Generate dotplot from active assembly',exact=True).click()
+                dialog.get_by_role('button',name='Generate',exact=True).click()
             assert response.value.status==202,response.value.text()
             dialog.wait_for(state='hidden');check.settle()
             jobs=[j for j in json.loads(app.http('/sequence/jobs/list',{})) if j['kind']=='dotplot']
@@ -558,9 +558,9 @@ class OverlayFixture { public static void main(String[] a) {
             check.advanced()
             page.get_by_label('Default gap length (Ns)', exact=True).fill('1000')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
-                page.get_by_role('button', name='Find sequences', exact=True).click()
+                page.get_by_role('button', name='Search', exact=True).click()
             assert response.value.status == 202, response.value.text()
-            page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='Find sequences', exact=True).wait_for(state='hidden')
             check.settle()
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind'] == 'search'], key=lambda j:j['createdAtMs'])[-1:]
             assert len(jobs) == 1 and jobs[0]['status'] == 'finished' and jobs[0]['hits'] >= 1, jobs
@@ -639,7 +639,7 @@ class OverlayFixture { public static void main(String[] a) {
                             expected.add((start, start + len(query), strand))
                 check.menu("Tools", "Find sequences in linked FASTA…")
                 dialog = page.get_by_role(
-                    "dialog", name="Find sequences in the linked FASTA", exact=True
+                    "dialog", name="Find sequences", exact=True
                 )
                 page.wait_for_function(
                     "!document.querySelector('#search-mode option[value=exact]').disabled"
@@ -665,7 +665,7 @@ class OverlayFixture { public static void main(String[] a) {
                 with page.expect_response(
                     lambda response: response.url.endswith("/sequence/search/jobs")
                 ) as submitted:
-                    dialog.get_by_role("button", name="Find sequences", exact=True).click()
+                    dialog.get_by_role("button", name="Search", exact=True).click()
                 assert submitted.value.status == 202, submitted.value.text()
                 settings = submitted.value.request.post_data_json
                 assert (
@@ -721,7 +721,7 @@ class OverlayFixture { public static void main(String[] a) {
         def reattach_to_original_order():
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind']=='dotplot'], key=lambda j:j['createdAtMs'])
             filename=jobs[-1]['outputFile']
-            check.menu('File','Close')
+            check.menu('File','Close map')
             page.get_by_role('alertdialog', name='Unsaved assembly edits').get_by_role('button', name='Discard edits', exact=True).click()
             page.get_by_role('heading', name='No contact map open', exact=True).wait_for()
             load_file('File','Open…','known.hict.hdf5','/open')
@@ -753,7 +753,7 @@ class OverlayFixture { public static void main(String[] a) {
                     page.goto('about:blank')
                     app.http('/reverse_selection_range', {'startBP': 0, 'endBP': 3900})
                 page.goto(f'http://127.0.0.1:{static.server_port}/')
-                check.menu('File', 'Attach')
+                check.menu('File', 'Join running session')
                 check.settle()
                 result = page.evaluate("""() => {
                     const h=window.__hictBenchmark.manager().contigDimensionHolder;

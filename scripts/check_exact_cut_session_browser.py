@@ -55,10 +55,10 @@ def main():
                     'bpResolution': resolution, 'rows': count, 'cols': count,
                     'signalMode': 'RAW_COUNTS', 'format': 'JSON'}))
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File', 'Attach')
+            check.menu('File', 'Join running session')
             check.settle()
             with page.expect_download() as download:
-                check.menu('File', 'Save session')
+                check.menu('File', 'Save session…')
             baseline = output / 'baseline.json'
             download.value.save_as(baseline)
             envelope = json.loads(baseline.read_text())
@@ -69,7 +69,7 @@ def main():
 
             def restore(path):
                 with page.expect_file_chooser() as chooser:
-                    check.menu('File', 'Open session')
+                    check.menu('File', 'Open session…')
                 chooser.value.set_files(path)
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
                 check.settle()
@@ -104,14 +104,14 @@ def main():
             assert not state['failures'], state
             assert state['lengths'] == [12, 2, 3], state
             with page.expect_download() as download:
-                check.menu('File', 'Save session')
+                check.menu('File', 'Save session…')
             saved = output / 'resaved.json'
             download.value.save_as(saved)
             resaved = json.loads(saved.read_text())
             assert resaved['version'] == 4
             assert resaved['snapshot']['primary']['assemblyInfo'] == envelope['snapshot']['primary']['assemblyInfo']
             assert all(edit['exact'] for edit in resaved['snapshot']['primary']['splitEdits'])
-            check.menu('File', 'Close')
+            check.menu('File', 'Close map')
             restore(saved)
             assert json.loads(app.http('/sequence/region', {'startBp': 0, 'endBp': 17}))['sequence'] == expected
             assert not check.errors, check.errors
@@ -187,10 +187,10 @@ def main():
             assert lengths() == [5,7,2,3], lengths()
             assert json.loads(app.http('/sequence/region', {'startBp':0,'endBp':17}))['sequence'] == expected
             with page.expect_download() as download:
-                check.menu('File','Save session')
+                check.menu('File','Save session…')
             api_saved = output / 'api-cut-session.json'
             download.value.save_as(api_saved)
-            check.menu('File','Close')
+            check.menu('File','Close map')
             restore(api_saved)
             assert lengths() == [5,7,2,3], lengths()
             assert not check.errors, check.errors

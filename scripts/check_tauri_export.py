@@ -50,7 +50,7 @@ async function openMap(){
  await until(()=>window.__hictBenchmark);
  await window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',window.__HICT_ACCEPTANCE__.api);
  await sleep(1200);
- const nan=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Do not use Cooler weights');
+ const nan=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Show raw contacts (no balancing)');
  if(nan)nan.click();
  const m=window.__hictBenchmark.manager();
  const status=await m.networkManager.requestManager.openSecondarySource('ind2.self.hict.hdf5',true);

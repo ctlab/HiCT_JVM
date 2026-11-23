@@ -45,7 +45,7 @@ def main():
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             page.route('http://localhost:5000/**',lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000')))
             check=BrowserCheck(page,out);api_results=[]
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             def alignment(rs,re,cs,ce):
                 response=json.loads(app.http('/sequence/alignment_detail',{'rowStart':rs,'rowEnd':re,'columnStart':cs,'columnEnd':ce}))
                 deadline=time.monotonic()+30
@@ -137,9 +137,9 @@ def main():
                 assert any(f['segment']['operation']=='SUBSTITUTION' for f in rendered()['features'])
             check.step('vector-png-svg-pdf-exports-and-restoration',exports)
             def toggle():
-                check.menu('View','Automatically align visible FASTA');check.settle()
+                check.menu('View','Align visible FASTA automatically');check.settle()
                 assert not rendered()['visible'] and not rendered()['features']
-                check.menu('View','Automatically align visible FASTA');check.settle()
+                check.menu('View','Align visible FASTA automatically');check.settle()
                 page.wait_for_function('''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().length>0''')
             check.step('disable-and-resume-automatic-alignment',toggle)
             def no_hit():
@@ -165,10 +165,10 @@ def main():
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10&&a.source.getFeatures().every(f=>f.get('alignmentSegment').rowStart>=3888&&f.get('alignmentSegment').rowEnd<=3900);}''')
             check.step('undo-redo-refreshes-alignment-geometry',undo_redo)
             def session():
-                with page.expect_download() as download:check.menu('File','Save session')
+                with page.expect_download() as download:check.menu('File','Save session…')
                 path=out/'alignment-session.json';download.value.save_as(path)
-                check.menu('File','Close')
-                with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+                check.menu('File','Close map')
+                with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
                 chooser.value.set_files(path)
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10;}''')

@@ -81,7 +81,7 @@ def main():
             )
 
         def converter():
-            check.menu("File", "Convert matrices")
+            check.menu("File", "Convert matrices…")
             dialog = page.locator(".converter-dialog")
             dialog.get_by_role(
                 "checkbox", name="Select batch-new.mcool", exact=True

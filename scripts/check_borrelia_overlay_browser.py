@@ -97,7 +97,7 @@ def main():
             )
             check.settle()
             nan = page.get_by_role(
-                "button", name="Do not use Cooler weights", exact=True
+                "button", name="Show raw contacts (no balancing)", exact=True
             )
             if nan.is_visible():
                 nan.click()
@@ -109,13 +109,13 @@ def main():
                 v.currentViewState.selectionBorders.leftBP=[880000,880000];
                 v.currentViewState.selectionBorders.rightBP=[1080000,1080000];
             }""")
-            check.menu("Tools", "Generate ModDotPlot…")
-            dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
             dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
             if not dialog.get_by_label("Worker threads", exact=True).is_visible():
                 dialog.get_by_text("Advanced", exact=True).click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
-            dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+            dialog.get_by_role("button", name="Generate", exact=True).click()
             dialog.locator("footer").get_by_role(
                 "button", name="Close", exact=True
             ).click()

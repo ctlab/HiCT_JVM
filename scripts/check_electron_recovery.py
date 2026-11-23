@@ -105,7 +105,7 @@ def main():
                 threading.Thread(target=web.serve_forever,daemon=True).start()
                 before=state['rootRequests'];retry();assert state['rootRequests']==before+1
                 rows.append('HTTP 503 returns to bundled UI without a navigation loop')
-                check=BrowserCheck(page,out);check.menu('File','Attach');check.settle()
+                check=BrowserCheck(page,out);check.menu('File','Join running session');check.settle()
                 assert page.evaluate('Boolean(window.__hictBenchmark.manager())')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,4000)')
                 page.get_by_role('button',name='Reverse Selection',exact=True).click();check.settle()

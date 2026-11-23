@@ -33,7 +33,7 @@ def main():
         def open_file(filename):
             page.evaluate("args=>window.__hictBenchmark.open(args.filename,args.api)", {"filename": filename, "api": args.api})
             page.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.PRIMARY")
-            prompt = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            prompt = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if prompt.is_visible():
                 prompt.click()
             details = page.locator("#signal-advanced")
@@ -111,7 +111,7 @@ def main():
             attached.on("pageerror", lambda error: errors.append(str(error)))
             attached.goto(args.url)
             attached.get_by_role("link", name="File", exact=True).click()
-            attached.get_by_role("link", name="Attach", exact=True).click()
+            attached.get_by_role("link", name="Join running session", exact=True).click()
             attached.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.PRIMARY?.units==='CONTACT_COUNT'")
             attached.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.SECONDARY?.units==='IDENTITY_PERCENT'")
             attached.close()
@@ -122,7 +122,7 @@ def main():
             assert_weights_disabled(True)
             results.append({"test": "identity remains non-contact when opened as primary"})
             open_file(args.legacy_file)
-            modal = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            modal = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if modal.is_visible():
                 modal.click()
             assert_disabled("#scaling-across-zoom", False)

@@ -238,7 +238,7 @@ def main():
                     check(f'{tag}: file weights are off in both options and pipeline',
                           state['options']['applyCoolerWeights'] is False and not uses_weights(state['pipeline']))
                     check(f'{tag}: no blocking prompt',
-                          page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
+                          page.get_by_role('button', name='Show raw contacts (no balancing)').count() == 0)
                     page.get_by_role('button', name='Open notifications', exact=True).click()
                     notice = page.get_by_role('dialog').get_by_text(
                         'This file has no usable Cooler weights. HiCT opened the map without file weights.',
@@ -251,7 +251,7 @@ def main():
                 for way, opener in (('manual', open_manual), ('wizard', open_wizard), ('attach', open_attach)):
                     fresh()
                     opener(fixture)
-                    check(f'{stem} {way}: the weights dialog is not shown', page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
+                    check(f'{stem} {way}: the weights dialog is not shown', page.get_by_role('button', name='Show raw contacts (no balancing)').count() == 0)
                     measure(f'{stem}-{way}')
                 # zoomed in on the diagonal the map must stay readable (the range is not tied to the first view)
                 fresh()
@@ -277,7 +277,7 @@ def main():
                 if note.count():
                     check(f'{stem}: a one-line note offers Change', note.first.is_visible())
                     note.first.click()
-                    page.get_by_role('button', name='Do not use Cooler weights').click()
+                    page.get_by_role('button', name='Show raw contacts (no balancing)').click()
                     measure(f'{stem}-excluded-off')
                     page.locator('#signal-advanced > summary').click()
                     page.get_by_text('Cooler weights', exact=True).first.click()

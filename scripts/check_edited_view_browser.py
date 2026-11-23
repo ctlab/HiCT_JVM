@@ -68,7 +68,7 @@ def main():
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             descriptor = page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0]")
@@ -91,13 +91,10 @@ def main():
                 return [v.getCenter(),v.getResolution(),v.getRotation()];}"""
             page.wait_for_timeout(400)
             before = page.evaluate(view_state)
-            viewport = page.locator(".ol-viewport").first.bounding_box()
-            page.keyboard.down("Shift")
-            try:
-                page.mouse.click(viewport["x"] + viewport["width"] / 2,
-                                 viewport["y"] + viewport["height"] / 2)
-            finally:
-                page.keyboard.up("Shift")
+            page.evaluate("""length => {
+                const layers = window.__hictBenchmark.manager().viewAndLayersManager;
+                layers.selectEntityRangeByBp(0, length, 'contig');
+            }""", len(sequence))
             page.wait_for_function(
                 "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectedContigIds.length > 0"
             )
@@ -157,7 +154,8 @@ def main():
             box = page.locator("#hic-contact-map").bounding_box()
             page.mouse.click(box["x"] + point[0], box["y"] + point[1], button="right")
             queries.clear()
-            page.get_by_role("menuitem", name="Signal histogram...", exact=True).click()
+            page.get_by_role("menuitem", name="Analyse", exact=True).click()
+            page.get_by_role("menuitem", name="Signal histogram…", exact=True).click()
             dialog = page.locator(".histogram-dialog")
             for source, mode, triangle in (("PRIMARY", "RAW_COUNTS", "both"),
                                            ("PRIMARY", "RAW_COUNTS", "upper"),

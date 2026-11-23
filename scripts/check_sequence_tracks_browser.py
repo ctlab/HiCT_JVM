@@ -38,7 +38,7 @@ def main():
             page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check=BrowserCheck(page,out);requests=[]
             page.on('request',lambda r:requests.append(r.post_data_json) if r.url.endswith('/tracks/query_1d') else None)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''async()=>{const t=window.__hictBenchmark.manager().linearTrackManager;
                 await t.openTrack('genes.gtf','Genes');await t.openTrack('signal.bed','Signal');await t.openCoolerWeightsTrack('Weights');}''');check.settle()
             def focus(bp):
@@ -108,10 +108,10 @@ def main():
             assert [value(reversed_query['tracks'][1],p) for p in range(3998,4003)]==[4,4,9,9,7],reversed_query
             assert [value(reversed_query['tracks'][2],p) for p in range(3998,4003)]==[100,100,20,20,None],reversed_query
             assert any(b['label']=='binless' and b['startBp']==4002 and b['strand']=='-' for b in reversed_query['tracks'][0]['bins'])
-            with page.expect_download() as saved:check.menu('File','Save session')
+            with page.expect_download() as saved:check.menu('File','Save session…')
             session=out/'sequence-tracks-session.json';saved.value.save_as(session)
-            check.menu('File','Close')
-            with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+            check.menu('File','Close map')
+            with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
             chooser.value.set_files(session)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
             assert query(3998,4003)['tracks']==reversed_query['tracks']

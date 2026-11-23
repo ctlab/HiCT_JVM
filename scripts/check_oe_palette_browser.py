@@ -279,7 +279,7 @@ def main():
 
                     def reload():
                         page.reload()
-                        check.menu("File", "Attach")
+                        check.menu("File", "Join running session")
                         check.settle()
                         assert assert_palette() == pixels
                         mode("OBSERVED")
@@ -292,7 +292,7 @@ def main():
 
                     def session():
                         with page.expect_download() as event:
-                            check.menu("File", "Save session")
+                            check.menu("File", "Save session…")
                         saved = out / "oe-session.json"
                         event.value.save_as(saved)
                         document = json.loads(saved.read_text())
@@ -302,12 +302,12 @@ def main():
                             ]
                             == "OBSERVED_OVER_EXPECTED"
                         )
-                        check.menu("File", "Close")
+                        check.menu("File", "Close map")
                         page.get_by_role(
                             "heading", name="No contact map open"
                         ).wait_for()
                         with page.expect_file_chooser() as chooser:
-                            check.menu("File", "Open session")
+                            check.menu("File", "Open session…")
                         chooser.value.set_files(saved)
                         page.get_by_text(
                             "Session restored. Undo history starts from the restored assembly.",

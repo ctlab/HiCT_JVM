@@ -51,7 +51,7 @@ def main():
             assert edited.ok, edited.text()
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             page.evaluate('() => {window.__retainedManager=window.__hictBenchmark.manager();}')
 
@@ -72,7 +72,7 @@ def main():
             assert before['history']['summary']['position'] > 0, before['history']
             for attempt in range(2):
                 page.get_by_role('link', name='File', exact=True).click()
-                page.get_by_role('link', name='Open…', exact=True).click()
+                page.get_by_role('link', name='Open map…', exact=True).click()
                 dialog = page.locator('.modal.show').filter(has_text='Open Hi-C dataset')
                 dialog.locator('span[title]').filter(has_text='broken.hict.hdf5').click()
                 with page.expect_response(lambda response: response.url.endswith('/open')) as failed:
@@ -88,7 +88,7 @@ def main():
             # also verifies that another client can recover the same live session.
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
             page.wait_for_function('window.__hictBenchmark.manager()')
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             after_attach = snapshot()
