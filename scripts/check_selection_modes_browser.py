@@ -205,7 +205,11 @@ def main():
                     'Assembly coordinates (bp, 1-based inclusive)\n'
                     'Rows\t101\t900\nColumns\t201\t1200'
                 )
-                choose('Copy contig coordinates')
+                page.mouse.click(*point(500, 500), button='right')
+                menu = page.get_by_role('menu', name='Assembly actions')
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Coordinates in contig').click()
                 page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Contig coordinates')")
                 assert page.evaluate('navigator.clipboard.readText()') == (
                     f'Contig coordinates (bp, 1-based inclusive)\nRows\tctg:{names[0]}:101\tctg:{names[0]}:900\n'
@@ -213,7 +217,9 @@ def main():
                 )
                 page.mouse.click(*point(500, 500), button='right')
                 menu = page.get_by_role('menu', name='Assembly actions')
-                menu.get_by_role('menuitem', name='Copy scaffold coordinates').click()
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Coordinates in scaffold').click()
                 page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Scaffold coordinates')")
                 scaffold_name = scaffold['scaffoldName']
                 assert page.evaluate('navigator.clipboard.readText()') == (
@@ -224,7 +230,8 @@ def main():
                 page.mouse.click(*point(500, 500), button='right')
                 menu = page.get_by_role('menu', name='Assembly actions')
                 menu.get_by_role('menuitem', name='Copy', exact=True).click()
-                menu.get_by_role('menuitem', name='Region as image', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Region as image', exact=True).click()
                 page.get_by_text('Selection copied as PNG', exact=True).wait_for()
                 png = page.evaluate('''async () => {
                     const [item] = await navigator.clipboard.read();

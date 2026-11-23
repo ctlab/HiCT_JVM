@@ -189,7 +189,7 @@ def main():
                                 "Export area", exact=True
                             ).select_option(scope)
                             dialog.get_by_role(
-                                "button", name="Refresh capture", exact=True
+                                "button", name="Update preview", exact=True
                             ).click()
                             expect(dialog.locator("#export-svg-button")).to_be_enabled(
                                 timeout=90000
@@ -280,7 +280,7 @@ def main():
                                 "Export area", exact=True
                             ).select_option(scope)
                             dialog.get_by_role(
-                                "button", name="Refresh capture", exact=True
+                                "button", name="Update preview", exact=True
                             ).click()
                             expect(dialog.locator("#export-svg-button")).to_be_enabled(
                                 timeout=90000

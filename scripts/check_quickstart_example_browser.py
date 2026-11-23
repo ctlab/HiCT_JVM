@@ -299,12 +299,12 @@ with sync_playwright() as pw:
                 "Exact Split preserves the assembly length and Undo restores the reversed layout"
             )
             with page.expect_download() as session_download:
-                file_action("Save session")
+                file_action("Save session…")
             session_path = out / "first-run-session.json"
             session_download.value.save_as(session_path)
             saved = json.loads(session_path.read_text())["snapshot"]["primary"]
             assert saved["agpSha256"] == expected["agpSha256"]
-            file_action("Close")
+            file_action("Close map")
             page.get_by_role(
                 "heading", name="No contact map open", exact=True
             ).wait_for()

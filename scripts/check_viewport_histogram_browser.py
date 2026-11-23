@@ -213,7 +213,7 @@ def main():
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
                 assert (
-                    "25 finite" in label
+                    "25 values" in label
                     and "19 zeros" in label
                     and "0 missing" in label
                 ), label
@@ -300,7 +300,7 @@ def main():
                     "()=>window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()"
                 )
                 check.settle()
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option("OBSERVED_OVER_EXPECTED")
                 expect(control).to_be_enabled()
                 check.settle()
@@ -380,7 +380,7 @@ def main():
                 check.settle()
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
-                assert "25 finite" in label and "19 zeros" in label, label
+                assert "25 values" in label and "19 zeros" in label, label
                 before_primary = tile()
                 before_graph = post("/render_pipeline/get")
                 with page.expect_response(

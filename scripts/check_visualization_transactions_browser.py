@@ -564,7 +564,7 @@ def main():
                 # A mode change follows the pending Observed edit and retains its palette on return.
                 secondary_before = post("/render_pipeline/get")["lowerExpression"]
                 set_upper(55, False)
-                mode = page.locator('select[title^="Expected and O/E"]')
+                mode = page.locator('select[aria-label="Signal display"]')
                 mode.select_option("OBSERVED_OVER_EXPECTED")
                 expect(mode).to_be_enabled()
                 wait()

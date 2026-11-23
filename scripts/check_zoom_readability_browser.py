@@ -141,7 +141,7 @@ def main(default_normalizations=("file", "sqrt")):
                     context.request.post(args.api + "/close", data={})
                     page.goto(args.url)
                     page.wait_for_function("window.__hictBenchmark")
-                    page.get_by_text("Open map…", exact=False).first.click()
+                    page.get_by_role("button", name="Open map…", exact=True).click()
                     d = page.get_by_role("dialog")
                     d.get_by_text(fixture, exact=False).first.click()
                     d.get_by_role("button", name="Load", exact=True).click()

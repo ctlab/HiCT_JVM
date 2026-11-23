@@ -76,7 +76,7 @@ def main():
             page.reload(); check.menu('File','Join running session'); check.settle()
             mode = page.locator('select').filter(has=page.locator('option[value="EXPECTED"]'))
             mode.select_option('EXPECTED'); check.settle()
-            assert 'repeated bin pairs share' in mode.get_attribute('title')
+            assert 'average contact level at each distance' in mode.get_attribute('title')
             options = json.loads(app.http('/get_visualization_options',{}))
             options.update(preLogBase=-1,postLogBase=-1,applyCoolerWeights=False,
                            resolutionScaling=False,resolutionLinearScaling=False)

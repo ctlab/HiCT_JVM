@@ -75,7 +75,7 @@ def main():
             page.wait_for_timeout(3500)
 
         def open_manual(fixture):
-            file_menu('Open…')
+            file_menu('Open map…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
             pick(dialog, fixture)
@@ -85,8 +85,6 @@ def main():
             file_menu('Open with options…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
-            dialog.get_by_role('button', name='Single map').click()
-            dialog.get_by_role('button', name='Next', exact=True).click()
             dialog.get_by_role('button', name='Browse…').first.click()
             picker = page.get_by_role('dialog').last
             pick(picker, fixture)
@@ -95,7 +93,7 @@ def main():
                   dialog.get_by_text('Track precomputing', exact=True).count() == 0)
             page.wait_for_timeout(800)
             for _ in range(14):
-                finish = dialog.get_by_role('button', name='Finish', exact=True)
+                finish = dialog.get_by_role('button', name='Open map', exact=True)
                 if finish.count() and finish.is_enabled():
                     finish.click()
                     break
@@ -110,7 +108,7 @@ def main():
             post('/open', {'filename': fixture})
             page.reload()
             page.wait_for_function('window.__hictBenchmark')
-            file_menu('Attach')
+            file_menu('Join running session')
             wait_for_map()
 
         def server_state():

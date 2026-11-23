@@ -189,16 +189,27 @@ if [[ -n "${GFF_ABS}" && -f "${GFF_ABS}" ]]; then
     | select(.type=="GFF_GTF")
     | (.bins | length) > 0
   ' >/dev/null
-  echo "${GFF_QUERY_JSON}" | jq -e '
+  # An overview can show density for busy tracks. Zoom to occupied buckets
+  # before checking the individual features' strand and block metadata.
+  STRUCTURED_FOUND=false
+  while IFS= read -r start_px; do
+    GFF_DETAIL_JSON="$(curl -fsS -X POST "http://localhost:${PORT}/tracks/query_1d" \
+      -H 'content-type: application/json' \
+      -d "$(jq -cn --argjson start "${start_px}" \
+        '{unit:"PIXELS",startPx:$start,endPx:($start+10),widthPx:1536,bpResolution:50000}')")"
+    if jq -e '
     .tracks[]
     | select(.type=="GFF_GTF")
-    | (.bins | any((.blocks // []) | length > 0))
-  ' >/dev/null
-  echo "${GFF_QUERY_JSON}" | jq -e '
-    .tracks[]
-    | select(.type=="GFF_GTF")
-    | (.bins | any(.strand == "+" or .strand == "-"))
-  ' >/dev/null
+    | (.bins | any((.blocks // [] | length > 0) and (.strand == "+" or .strand == "-")))
+    ' <<<"${GFF_DETAIL_JSON}" >/dev/null; then
+      STRUCTURED_FOUND=true
+      break
+    fi
+  done < <(jq -r '[.tracks[] | select(.type=="GFF_GTF") | .bins[] | select(.count > 0).startPx] | unique | .[:20][]' <<<"${GFF_QUERY_JSON}")
+  if [[ "${STRUCTURED_FOUND}" != true ]]; then
+    echo "[optional] ERROR: No stranded GFF features with blocks in the checked detail windows"
+    exit 1
+  fi
 fi
 
 echo "[optional] OK"

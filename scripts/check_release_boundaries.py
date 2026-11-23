@@ -38,8 +38,10 @@ def main():
         check.settle()
         check.menu("File", "Export matrix…")
         dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Export matrix to Cooler"))
+        dialog.wait_for()
+        check.advanced()
         inputs = dialog.locator("input[type=number]")
-        submit = dialog.get_by_role("button", name="Export Cooler", exact=True)
+        submit = dialog.get_by_role("button", name="Export", exact=True)
         before_jobs = post("/convert/jobs/list", {})
         for idx, key, invalid, valid in (
             (0, "compression", ["", "-1", "10", "2.5"], ["0", "9"]),

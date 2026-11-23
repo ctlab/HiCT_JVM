@@ -133,7 +133,7 @@ def main():
                     return post("/get_visualization_options")
 
                 def mode(value):
-                    control = page.locator('select[title^="Expected and O/E"]')
+                    control = page.locator('select[aria-label="Signal display"]')
                     control.select_option(value)
                     expect(control).to_be_enabled()
                     check.settle()

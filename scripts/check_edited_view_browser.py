@@ -105,8 +105,12 @@ def main():
             after = page.evaluate(view_state)
             assert before == after, {"before": before, "after": after}
             page.evaluate("""() => {const m=window.__hictBenchmark.manager(),v=m.getView();
+                for (const canvas of document.querySelectorAll('.sequence-axis')) canvas.__letters=[];
                 m.viewAndLayersManager.restoreViewPosition({centerBp:[100,100],resolution:v.getMinResolution()});}""")
-            page.wait_for_function("document.querySelector('.sequence-axis.horizontal').__letters?.length>0")
+            page.wait_for_function("""() => {
+                const canvases = Array.from(document.querySelectorAll('.sequence-axis'));
+                return canvases.length === 2 && canvases.every(canvas => canvas.__letters?.length > 0);
+            }""")
             complement = str.maketrans("ACGTRYMKBDHVN", "TGCAYRKMVHDBN")
             expected = sequence.translate(complement)[::-1]
             for start in (0, len(sequence) - 100):

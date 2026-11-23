@@ -66,9 +66,11 @@ def main():
             oracle.write_text(json.dumps({'contacts':original,'agp':snapshot['agp']}))
             check.menu('File','Export matrix…')
             dialog = page.get_by_role('dialog').filter(has=page.get_by_text('Export matrix to Cooler',exact=True))
+            dialog.wait_for()
+            check.advanced()
             checkbox = dialog.locator('#export-approximate-rebin')
             assert not checkbox.is_checked()
-            dialog.get_by_role('button',name='Export Cooler',exact=True).click()
+            dialog.get_by_role('button',name='Export',exact=True).click()
             dialog.get_by_text('Enable approximate rebinning to export this sequence-cut assembly, or turn off current assembly to export the saved matrix.',exact=True).wait_for()
             assert not json.loads(app.http('/convert/jobs/list', {}))
             checkbox.check()
@@ -87,7 +89,7 @@ def main():
             dialog.locator('input[placeholder="matrix.mcool"]').fill(name)
             page.screenshot(path=str(output/'opt-in-export.png'))
             with page.expect_response('**/convert/jobs') as submitted:
-                dialog.get_by_role('button',name='Export Cooler',exact=True).click()
+                dialog.get_by_role('button',name='Export',exact=True).click()
             assert submitted.value.ok, submitted.value.text()
             job_id = submitted.value.json()['jobId']
             request = submitted.value.request.post_data_json
@@ -200,7 +202,7 @@ def main():
             ordinary_name = 'stored-'+output.name+'.mcool'
             dialog.locator('input[placeholder="matrix.mcool"]').fill(ordinary_name)
             with page.expect_response('**/convert/jobs') as submitted:
-                dialog.get_by_role('button',name='Export Cooler',exact=True).click()
+                dialog.get_by_role('button',name='Export',exact=True).click()
             assert submitted.value.ok, submitted.value.text()
             ordinary_id = submitted.value.json()['jobId']
             assert submitted.value.request.post_data_json.get('approximateRebin',False) is False

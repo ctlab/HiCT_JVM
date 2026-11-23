@@ -85,6 +85,8 @@ def main():
 
             def open_export():
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 expect(dialog).to_be_visible()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
@@ -159,7 +161,7 @@ def main():
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 dialog.get_by_label("Include 1D tracks", exact=True).uncheck()
                 expect(dialog.locator("#export-png-button")).to_be_disabled()
-                expect(dialog).to_contain_text("Options changed")
+                expect(dialog).to_contain_text("Update the preview to apply the changed options.")
                 dialog.get_by_role("button", name="Refresh capture", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
@@ -302,6 +304,8 @@ def main():
 
                 page.route("**/session/snapshot", hold_final_snapshot)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 deadline = time.monotonic() + 60
                 while not held:
                     assert time.monotonic() < deadline
@@ -340,6 +344,8 @@ def main():
 
                 page.route("**/session/snapshot", hold_first_snapshot)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 deadline = time.monotonic() + 30
                 while not held:
                     assert time.monotonic() < deadline

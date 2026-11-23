@@ -5,6 +5,7 @@ import argparse, functools, hashlib, http.server, io, json, math, shutil, subpro
 from pathlib import Path
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
+from browser_review_helpers import expand_slider_limits
 from sequence_browser_harness import BrowserCheck, HictTestServer
 from browser_review_helpers import select_visualization_source
 
@@ -133,7 +134,7 @@ def main():
             midpoint = page.get_by_role("slider", name="Color midpoint", exact=True)
 
             def mode(value):
-                c = page.locator('select[title^="Expected and O/E"]')
+                c = page.locator('select[aria-label="Signal display"]')
                 c.select_option(value)
                 expect(c).to_be_enabled()
                 wait()
@@ -231,6 +232,7 @@ def main():
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
                 assert gamma() == saved_gamma
+                expand_slider_limits(page)
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Log", exact=True
                 ).click()

@@ -64,11 +64,11 @@ def main():
             return np.array(Image.open(io.BytesIO(response.body())).convert("RGBA"))
 
         def select_mode(mode):
-            control = page.locator('select[title^="Expected and O/E"]')
+            control = page.locator('select[aria-label="Signal display"]')
             control.select_option(mode)
             page.wait_for_function(
                 """mode => {
-                const control=document.querySelector('select[title^="Expected and O/E"]');
+                const control=document.querySelector('select[aria-label="Signal display"]');
                 return control && !control.disabled && control.value===mode;
             }""",
                 arg=mode,
@@ -155,10 +155,10 @@ def main():
             results.append({"standardRendererRoundTrip": True})
             page.get_by_role("slider", name="Upper threshold", exact=True).press("Home")
             page.wait_for_timeout(500)
-            threshold = float(
-                page.get_by_label("Upper signal threshold", exact=True
-                ).input_value()
-            )
+            upper = page.get_by_label("Upper signal threshold", exact=True)
+            upper.focus()
+            threshold = float(upper.input_value())
+            upper.blur()
             assert threshold > 1e-100, threshold
             results.append({"zeroHandleAvoidsSubnormalThreshold": threshold})
             scaffold_boundary_signals()
@@ -293,10 +293,10 @@ def main():
                         status=503, json={"error": "deliberate display-mode rejection"}
                     ),
                 )
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option("EXPECTED")
                 page.wait_for_function("""() => {
-                    const select=document.querySelector('select[title^="Expected and O/E"]');
+                    const select=document.querySelector('select[aria-label="Signal display"]');
                     return select && !select.disabled && select.value==='OBSERVED';
                 }""")
                 page.unroute("**/set_visualization_options")

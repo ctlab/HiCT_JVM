@@ -90,6 +90,9 @@ def main():
             def open_export():
                 print("Opening export", flush=True)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
+                dialog.get_by_label("Figure print size", exact=True).select_option("0")
                 expect(dialog.locator("#export-svg-button")).to_be_enabled(
                     timeout=90000
                 )

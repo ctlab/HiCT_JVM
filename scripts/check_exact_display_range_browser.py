@@ -113,7 +113,7 @@ def main():
                 print("Passed", name, flush=True)
 
             def mode(value):
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option(value)
                 expect(control).to_be_enabled()
                 wait()
@@ -129,12 +129,13 @@ def main():
                 ).to_have_count(0)
 
             def bounds():
-                return [
-                    page.get_by_label("Slider minimum signal", exact=True
-                    ).input_value(),
-                    page.get_by_label("Slider maximum signal", exact=True
-                    ).input_value(),
-                ]
+                values = []
+                for limit in ("minimum", "maximum"):
+                    field = page.get_by_label(f"Slider {limit} signal", exact=True)
+                    field.focus()
+                    values.append(field.input_value())
+                    field.blur()
+                return values
 
             try:
                 page.goto(f"http://127.0.0.1:{web.server_port}/")
