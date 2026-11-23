@@ -3,6 +3,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 
+const branchAssetName = /^(HiCT|hict_server)-\d+\.\d+\.\d+-ci\d+-[a-f0-9]{7}-(.+)$/;
+const branchPackageSuffixes = new Set([
+  ...['linux-x86_64', 'musl-linux-x86_64', 'darwin-arm64', 'darwin-x86_64']
+    .flatMap(platform => ['run', 'tar.gz', 'sha256'].map(ext => `${platform}.${ext}`)),
+  'windows-x86_64-portable.zip', 'windows-x86_64.exe', 'windows-x86_64.sha256',
+  'x86_64.AppImage', 'x86_64.AppImage.sha256', 'build-origin.txt', 'release-assets.sha256',
+]);
+
+function isManagedAsset(asset, tag) {
+  if (asset.uploader?.login !== 'github-actions[bot]') return false;
+  if (tag !== 'latest-jvm-sfx-native') return /^(HiCT-|hict_server-)\d/.test(asset.name);
+  const match = branchAssetName.exec(asset.name);
+  if (!match) return false;
+  const [, product, suffix] = match;
+  return product === 'hict_server' ? suffix === 'fat.jar' : branchPackageSuffixes.has(suffix);
+}
+
 async function prepare({ github, context, core, tag }) {
   let release;
   try {
@@ -24,8 +41,7 @@ async function prepare({ github, context, core, tag }) {
   core.setOutput('target_commitish', release ? branch : context.sha);
   core.setOutput('release_id', release?.id || '');
   core.setOutput('previous_assets', JSON.stringify(assets
-    .filter(asset => /^(HiCT-|hict_server-)\d/.test(asset.name)
-      && asset.uploader?.login === 'github-actions[bot]')
+    .filter(asset => isManagedAsset(asset, tag))
     .map(({ id, name }) => ({ id, name }))));
 }
 
@@ -57,7 +73,8 @@ async function prune({ github, context, tag, releaseId, previousAssets, director
   }
   const names = new Set(expected.map(file => file.name));
   for (const old of previousAssets) {
-    if (!names.has(old.name) && current.some(asset => asset.id === old.id && asset.name === old.name)) {
+    if (!names.has(old.name) && current.some(asset =>
+      asset.id === old.id && asset.name === old.name && isManagedAsset(asset, tag))) {
       await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: old.id });
     }
   }

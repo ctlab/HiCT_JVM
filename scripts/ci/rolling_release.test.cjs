@@ -108,6 +108,42 @@ test('successful upload removes only obsolete snapshotted automated assets', asy
   });
 });
 
+test('the branch rolling release prunes previous installer sets and preserves other downloads', async () => {
+  const previousVersion = '2.0.409-ci1-7b2608c';
+  const suffixes = [
+    'linux-x86_64.run', 'musl-linux-x86_64.tar.gz', 'linux-x86_64.sha256',
+    'darwin-arm64.run', 'darwin-x86_64.tar.gz', 'darwin-arm64.sha256',
+    'windows-x86_64.exe', 'windows-x86_64-portable.zip', 'windows-x86_64.sha256',
+    'x86_64.AppImage', 'x86_64.AppImage.sha256', 'build-origin.txt', 'release-assets.sha256',
+  ];
+  const obsolete = suffixes.map((suffix, i) => automated(100 + i, `HiCT-${previousVersion}-${suffix}`));
+  obsolete.push(automated(200, `hict_server-${previousVersion}-fat.jar`));
+  const unrelated = [
+    automated(201, `HiCT-${previousVersion}-workshop-data.zip`),
+    { ...automated(202, 'HiCT-2.0.408-ci1-0123456-linux-x86_64.run'), uploader: { login: 'maintainer' } },
+    automated(203, 'HiCT-2.0.0-archive-linux-x86_64.run'),
+  ];
+  const uploaded = { ...next, name: 'HiCT-2.0.418-ci1-0702614-linux-x86_64.run' };
+  const assets = [...obsolete, ...unrelated];
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hict-release-test-'));
+  try {
+    const c = { ...client(assets), tag: 'latest-jvm-sfx-native', directory };
+    await prepare(c);
+    c.releaseId = c.outputs.release_id;
+    c.previousAssets = JSON.parse(c.outputs.previous_assets);
+    assert.deepEqual(c.previousAssets.map(asset => asset.id), obsolete.map(asset => asset.id));
+    assert.deepEqual(c.deleted, []);
+    fs.writeFileSync(path.join(directory, uploaded.name), 'jar');
+    await assert.rejects(prune(c), /missing or incomplete/);
+    assert.deepEqual(c.deleted, []);
+    assets.push(uploaded, automated(204, 'HiCT-2.0.419-ci1-0123456-linux-x86_64.run'));
+    await prune(c);
+    assert.deepEqual(c.deleted, obsolete.map(asset => asset.id));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('same-size content mismatches and missing digests preserve every old asset', async () => {
   for (const digest of [undefined, 'sha256:wrong']) {
     await withUpload([old, { ...next, digest }], async c => {

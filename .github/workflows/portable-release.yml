@@ -2234,7 +2234,7 @@ jobs:
           # uploads. The following step verifies skipped files by SHA-256 too.
           overwrite_files: false
 
-      - name: Verify rolling upload and prune obsolete assets outside jvm-sfx-native
+      - name: Verify rolling upload and prune obsolete build assets
         if: ${{ success() && steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: actions/github-script@v8
         env:
@@ -2245,8 +2245,7 @@ jobs:
             const { prune } = require('./scripts/ci/rolling_release.cjs');
             await prune({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
               releaseId: process.env.HICT_PREVIOUS_RELEASE_ID,
-              previousAssets: process.env.HICT_PORTABLE_RELEASE_TAG === "latest-jvm-sfx-native"
-                ? [] : JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
+              previousAssets: JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
               directory: 'release-dist' });
 
       - name: Attach assets to release event
