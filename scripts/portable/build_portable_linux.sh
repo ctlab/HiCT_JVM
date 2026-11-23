@@ -95,11 +95,11 @@ if [[ ! -f "${FAT_JAR}" ]]; then
   echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
-python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" linux_x86_64
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" linux_x86_64
 if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]] &&
    ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'toolchains/linux_x86_64/manifest.json'; then
   echo "toolchains-dist/linux_x86_64 exists, but the fat JAR does not contain the bundled Linux hictk manifest." >&2

@@ -238,11 +238,11 @@ if [[ ! -f "${FAT_JAR}" ]]; then
   echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
-python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" "${TOOLCHAIN_PLATFORM}"
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" "${TOOLCHAIN_PLATFORM}"
 DARWIN_JHDF5_ARCHIVE_SOURCE="$(resolve_darwin_jhdf5_archive_source || true)"
 if ! fat_jar_contains_darwin_jhdf5_payload; then
   if [[ -z "${DARWIN_JHDF5_ARCHIVE_SOURCE}" ]] || ! archive_contains_darwin_jhdf5_payload "${DARWIN_JHDF5_ARCHIVE_SOURCE}"; then

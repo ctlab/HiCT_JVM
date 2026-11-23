@@ -334,10 +334,6 @@ if (-not (Test-Path -LiteralPath $fatJarPath -PathType Leaf)) {
   throw "The current version fat JAR was not found: $fatJarPath. Build shadowJar before packaging."
 }
 $fatJar = Get-Item -LiteralPath $fatJarPath
-& python (Join-Path $PSScriptRoot "verify_package_inputs.py") $fatJar.FullName windows_x86_64
-if ($LASTEXITCODE -ne 0) {
-  throw "Portable Windows package input verification failed."
-}
 $jarEntries = & $jarTool tf $fatJar.FullName
 if ($LASTEXITCODE -ne 0) {
   throw "Failed to inspect $($fatJar.FullName)"
@@ -348,6 +344,11 @@ if (-not ($jarEntries -contains "webui/index.html")) {
 $hasPreparedWindowsToolchain = Test-Path (Join-Path $projectDir "toolchains-dist\windows_x86_64\manifest.json")
 if ($hasPreparedWindowsToolchain -and -not ($jarEntries -contains "toolchains/windows_x86_64/manifest.json")) {
   throw "toolchains-dist\windows_x86_64 exists, but the fat JAR does not contain the bundled Windows hictk manifest."
+}
+
+& python (Join-Path $PSScriptRoot "verify_package_inputs.py") $fatJar.FullName windows_x86_64
+if ($LASTEXITCODE -ne 0) {
+  throw "Portable Windows package input verification failed."
 }
 
 if (Test-Path $appDir) {
