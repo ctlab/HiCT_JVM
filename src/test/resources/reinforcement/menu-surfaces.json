@@ -92,15 +92,30 @@
   {
     "id": "menu-07",
     "menu": "View",
-    "action": "Tracks and layers…",
-    "heading": "Tracks and layers",
+    "action": "1D tracks…",
+    "heading": "1D tracks",
     "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Tracks and layers",
+    "surfaceExpected": "Visible heading: 1D tracks",
     "functionalExpected": "Add, reorder, hide and remove tracks; compare displayed values and restore focus on close.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-19",
+    "menu": "View",
+    "action": "Sources and layers…",
+    "heading": "Sources and layers",
+    "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Sources and layers",
+    "functionalExpected": "Select an overlay source and verify its display mode and opacity.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
   },
