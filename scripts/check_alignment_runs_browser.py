@@ -103,6 +103,12 @@ def main():
                     features:a.source.getFeatures().map(f=>({type:f.getGeometry().getType(),coordinates:f.getGeometry().getCoordinates(),segment:f.get('alignmentSegment'),color:f.getStyle().at(-1).getStroke().getColor()}))};}''')
             scope('row',names['100']);scope('column',names['200']);focus(205,106)
             def regular_lines():
+                minimum = page.get_by_role("spinbutton", name="Minimum alignment length (bp)")
+                assert minimum.input_value() == "10"
+                page.wait_for_function("""()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().length===2""")
+                assert all(f["segment"]["rowEnd"] - f["segment"]["rowStart"] == 10 for f in rendered()["features"])
+                minimum.fill("2")
+                minimum.press("Tab")
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10;}''')
                 state=rendered();assert all(f['type']=='LineString' and f['color']=='#047857' for f in state['features']),state
                 assert all(len(f['coordinates'])==f['segment']['rowEnd']-f['segment']['rowStart']+1 for f in state['features']),state

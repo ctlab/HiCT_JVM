@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep square-root coverage readable when zooming, restore exact contrast limits for each source, and keep zoom controls within the available detail levels.
+
 - Keep assembly edits available while opening tracks or linking FASTA, retain Undo when overlays change, and protect open maps from replacement.
 
 - Reject invalid map edits and file requests without changing the assembly, and refresh tiles after applying an AGP.

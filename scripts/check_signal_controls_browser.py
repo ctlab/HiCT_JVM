@@ -80,10 +80,10 @@ def main():
             # Loaded-tile metadata belongs to the native grid. Letter/base-grid
             # images intentionally omit native-cell statistics to avoid counting
             # repeated references as base observations. Keep this legacy loaded-
-            # range/drag test explicitly at four screen pixels per source bin.
+            # range/drag test below the letter-scale threshold.
             page.evaluate("""()=>{const m=window.__hictBenchmark.manager();
                 m.viewAndLayersManager.restoreViewPosition({centerBp:[8.5,8.5],
-                  resolution:1/m.viewAndLayersManager.coordinateBaseBp,rotation:0});}""")
+                  resolution:2/m.viewAndLayersManager.coordinateBaseBp,rotation:0});}""")
             check.settle()
             assert not page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale")
             page.locator("#normalization-mode").select_option("none")

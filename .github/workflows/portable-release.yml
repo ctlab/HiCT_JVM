@@ -389,6 +389,8 @@ jobs:
 
       - name: Build HiCT native libraries in manylinux2014
         if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.project.portableReleaseVersion=${{ env.HICT_BUILD_VERSION }}
         run: scripts/ci/linux_container_build.sh hict-native
 
       - name: Upload Linux HiCT native processing artifact
