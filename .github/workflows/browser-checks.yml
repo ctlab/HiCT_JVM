@@ -1,0 +1,52 @@
+name: Browser workflow checks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the release branch
+        uses: actions/checkout@v4
+        with:
+          ref: jvm-sfx-native
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser and fixture dependencies
+        run: |
+          python -m pip install 'playwright==1.58.2' numpy pandas h5py cooler pillow
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y poppler-utils minimap2
+      - name: Build the JAR and pinned browser assets
+        run: ./gradlew shadowJar -PwebuiRef="$(tr -d '\r\n' < webui-revision.txt)"
+      - name: Run browser checks
+        run: |
+          mapfile -t artifacts < <(find build/libs -name '*-fat.jar' -type f)
+          test "${#artifacts[@]}" = 1
+          python scripts/run_browser_checks.py --jar "${artifacts[0]}" \
+            --webui src/main/resources/webui --output browser-results
+      - name: Upload browser logs and screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: browser-results/

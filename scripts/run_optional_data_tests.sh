@@ -36,12 +36,15 @@ fi
 
 cd "${JVM_DIR}"
 
-echo "[optional] Building fat jar"
-./gradlew shadowJar >/dev/null
-
 mkdir -p "${PROCESSED_DIR}"
-JAR_PATH="$(ls -1 build/libs/hict_server-*-fat.jar | head -n 1)"
-if [[ -z "${JAR_PATH}" ]]; then
+if [[ -n "${HICT_TEST_JAR:-}" ]]; then
+  JAR_PATH="${HICT_TEST_JAR}"
+else
+  echo "[optional] Building fat jar"
+  ./gradlew shadowJar >/dev/null
+  JAR_PATH="$(ls -t build/libs/hict_server-*-fat.jar | sed -n '1p')"
+fi
+if [[ ! -f "${JAR_PATH}" ]]; then
   echo "[optional] ERROR: fat jar was not produced"
   exit 1
 fi
@@ -52,8 +55,8 @@ if [[ ! -f "${HICT_ABS}" ]]; then
 fi
 
 echo "[optional] Starting API server on :${PORT}"
-VXPORT="${PORT}" SERVE_WEBUI=false DATA_DIR="${DATA_DIR}" PROCESSED_DIR="${PROCESSED_DIR}" \
-  java -jar "${JAR_PATH}" start-api-server >/tmp/hict_optional_tests_server.log 2>&1 &
+VXPORT="${PORT}" SERVE_WEBUI=false DATA_DIR="${DATA_DIR}" PROCESSED_DIR="${PROCESSED_DIR}" HICT_BIND_HOST=127.0.0.1 \
+  java -jar "${JAR_PATH}" start-api-server >"${PROCESSED_DIR}/optional-tests-server.log" 2>&1 &
 SERVER_PID=$!
 cleanup() {
   if ps -p "${SERVER_PID}" >/dev/null 2>&1; then
