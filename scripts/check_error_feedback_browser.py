@@ -63,8 +63,13 @@ def main():
         }
         page.route("**/sequence/settings", lambda route:
             route.fulfill(json=settings) if route.request.post_data_json.get("checkTools") else route.fallback())
+        page.route("**/sequence/moddotplot/estimate", lambda route: route.fulfill(json={
+            "requestedLevels": route.request.post_data_json["resolutions"],
+            "overviewLevels": [], "rowBp": 3_000, "columnBp": 3_000,
+            "estimatedBytes": 1_000_000,
+        }))
         page.route("**/sequence/moddotplot/jobs", lambda route:
-            route.fulfill(json={**job, "status": "queued"}))
+            route.fulfill(json={**job, "status": "submitted"}))
         page.route("**/sequence/jobs/list", lambda route: route.fulfill(json=[job]))
         page.evaluate("""() => {
             const layers = window.__hictBenchmark.manager().viewAndLayersManager;
