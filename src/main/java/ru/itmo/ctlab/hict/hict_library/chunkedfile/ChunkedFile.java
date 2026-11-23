@@ -518,6 +518,7 @@ public class ChunkedFile implements AutoCloseable {
       if (position == contigTree.getLengthInUnits(fromUnits, fromResolution)) {
         return contigTree.getLengthInUnits(toUnits, toResolution);
       }
+      if (es.segment() == null || position < 0) throw new IllegalArgumentException("Coordinate outside the assembly");
       final var node = es.segment().push().updateSizes();
       final var descriptor = node.getContigDescriptor();
       final boolean reversed = node.getTrueDirection() == ru.itmo.ctlab.hict.hict_library.domain.ContigDirection.REVERSED;

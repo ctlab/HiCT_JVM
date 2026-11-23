@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.dto.request.names;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,8 +33,8 @@ import org.jetbrains.annotations.Nullable;
 public record RenameScaffoldRequestDTO(long scaffoldId, @Nullable String newName) {
   public static @NotNull RenameScaffoldRequestDTO fromJSONObject(final @NotNull JsonObject jsonObject) {
     return new RenameScaffoldRequestDTO(
-      jsonObject.getLong("scaffoldId"),
-      jsonObject.getString("newName")
+      RequestJson.requireLong(jsonObject, "scaffoldId"),
+      RequestJson.optionalString(jsonObject, "newName", null)
     );
   }
 }

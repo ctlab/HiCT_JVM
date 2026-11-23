@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding;
 
 import io.vertx.core.json.JsonObject;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import org.jetbrains.annotations.NotNull;
 
 public record MoveSelectionRangeRequestDTO(
@@ -34,6 +35,6 @@ public record MoveSelectionRangeRequestDTO(
 ) {
 
   public static @NotNull MoveSelectionRangeRequestDTO fromJSONObject(final @NotNull JsonObject json) {
-    return new MoveSelectionRangeRequestDTO(json.getLong("startBP"), json.getLong("endBP"), json.getLong("targetStartBP"));
+    return new MoveSelectionRangeRequestDTO(RequestJson.requireLong(json, "startBP"), RequestJson.requireLong(json, "endBP"), RequestJson.requireLong(json, "targetStartBP"));
   }
 }

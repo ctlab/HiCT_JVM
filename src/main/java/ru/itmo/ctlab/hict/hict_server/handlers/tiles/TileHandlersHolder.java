@@ -24,12 +24,15 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -132,12 +135,18 @@ public class TileHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
-      final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
-      final var preserveRenderPipeline = requestJSON.getBoolean("preserveRenderPipeline", false);
-      final var requestedPipeline = requestJSON.getJsonObject("renderPipeline");
+      final VisualizationOptionsDTO request;
+      final boolean preserveRenderPipeline;
+      final JsonObject requestedPipeline;
+      try {
+        request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
+        preserveRenderPipeline = requestJSON.getBoolean("preserveRenderPipeline", false);
+        requestedPipeline = requestJSON.getJsonObject("renderPipeline");
+      } catch (ClassCastException | NullPointerException invalid) {
+        throw new IllegalArgumentException("Missing or invalid visualization options");
+      }
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -179,7 +188,7 @@ public class TileHandlersHolder extends HandlersHolder {
           scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
           if (visualizationOptionsWrapper == null) {
-            throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Visualization options are not present in the local map, maybe the file is not yet opened?");
           }
           final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
           return VisualizationOptionsDTO.fromEntity(options, chunkedFile);
@@ -205,13 +214,13 @@ public class TileHandlersHolder extends HandlersHolder {
           log.debug("Got map");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           log.debug("Got ChunkedFile from map");
           final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
           if (visualizationOptionsWrapper == null) {
-            throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Visualization options are not present in the local map, maybe the file is not yet opened?");
           }
           final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
           return VisualizationOptionsDTO.fromEntity(options, chunkedFile);
@@ -238,12 +247,12 @@ public class TileHandlersHolder extends HandlersHolder {
           final var stamp = captureStamp(map, scheduler);
           final var chunkedFileWrapper = (ShareableWrappers.ChunkedFileWrapper) stamp.primary();
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var visualizationOptionsWrapper =
             (ShareableWrappers.SimpleVisualizationOptionsWrapper) stamp.visualization();
           if (visualizationOptionsWrapper == null) {
-            throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Visualization options are not present in the local map, maybe the file is not yet opened?");
           }
           final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
           if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
@@ -343,8 +352,17 @@ public class TileHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var requestBody = ctx.body().asJsonObject();
-          final var config = RenderPipelineConfig.fromJson(requestBody);
+          final var requestBody = RequestJson.requireObject(ctx);
+          if (java.util.Collections.disjoint(requestBody.fieldNames(),
+            java.util.Set.of("enabled", "swapUpperLower", "upperExpression", "lowerExpression", "upper", "lower"))) {
+            throw new IllegalArgumentException("Provide rendering pipeline options");
+          }
+          final RenderPipelineConfig config;
+          try {
+            config = RenderPipelineConfig.fromJson(requestBody);
+          } catch (ClassCastException invalid) {
+            throw new IllegalArgumentException("Invalid rendering pipeline options");
+          }
           map.put(
             RenderPipelineConfig.LOCAL_MAP_KEY,
             new ShareableWrappers.RenderPipelineConfigWrapper(config)
@@ -420,12 +438,12 @@ public class TileHandlersHolder extends HandlersHolder {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
           if (stats == null) {
-            throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
           }
           final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
           map.put("TileStatisticHolder", newStats);
@@ -456,6 +474,10 @@ public class TileHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.CancellationDomain.TILE,
         () -> computeTileResponse(ctx),
         response -> {
+          if (response == null) {
+            respondCancelledTile(ctx, format);
+            return;
+          }
           ctx.response().putHeader("content-type", response.contentType());
           response.headers().forEach(ctx.response()::putHeader);
           if (response.jsonBody() != null) {
@@ -688,20 +710,29 @@ public class TileHandlersHolder extends HandlersHolder {
       .put("algorithmVersion", weights.usesCoverage() ? weights.prepared().algorithmVersion() : null);
   }
 
+  private static <T> T parseTileNumber(io.vertx.ext.web.RoutingContext ctx, String name, String fallback,
+                                       java.util.function.Function<String, T> parser) {
+    try {
+      return parser.apply(ctx.request().getParam(name, fallback));
+    } catch (NumberFormatException invalid) {
+      throw new IllegalArgumentException("Invalid number in " + name);
+    }
+  }
+
   private TileResponsePayload computeTileResponse(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
     final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var id = ctx.request().getParam("renderCapture");
     final var capture = id == null ? null : renderCaptures.require(id, captureStamp(map, getScheduler(ctx)));
     final var response = computeTileResponse(ctx, capture);
-    if (capture != null) renderCaptures.validate(capture, captureStamp(map, getScheduler(ctx)));
+    if (capture != null && response != null) renderCaptures.validate(capture, captureStamp(map, getScheduler(ctx)));
     return response;
   }
 
   private TileResponsePayload computeTileResponse(final @NotNull io.vertx.ext.web.RoutingContext ctx,
     RenderCaptureRegistry.Capture capture) {
-    final var row = Long.parseLong(ctx.request().getParam("row", "0"));
-    final var col = Long.parseLong(ctx.request().getParam("col", "0"));
-    final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
+    final var row = parseTileNumber(ctx, "row", "0", Long::parseLong);
+    final var col = parseTileNumber(ctx, "col", "0", Long::parseLong);
+    final var requestedVersion = parseTileNumber(ctx, "version", "0", Long::parseLong);
     final int tileHeight;
     final int tileWidth;
     final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
@@ -755,22 +786,25 @@ public class TileHandlersHolder extends HandlersHolder {
       : "PRIMARY";
     final var requestedChunkedFile =
       sourceSpecificRequest && "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : chunkedFile;
-    if (requestedChunkedFile == null) {
-      throw new RuntimeException("Secondary source is not attached");
-    }
+    if (requestedChunkedFile == null) return null;
     final var resolutionLookupChunkedFile = sourceSpecificRequest ? requestedChunkedFile : chunkedFile;
 
     final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
     final int level;
     if (requestedBpResolutionParam != null) {
-      final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
+      final var requestedBpResolution = parseTileNumber(ctx, "bpResolution", "0", Long::parseLong);
       final var resolutionOrder = resolutionLookupChunkedFile.getResolutionToIndex().get(requestedBpResolution);
       if (requestedBpResolution <= 0 || resolutionOrder == null) {
         throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + requestedBpResolution);
       }
       level = resolutionOrder;
     } else {
-      level = resolutionLookupChunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      final int legacyLevel = parseTileNumber(ctx, "level", "0", Integer::parseInt);
+      final int count = resolutionLookupChunkedFile.getResolutions().length - 1;
+      if (legacyLevel < 1 || legacyLevel > count) {
+        throw new IllegalArgumentException("Tile level must be between 1 and " + count);
+      }
+      level = count + 1 - legacyLevel;
     }
 
     var currentVersion = stats.versionCounter().get();
@@ -1135,14 +1169,14 @@ public class TileHandlersHolder extends HandlersHolder {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var primaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (primaryChunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     final var primaryChunkedFile = primaryChunkedFileWrapper.getChunkedFile();
     final var secondaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFileSecondary")));
     final var secondaryChunkedFile = secondaryChunkedFileWrapper != null ? secondaryChunkedFileWrapper.getChunkedFile() : null;
     final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
     if (visualizationOptionsWrapper == null) {
-      throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Visualization options are not present in the local map, maybe the file is not yet opened?");
     }
     final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
     final var renderPipelineWrapper = (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
@@ -1676,14 +1710,14 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowPx = primaryMatrixWithWeights.startRowIncl() + row;
       rowPxValues[row] = rowPx;
       rowBinValues[row] = primaryChunkedFile.convertUnits(
-        rowPx,
+        Math.max(0, Math.min(rowPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
       rowBpValues[row] = primaryChunkedFile.convertUnits(
-        rowPx,
+        Math.max(0, Math.min(rowPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         bpResolutionDescriptor,
@@ -1698,14 +1732,14 @@ public class TileHandlersHolder extends HandlersHolder {
       final var colPx = primaryMatrixWithWeights.startColIncl() + col;
       colPxValues[col] = colPx;
       colBinValues[col] = primaryChunkedFile.convertUnits(
-        colPx,
+        Math.max(0, Math.min(colPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
       colBpValues[col] = primaryChunkedFile.convertUnits(
-        colPx,
+        Math.max(0, Math.min(colPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         bpResolutionDescriptor,
@@ -2378,14 +2412,14 @@ public class TileHandlersHolder extends HandlersHolder {
       rowPxValues[row] = matrixWithWeights.startRowIncl() + row;
       final var rowPx = Math.floorDiv(rowPxValues[row], sampleFactor);
       rowBinValues[row] = sourceChunkedFile.convertUnits(
-        rowPx,
+        Math.max(0, Math.min(rowPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
       rowBpValues[row] = sourceChunkedFile.convertUnits(
-        rowPx,
+        Math.max(0, Math.min(rowPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         bpResolutionDescriptor,
@@ -2400,14 +2434,14 @@ public class TileHandlersHolder extends HandlersHolder {
       colPxValues[col] = matrixWithWeights.startColIncl() + col;
       final var colPx = Math.floorDiv(colPxValues[col], sampleFactor);
       colBinValues[col] = sourceChunkedFile.convertUnits(
-        colPx,
+        Math.max(0, Math.min(colPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
       colBpValues[col] = sourceChunkedFile.convertUnits(
-        colPx,
+        Math.max(0, Math.min(colPx, totalVisiblePixels)),
         resolutionDescriptor,
         coordinateUnit,
         bpResolutionDescriptor,

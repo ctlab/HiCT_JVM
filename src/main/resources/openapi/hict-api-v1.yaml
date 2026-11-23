@@ -867,8 +867,8 @@ paths:
         - in: query
           name: level
           required: false
-          schema: { type: integer }
-          description: Resolution level in reversed order. Optional alternative to `bpResolution`.
+          schema: { type: integer, minimum: 1 }
+          description: One-based resolution level from coarsest (1) to finest (the number of stored resolutions). Optional alternative to `bpResolution`.
         - in: query
           name: tile_size
           required: false
@@ -889,7 +889,7 @@ paths:
           description: Tile payload. Cancelled work returns a transparent placeholder with x-hict-cancelled=true; clients must not cache or display it as a rendered map tile.
           headers:
             x-hict-cancelled:
-              description: True only when superseded work was cancelled.
+              description: True when work was cancelled or the requested secondary source is absent.
               schema: { type: boolean }
             x-hict-display-grid:
               description: SEQUENCE_BP for an explicitly requested one-base display grid.
@@ -1328,10 +1328,14 @@ paths:
             schema: { $ref: '#/components/schemas/LoadAgpRequest' }
       responses:
         '200':
-          description: Updated assembly info
+          description: Updated assembly info and tile version, or a request for an omission-policy choice.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+        '400':
+          description: Missing or invalid AGP input. The assembly is unchanged.
+        '409':
+          description: Open a map before applying AGP.
   /apply_juicebox_assembly:
     post:
       tags: [Files]
@@ -1365,6 +1369,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+        '404':
+          description: The requested entity does not exist.
+
   /names/scaffold:
     post:
       tags: [Names]
@@ -1381,6 +1388,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+        '404':
+          description: The requested entity does not exist.
+
   /names/export:
     get:
       tags: [Names]
@@ -2641,6 +2651,8 @@ components:
       type: object
       properties:
         version: { type: string }
+        backendRevision: { type: string }
+        webuiRevision: { type: string }
         webuiVersion: { type: string }
       required: [version, webuiVersion]
     ChangelogResponse:

@@ -24,10 +24,13 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.operations;
 
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +60,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     router.post("/split_contig_at_bp").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) return;
-      final var json = ctx.body().asJsonObject();
+      final var json = RequestJson.requireObject(ctx);
       final SplitContigAtBpRequestDTO request;
       try { request = SplitContigAtBpRequestDTO.fromJSONObject(json); }
       catch (IllegalArgumentException invalid) { ctx.fail(new io.vertx.ext.web.handler.HttpException(400, invalid.getMessage())); return; }
@@ -77,8 +80,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = ReverseSelectionRangeRequestDTO.fromJSONObject(requestJSON);
 
@@ -93,6 +95,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
+          validateRanges(chunkedFiles, request.startBP(), request.endBP(), null);
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
           }
@@ -107,8 +110,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = MoveSelectionRangeRequestDTO.fromJSONObject(requestJSON);
 
@@ -123,6 +125,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
+          validateRanges(chunkedFiles, request.startBP(), request.endBP(), request.targetStartBP());
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
           }
@@ -137,8 +140,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = SplitContigRequestDTO.fromJSONObject(requestJSON);
 
@@ -154,6 +156,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           log.debug("Got ChunkedFile from map");
 
           final var splitPositionBp = resolveSplitPositionBp(chunkedFiles, request.splitPx(), request.bpResolution());
+          if (chunkedFiles.operationOrder().size() > 1) {
+            for (final var file : chunkedFiles.operationOrder()) file.scaffoldingOperations().validateBinSplit(splitPositionBp);
+          }
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().splitContigAtBin(splitPositionBp, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
@@ -168,8 +173,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = ScaffoldRegionRequestDTO.fromJSONObject(requestJSON);
 
@@ -184,6 +188,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
+          validateRanges(chunkedFiles, request.startBP(), request.endBP(), null);
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
           }
@@ -198,8 +203,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = UnscaffoldRegionRequestDTO.fromJSONObject(requestJSON);
 
@@ -214,6 +218,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
+          validateRanges(chunkedFiles, request.startBP(), request.endBP(), null);
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
@@ -226,7 +231,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     router.post("/unscaffold_all").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) return;
-      final var requestJSON = ctx.body().asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
       scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
         final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
         final var files = extractAssemblyChunkedFiles(map);
@@ -240,8 +245,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+      final var requestJSON = RequestJson.requireObject(ctx);
 
       final @NotNull @NonNull var request = MoveSelectionToDebrisRequestDTO.fromJSONObject(requestJSON);
 
@@ -256,6 +260,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
+          validateRanges(chunkedFiles, request.startBP(), request.endBP(), null);
           for (final var file : chunkedFiles.operationOrder()) {
             file.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
@@ -285,7 +290,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       operationOrder.add(activeChunkedFile);
     } else {
       if (primaryWrapper == null) {
-        throw new IllegalStateException("Open a Hi-C file before using scaffolding operations");
+        throw new NoOpenFileException("Open a Hi-C file before using scaffolding operations");
       }
       activeChunkedFile = primaryWrapper.getChunkedFile();
       if (secondaryWrapper != null) {
@@ -296,23 +301,31 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     return new AssemblyChunkedFiles(activeChunkedFile, List.copyOf(operationOrder));
   }
 
+  private static void validateRanges(AssemblyChunkedFiles files, long startBp, long endBp, Long moveTargetBp) {
+    final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+    for (final var file : files.operationOrder()) {
+      file.scaffoldingOperations().validateRange(startBp, endBp, bp, QueryLengthUnit.BASE_PAIRS);
+      if (moveTargetBp != null && (moveTargetBp < 0 ||
+        moveTargetBp > file.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp))) {
+        throw new IllegalArgumentException("Move target must be within the assembly");
+      }
+    }
+  }
+
   private long resolveSplitPositionBp(final @NotNull AssemblyChunkedFiles chunkedFiles,
                                       final long splitPx,
                                       final long bpResolution) {
-    for (final var file : chunkedFiles.operationOrder()) {
-      for (final var resolution : file.getResolutions()) {
-        if (resolution == bpResolution) {
-          return file.convertUnits(
-            splitPx,
-            ResolutionDescriptor.fromBpResolution(bpResolution, file),
-            QueryLengthUnit.PIXELS,
-            ResolutionDescriptor.fromResolutionOrder(0),
-            QueryLengthUnit.BASE_PAIRS
-          );
-        }
-      }
+    final var file = chunkedFiles.activeChunkedFile();
+    final var order = file.getResolutionToIndex().get(bpResolution);
+    if (bpResolution <= 0 || order == null) {
+      throw new IllegalArgumentException("Split resolution is unavailable in the active map");
     }
-    return Math.max(0L, splitPx * bpResolution);
+    final var resolution = ResolutionDescriptor.fromResolutionOrder(order);
+    if (splitPx <= 0 || splitPx >= file.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS, resolution)) {
+      throw new IllegalArgumentException("Split position must be inside the assembly");
+    }
+    return file.convertUnits(splitPx, resolution, QueryLengthUnit.PIXELS,
+      ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
   }
 
   private long incrementVersionAndResetTileStats(final @NotNull LocalMap<String, Object> map,
@@ -320,7 +333,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
                                                  final @NotNull RequestTaskScheduler scheduler) {
     final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
     if (stats == null) {
-      throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
     }
     FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, maxOpenSourceResolutionCount(map, chunkedFile));

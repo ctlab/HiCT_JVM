@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.dto.request.names;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,8 +33,8 @@ import org.jetbrains.annotations.Nullable;
 public record RenameContigRequestDTO(int contigId, @Nullable String newName) {
   public static @NotNull RenameContigRequestDTO fromJSONObject(final @NotNull JsonObject jsonObject) {
     return new RenameContigRequestDTO(
-      jsonObject.getInteger("contigId"),
-      jsonObject.getString("newName")
+      RequestJson.requireInt(jsonObject, "contigId"),
+      RequestJson.optionalString(jsonObject, "newName", null)
     );
   }
 }

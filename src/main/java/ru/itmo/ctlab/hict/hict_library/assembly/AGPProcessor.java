@@ -109,137 +109,141 @@ public class AGPProcessor {
   }
 
   public static @NotNull List<@NotNull AGPFileRecord> parseRecordsFromReader(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
-    final List<List<String>> recordRows = new ArrayList<>();
+    final var parsedRecords = new ArrayList<AGPFileRecord>();
     try (final var br = new BufferedReader(reader)) {
-      br.lines().sequential()
-        .map(String::trim)
-        .filter(line -> !line.isBlank() && !line.startsWith("#"))
-        .map(line -> line.split("\\s+"))
-        .filter(e -> e.length > 0)
-        .forEachOrdered(sp -> recordRows.add(new ArrayList<>(Arrays.asList(sp))));
-    }
-    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.size());
-    int rowNumber = 0;
-    for (final var row : recordRows) {
-      ++rowNumber;
-      if (row.size() == 8 && switch (row.get(4)) {
-        case "W", "A", "D", "F", "G", "O", "P" -> true;
-        default -> false;
-      }) {
-        log.warn("AGP line " + rowNumber + " has 8 columns and omits sequence orientation; assuming '+': " + row);
-        row.add("+");
-      }
-      if (row.size() != 9) {
-        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but record " + rowNumber + " has " + row.size());
-      }
-      final var objectName = row.get(0);
-      final var objectBeg = Long.parseLong(row.get(1));
-      final var objectEnd = Long.parseLong(row.get(2));
-      final var partNumber = Integer.parseInt(row.get(3));
-      final var componentType = switch (row.get(4)) {
-        case "W" -> AGPComponentType.WGS_CONTIG;
-        case "N" -> AGPComponentType.GAP_WITH_SPECIFIED_SIZE;
-        case "U" -> AGPComponentType.GAP_OF_UNKNOWN_SIZE;
-        case "A" -> AGPComponentType.ACTIVE_FINISHING;
-        case "D" -> AGPComponentType.DRAFT_HTG;
-        case "F" -> AGPComponentType.FINISHED_HTG;
-        case "G" -> AGPComponentType.WHOLE_GENOME_FINISHING;
-        case "O" -> AGPComponentType.OTHER_SEQUENCE;
-        case "P" -> AGPComponentType.PRE_DRAFT;
-        default -> {
-          log.error("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
-          throw new IllegalArgumentException("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
+      int rowNumber = 0;
+      for (String line; (line = br.readLine()) != null; ) {
+        ++rowNumber;
+        final var trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+        final var row = new ArrayList<>(Arrays.asList(trimmed.split("\\s+")));
+        if (row.size() == 8 && switch (row.get(4)) {
+          case "W", "A", "D", "F", "G", "O", "P" -> true;
+          default -> false;
+        }) {
+          log.warn("AGP line " + rowNumber + " has 8 columns and omits sequence orientation; assuming '+': " + row);
+          row.add("+");
         }
-      };
-      final var agpFileRecord = switch (componentType) {
-        case WGS_CONTIG, ACTIVE_FINISHING, DRAFT_HTG, FINISHED_HTG, WHOLE_GENOME_FINISHING, OTHER_SEQUENCE, PRE_DRAFT -> {
-          final var componentId = row.get(5);
-          final var componentBeg = Long.parseLong(row.get(6));
-          final var componentEnd = Long.parseLong(row.get(7));
-          final var orientation = switch (row.get(8)) {
-            case "+" -> AGPContigOrientation.PLUS;
-            case "-" -> AGPContigOrientation.MINUS;
-            case "?", "0" -> AGPContigOrientation.UNKNOWN;
-            case "na" -> AGPContigOrientation.IRRELEVANT;
-            default -> {
-              log.error("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
-              throw new IllegalArgumentException("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
-            }
-          };
-          yield new ContigAGPRecord(
-            objectName,
-            objectBeg,
-            objectEnd,
-            partNumber,
-            componentId,
-            componentBeg,
-            componentEnd,
-            orientation,
-            componentType
-          );
+        if (row.size() != 9) {
+          throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has " + row.size());
         }
-        case GAP_WITH_SPECIFIED_SIZE, GAP_OF_UNKNOWN_SIZE -> {
-          final var gapLength = Long.parseLong(row.get(5));
-          final var gapType = switch (row.get(6)) {
-            case "scaffold" -> AGPGapType.SCAFFOLD;
-            case "contig" -> AGPGapType.CONTIG;
-            case "centromere" -> AGPGapType.CENTROMERE;
-            case "short_arm" -> AGPGapType.SHORT_ARM;
-            case "heterochromatin" -> AGPGapType.HETEROCHROMATIN;
-            case "telomere" -> AGPGapType.TELOMERE;
-            case "repeat" -> AGPGapType.REPEAT;
-            case "contamination" -> AGPGapType.CONTAMINATION;
-            default -> {
-              log.error("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
-              throw new IllegalArgumentException("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
-            }
-          };
-          final var linkage = switch (row.get(7)) {
-            case "yes" -> true;
-            case "no" -> false;
-            default -> {
-              log.error("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
-              throw new IllegalArgumentException("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
-            }
-          };
-          final var linkageEvidence = new ArrayList<LinkageEvidence>();
-          for (final var evidence : row.get(8).split(";", -1)) {
-            linkageEvidence.add(switch (evidence) {
-            case "proximity_ligation" -> LinkageEvidence.PROXIMITY_LIGATION;
-            case "na" -> LinkageEvidence.NA;
-            case "paired-ends", "paired_ends" -> LinkageEvidence.PAIRED_ENDS;
-            case "align_genus" -> LinkageEvidence.ALIGN_GENUS;
-            case "align_xgenus" -> LinkageEvidence.ALIGN_XGENUS;
-            case "align_trnscpt" -> LinkageEvidence.ALIGN_TRNSCPT;
-            case "within_clone" -> LinkageEvidence.WITHIN_CLONE;
-            case "clone_contig" -> LinkageEvidence.CLONE_CONTIG;
-            case "map" -> LinkageEvidence.MAP;
-            case "pcr" -> LinkageEvidence.PCR;
-            case "strobe" -> LinkageEvidence.STROBE;
-            case "unspecified" -> LinkageEvidence.UNSPECIFIED;
-            default -> {
-              log.error("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
-              throw new IllegalArgumentException("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
-            }
-            });
+        final var objectName = row.get(0);
+        final var objectBeg = parseAgpNumber(row.get(1), rowNumber, Long::parseLong);
+        final var objectEnd = parseAgpNumber(row.get(2), rowNumber, Long::parseLong);
+        final var partNumber = parseAgpNumber(row.get(3), rowNumber, Integer::parseInt);
+        final var componentType = switch (row.get(4)) {
+          case "W" -> AGPComponentType.WGS_CONTIG;
+          case "N" -> AGPComponentType.GAP_WITH_SPECIFIED_SIZE;
+          case "U" -> AGPComponentType.GAP_OF_UNKNOWN_SIZE;
+          case "A" -> AGPComponentType.ACTIVE_FINISHING;
+          case "D" -> AGPComponentType.DRAFT_HTG;
+          case "F" -> AGPComponentType.FINISHED_HTG;
+          case "G" -> AGPComponentType.WHOLE_GENOME_FINISHING;
+          case "O" -> AGPComponentType.OTHER_SEQUENCE;
+          case "P" -> AGPComponentType.PRE_DRAFT;
+          default -> {
+            log.error("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
+            throw new IllegalArgumentException("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
           }
-          yield new GapAGPRecord(
-            objectName,
-            objectBeg,
-            objectEnd,
-            partNumber,
-            gapLength,
-            gapType,
-            linkage,
-            linkageEvidence,
-            componentType
-          );
-        }
-      };
-      parsedRecords.add(agpFileRecord);
+        };
+        final var agpFileRecord = switch (componentType) {
+          case WGS_CONTIG, ACTIVE_FINISHING, DRAFT_HTG, FINISHED_HTG, WHOLE_GENOME_FINISHING, OTHER_SEQUENCE, PRE_DRAFT -> {
+            final var componentId = row.get(5);
+            final var componentBeg = parseAgpNumber(row.get(6), rowNumber, Long::parseLong);
+            final var componentEnd = parseAgpNumber(row.get(7), rowNumber, Long::parseLong);
+            final var orientation = switch (row.get(8)) {
+              case "+" -> AGPContigOrientation.PLUS;
+              case "-" -> AGPContigOrientation.MINUS;
+              case "?", "0" -> AGPContigOrientation.UNKNOWN;
+              case "na" -> AGPContigOrientation.IRRELEVANT;
+              default -> {
+                log.error("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
+                throw new IllegalArgumentException("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
+              }
+            };
+            yield new ContigAGPRecord(
+              objectName,
+              objectBeg,
+              objectEnd,
+              partNumber,
+              componentId,
+              componentBeg,
+              componentEnd,
+              orientation,
+              componentType
+            );
+          }
+          case GAP_WITH_SPECIFIED_SIZE, GAP_OF_UNKNOWN_SIZE -> {
+            final var gapLength = parseAgpNumber(row.get(5), rowNumber, Long::parseLong);
+            final var gapType = switch (row.get(6)) {
+              case "scaffold" -> AGPGapType.SCAFFOLD;
+              case "contig" -> AGPGapType.CONTIG;
+              case "centromere" -> AGPGapType.CENTROMERE;
+              case "short_arm" -> AGPGapType.SHORT_ARM;
+              case "heterochromatin" -> AGPGapType.HETEROCHROMATIN;
+              case "telomere" -> AGPGapType.TELOMERE;
+              case "repeat" -> AGPGapType.REPEAT;
+              case "contamination" -> AGPGapType.CONTAMINATION;
+              default -> {
+                log.error("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
+                throw new IllegalArgumentException("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
+              }
+            };
+            final var linkage = switch (row.get(7)) {
+              case "yes" -> true;
+              case "no" -> false;
+              default -> {
+                log.error("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
+                throw new IllegalArgumentException("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
+              }
+            };
+            final var linkageEvidence = new ArrayList<LinkageEvidence>();
+            for (final var evidence : row.get(8).split(";", -1)) {
+              linkageEvidence.add(switch (evidence) {
+              case "proximity_ligation" -> LinkageEvidence.PROXIMITY_LIGATION;
+              case "na" -> LinkageEvidence.NA;
+              case "paired-ends", "paired_ends" -> LinkageEvidence.PAIRED_ENDS;
+              case "align_genus" -> LinkageEvidence.ALIGN_GENUS;
+              case "align_xgenus" -> LinkageEvidence.ALIGN_XGENUS;
+              case "align_trnscpt" -> LinkageEvidence.ALIGN_TRNSCPT;
+              case "within_clone" -> LinkageEvidence.WITHIN_CLONE;
+              case "clone_contig" -> LinkageEvidence.CLONE_CONTIG;
+              case "map" -> LinkageEvidence.MAP;
+              case "pcr" -> LinkageEvidence.PCR;
+              case "strobe" -> LinkageEvidence.STROBE;
+              case "unspecified" -> LinkageEvidence.UNSPECIFIED;
+              default -> {
+                log.error("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
+                throw new IllegalArgumentException("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
+              }
+              });
+            }
+            yield new GapAGPRecord(
+              objectName,
+              objectBeg,
+              objectEnd,
+              partNumber,
+              gapLength,
+              gapType,
+              linkage,
+              linkageEvidence,
+              componentType
+            );
+          }
+        };
+        parsedRecords.add(agpFileRecord);
+      }
     }
     validateLayout(parsedRecords);
     return List.copyOf(parsedRecords);
+  }
+
+  private static <T> T parseAgpNumber(String text, int line, java.util.function.Function<String, T> parse) {
+    try {
+      return parse.apply(text);
+    } catch (NumberFormatException invalid) {
+      throw new IllegalArgumentException("Invalid number on AGP line " + line);
+    }
   }
 
   /** Reject ambiguous coordinates before they can reorder a tree or mix contact bins. */

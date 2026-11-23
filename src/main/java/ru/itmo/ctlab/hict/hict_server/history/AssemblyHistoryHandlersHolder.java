@@ -1,5 +1,9 @@
 package ru.itmo.ctlab.hict.hict_server.history;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
@@ -105,7 +109,7 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
         final String revision = ctx.request().getHeader("X-HiCT-History-Revision");
         if (session == null || revision == null)
           throw new io.vertx.ext.web.handler.HttpException(400, "Exact cuts require the displayed history session and revision headers");
-        final long expected = ctx.body().asJsonObject().getLong("expectedRevision");
+        final long expected = RequestJson.requireLong(RequestJson.requireObject(ctx), "expectedRevision");
         final long displayedRevision;
         try { displayedRevision = Long.parseLong(revision); }
         catch (NumberFormatException invalid) { throw new io.vertx.ext.web.handler.HttpException(400, "Invalid displayed history revision"); }
@@ -139,19 +143,20 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   @Override public void addHandlersToRouter(Router router) {
     router.post("/assembly/history").handler(ctx -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY,
       null, () -> {
-        var body = ctx.body().asJsonObject();
+        var body = RequestJson.requireObject(ctx);
         if (journal == null) return new JsonObject().put("summary", null).put("entries", List.of());
         var summary = journal.summary();
-        int offset = body.getInteger("offset", Math.max(0, summary.position()-49));
+        int offset = body.getValue("offset") == null ? Math.max(0, summary.position() - 49) : RequestJson.requireInt(body, "offset");
+        int limit = body.getValue("limit") == null ? 100 : RequestJson.requireInt(body, "limit");
         return new JsonObject().put("summary", summary).put("offset", offset)
-          .put("entries", journal.page(offset, body.getInteger("limit", 100)));
+          .put("entries", journal.page(offset, limit));
       }, result -> ctx.response().end(Json.encodeToBuffer(result))));
     router.post("/assembly/history/restore").handler(ctx -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY,
       null, () -> {
-        if (journal == null) throw new IllegalStateException("Open a file before using history");
-        var body = ctx.body().asJsonObject();
-        requireVersion(body.getString("session"), body.getLong("revision", -1L));
-        int target = journal.target(body.getString("action"), body.getLong("id"));
+        if (journal == null) throw new NoOpenFileException("Open a file before using history");
+        var body = RequestJson.requireObject(ctx);
+        requireVersion(RequestJson.requireString(body, "session"), RequestJson.requireLong(body, "revision"));
+        int target = journal.target(RequestJson.requireString(body, "action"), RequestJson.optionalLong(body, "id"));
         var previous = journal.current();
         try {
           restore(journal.stateAt(target));

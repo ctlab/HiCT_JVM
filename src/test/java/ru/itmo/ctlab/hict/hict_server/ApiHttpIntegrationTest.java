@@ -1256,6 +1256,19 @@ class ApiHttpIntegrationTest {
       new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getJsonObject("assemblyInfo"));
   }
 
+  void startValidationServer() throws Exception {
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, scheduler).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder(vertx).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder(vertx).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder(vertx).addHandlersToRouter(router);
+    });
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+  }
+
   private void startServerWithInfoAndFileHandlers() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {});
   }
@@ -1274,19 +1287,7 @@ class ApiHttpIntegrationTest {
     final var router = Router.router(vertx);
     router.route().handler(BodyHandler.create());
     configure.accept(router);
-    router.route().failureHandler(ctx -> {
-      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
-        ? ctx.failure().getMessage()
-        : "Request failed";
-      // Match MainVerticle's input-validation classification.
-      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode()
-        : ctx.failure() instanceof IllegalArgumentException ? 400 : 500;
-      final var payload = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getPayload() : null;
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .setStatusCode(status)
-        .end("{\"error\":\"" + (payload != null ? payload : message).replace("\"", "\\\"") + "\"}");
-    });
+    router.route().failureHandler(MainVerticle::respondFailure);
 
     new InfoHandlersHolder(vertx).addHandlersToRouter(router);
     new FSHandlersHolder(vertx).addHandlersToRouter(router);
@@ -1317,7 +1318,7 @@ class ApiHttpIntegrationTest {
     return new RequestTaskScheduler.SchedulerConfig(10, 16, 10, sizing);
   }
 
-  private HttpResponse<String> get(final @NotNull String path) throws IOException, InterruptedException {
+  HttpResponse<String> get(final @NotNull String path) throws IOException, InterruptedException {
     return get(path, Map.of());
   }
 
@@ -1333,7 +1334,7 @@ class ApiHttpIntegrationTest {
     return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
   }
 
-  private HttpResponse<String> post(final @NotNull String path,
+  HttpResponse<String> post(final @NotNull String path,
                                     final @NotNull String body) throws IOException, InterruptedException {
     return post(path, body, Map.of());
   }

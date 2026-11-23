@@ -24,6 +24,12 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
+import ch.systemsx.cisd.hdf5.HDF5Factory;
+
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
@@ -127,16 +133,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
 
-          final @NotNull var requestBody = ctx.body();
-          final @NotNull var requestJSON = requestBody.asJsonObject();
+          final var requestJSON = RequestJson.requireObject(ctx);
 
-          final @Nullable var filename = requestJSON.getString("filename");
-          final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
+          final @Nullable var filename = RequestJson.requireString(requestJSON, "filename");
+          final @Nullable var fastaFilename = RequestJson.optionalString(requestJSON, "fastaFilename", null);
 
           log.debug("Got filename: {} and FASTA filename: {}", filename, fastaFilename);
-          if (filename == null || filename.isBlank()) {
-            throw new IllegalArgumentException("Filename must be specified to open the file");
-          }
           final var requestedFilename = filename.trim();
           final var dataRoot = dataDirectory.normalize().toAbsolutePath();
           final var requestedFilePath = dataRoot.resolve(requestedFilename).normalize().toAbsolutePath();
@@ -145,6 +147,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           if (!Files.isRegularFile(requestedFilePath)) {
             throw new IllegalArgumentException("Path is not a regular HiCT file: " + requestedFilename);
+          }
+          if (!HDF5Factory.isHDF5File(requestedFilePath.toFile())) {
+            throw new IllegalArgumentException("Select a HiCT HDF5 contact map");
           }
           final boolean verbose = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
           if (verbose) {
@@ -298,12 +303,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (dataDirectoryWrapper == null) {
             throw new RuntimeException("Data directory is not present in local map");
           }
-          final var requestJson = ctx.body().asJsonObject();
-          final var filename = requestJson.getString("filename");
-          final var allowMismatch = requestJson.getBoolean("allowMismatch", false);
-          if (filename == null || filename.isBlank()) {
-            throw new IllegalArgumentException("Secondary source filename is required");
+          final var requestJson = RequestJson.requireObject(ctx);
+          final var filename = RequestJson.requireString(requestJson, "filename");
+          final var mismatchOption = requestJson.getValue("allowMismatch");
+          if (mismatchOption != null && !(mismatchOption instanceof Boolean)) {
+            throw new IllegalArgumentException("Missing or invalid field: allowMismatch");
           }
+          final boolean allowMismatch = Boolean.TRUE.equals(mismatchOption);
           final var dataDirectory = dataDirectoryWrapper.getPath();
           final var filePath = dataDirectory.resolve(filename).normalize().toAbsolutePath();
           if (!filePath.startsWith(dataDirectory)) {
@@ -311,6 +317,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
             throw new IllegalArgumentException("Secondary source file " + filename + " does not exist");
+          }
+          if (!HDF5Factory.isHDF5File(filePath.toFile())) {
+            throw new IllegalArgumentException("Select a HiCT HDF5 contact map");
           }
           final var secondaryChunkedFile = new ChunkedFile(
             new ChunkedFile.ChunkedFileOptions(
@@ -795,7 +804,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new IllegalStateException("Open a Hi-C file before linking FASTA");
+            throw new NoOpenFileException("Open a Hi-C file before linking FASTA");
           }
           final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
           if (dataDirectoryWrapper == null) {
@@ -989,7 +998,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
 
@@ -1017,18 +1026,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
           log.debug("Got map");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          final @NotNull var requestBody = ctx.body();
-          final @NotNull var requestJSON = requestBody.asJsonObject();
-          final var agpFilename = Objects.requireNonNull(
-            requestJSON.getString("agpFilename", requestJSON.getString("assemblyFilename")),
-            "AGP or assembly filename must be provided to load it."
-          );
-          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
+          final var requestJSON = RequestJson.requireObject(ctx);
+          final var filenameField = requestJSON.getValue("agpFilename") == null ? "assemblyFilename" : "agpFilename";
+          final var agpFilename = RequestJson.requireString(requestJSON, filenameField);
+          final var requestedSource = String.valueOf(RequestJson.optionalString(requestJSON, "source", ASSEMBLY_SOURCE_PRIMARY))
             .trim()
             .toUpperCase();
           final ShareableWrappers.ChunkedFileWrapper targetWrapper =
@@ -1043,12 +1049,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var sourceLayoutFile = resolveAssemblyLayoutFile(dataDirectory, agpFilename);
           final var agpFile = materializeAgpLayoutFile(sourceLayoutFile);
           final var policy = ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.valueOf(
-            requestJSON.getString("missingComponentsPolicy", "REQUIRE_CHOICE"));
+            RequestJson.optionalString(requestJSON, "missingComponentsPolicy", "REQUIRE_CHOICE"));
           final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importReport;
           try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
             importReport = targetChunkedFile.importAGP(reader, policy);
-          } catch (IOException | NoSuchFieldException e) {
-            throw new RuntimeException(e);
+          } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException(e.getMessage());
           }
           if (importReport.requiresChoice()) return new io.vertx.core.json.JsonObject()
             .put("requiresMissingComponentsChoice", true).put("importReport", io.vertx.core.json.JsonObject.mapFrom(importReport));
@@ -1061,6 +1067,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
           }
+          final var previousStats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          final var updatedStats = TileStatisticHolder.resetRangesWithIncrementedVersion(
+            previousStats, maxOpenResolutionCount(map, targetChunkedFile));
+          map.put("TileStatisticHolder", updatedStats);
           TileHandlersHolder.clearExpectedProfileCache(map);
           final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           if (trackManagerWrapper != null) {
@@ -1072,6 +1082,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           return new io.vertx.core.json.JsonObject()
             .put("contigDescriptors", assembly.contigDescriptors())
             .put("scaffoldDescriptors", assembly.scaffoldDescriptors())
+            .put("version", updatedStats.versionCounter().get())
             .put("importReport", importReport)
             .put("warning", String.join(" ", importReport.warnings()));
         },
@@ -1153,7 +1164,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     } else {
       wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
       if (wrapper == null) {
-        throw new IllegalStateException("Open a Hi-C file before using FASTA/AGP operations");
+        throw new NoOpenFileException("Open a Hi-C file before using FASTA/AGP operations");
       }
     }
     return wrapper;
@@ -1174,7 +1185,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     final var chunkedFile = chunkedFileWrapper.getChunkedFile();
 
@@ -1249,6 +1260,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
       trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
     }
     return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
+  }
+
+  private static int maxOpenResolutionCount(LocalMap<String, Object> map, ChunkedFile fallback) {
+    int count = fallback.getResolutions().length;
+    for (var key : java.util.List.of(PRIMARY_CHUNKED_FILE_KEY, SECONDARY_CHUNKED_FILE_KEY)) {
+      if (map.get(key) instanceof ShareableWrappers.ChunkedFileWrapper source) {
+        count = Math.max(count, source.getChunkedFile().getResolutions().length);
+      }
+    }
+    return count;
   }
 
   private static @NotNull Path resolveAssemblyLayoutFile(final @NotNull Path dataDirectory,

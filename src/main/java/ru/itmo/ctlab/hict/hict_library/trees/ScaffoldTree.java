@@ -208,11 +208,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
     try {
       this.rootLock.writeLock().lock();
-      ++this.rootScaffoldIdCounter;
+      if (this.root == null) return null;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
       final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
       final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      if (es.segment() == null) return null;
+      ++this.rootScaffoldIdCounter;
       final @NotNull ScaffoldDescriptor newScaffoldDescriptor;
       if (scaffoldGenerator == null) {
         newScaffoldDescriptor = new ScaffoldDescriptor(this.rootScaffoldIdCounter, String.format("scaffold_auto_%d", this.rootScaffoldIdCounter), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
@@ -250,11 +252,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
     try {
       this.rootLock.writeLock().lock();
-      ++this.rootScaffoldIdCounter;
+      if (this.root == null) return;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
       final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
       final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      if (es.segment() == null) return;
+      ++this.rootScaffoldIdCounter;
 
 
       final @NotNull var emptyNode = new ScaffoldTree.Node(

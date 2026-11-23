@@ -24,12 +24,15 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.tracks;
 
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -404,9 +407,12 @@ public class TrackHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final var request = ctx.body().asJsonObject();
-      final var widthPx = request.getInteger("widthPx", 512);
-      final var bpResolution = request.getLong("bpResolution", 1L);
+      final var request = RequestJson.requireObject(ctx);
+      final var widthPx = request.getValue("widthPx") == null ? 512 : RequestJson.requireInt(request, "widthPx");
+      if (widthPx < 1 || widthPx > 16384) {
+        throw new IllegalArgumentException("Track width must be between 1 and 16384 pixels");
+      }
+      final var bpResolution = request.getValue("bpResolution") == null ? 1L : RequestJson.requireLong(request, "bpResolution");
 
       final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
       final var manager = getTrackManager(ctx);
@@ -644,7 +650,7 @@ public class TrackHandlersHolder extends HandlersHolder {
   private ChunkedFile extractChunkedFile(final @NotNull LocalMap<String, Object> map, final @NotNull io.vertx.ext.web.RoutingContext ctx) {
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+      ctx.fail(new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
       return null;
     }
     return chunkedFileWrapper.getChunkedFile();

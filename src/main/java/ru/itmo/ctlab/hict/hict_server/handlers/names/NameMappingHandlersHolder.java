@@ -24,6 +24,10 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.names;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -59,7 +63,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final var request = RenameContigRequestDTO.fromJSONObject(ctx.body().asJsonObject());
+      final var request = RenameContigRequestDTO.fromJSONObject(RequestJson.requireObject(ctx));
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -81,7 +85,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final var request = RenameScaffoldRequestDTO.fromJSONObject(ctx.body().asJsonObject());
+      final var request = RenameScaffoldRequestDTO.fromJSONObject(RequestJson.requireObject(ctx));
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -135,7 +139,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
-      final var request = ImportNameMappingRequestDTO.fromJSONObject(ctx.body().asJsonObject());
+      final var request = ImportNameMappingRequestDTO.fromJSONObject(RequestJson.requireObject(ctx));
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -166,7 +170,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     return chunkedFileWrapper.getChunkedFile();
   }
@@ -176,7 +180,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
     if (stats == null) {
-      throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
     }
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
     map.put("TileStatisticHolder", newStats);
@@ -209,6 +213,11 @@ public class NameMappingHandlersHolder extends HandlersHolder {
   }
 
   private void validateContigRename(final @NotNull ChunkedFile chunkedFile, final int contigId, final @NotNull String newName) {
+    try {
+      chunkedFile.getContigOriginalName(contigId);
+    } catch (IllegalArgumentException unknown) {
+      throw new io.vertx.ext.web.handler.HttpException(404, unknown.getMessage());
+    }
     if (newName.isBlank()) {
       return;
     }
@@ -220,6 +229,11 @@ public class NameMappingHandlersHolder extends HandlersHolder {
   }
 
   private void validateScaffoldRename(final @NotNull ChunkedFile chunkedFile, final long scaffoldId, final @NotNull String newName) {
+    try {
+      chunkedFile.getScaffoldOriginalName(scaffoldId);
+    } catch (IllegalArgumentException unknown) {
+      throw new io.vertx.ext.web.handler.HttpException(404, unknown.getMessage());
+    }
     if (newName.isBlank()) {
       return;
     }

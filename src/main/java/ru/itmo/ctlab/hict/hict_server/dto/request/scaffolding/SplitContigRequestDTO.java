@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding;
 
 import io.vertx.core.json.JsonObject;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import org.jetbrains.annotations.NotNull;
 
 public record SplitContigRequestDTO(
@@ -33,6 +34,6 @@ public record SplitContigRequestDTO(
 ) {
 
   public static @NotNull SplitContigRequestDTO fromJSONObject(final @NotNull JsonObject json) {
-    return new SplitContigRequestDTO(json.getLong("splitPx"), json.getLong("bpResolution"));
+    return new SplitContigRequestDTO(RequestJson.requireLong(json, "splitPx"), RequestJson.requireLong(json, "bpResolution"));
   }
 }

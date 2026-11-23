@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject invalid map edits and file requests without changing the assembly, and refresh tiles after applying an AGP.
+
 - Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
 
 ### Open, save and recover

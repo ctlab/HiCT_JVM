@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.dto.request.names;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
@@ -37,16 +39,25 @@ public record ImportNameMappingRequestDTO(
 ) {
   public static @NotNull ImportNameMappingRequestDTO fromJSONObject(final @NotNull JsonObject jsonObject) {
     return new ImportNameMappingRequestDTO(
-      parseContigs(jsonObject.getJsonArray("contigs", new JsonArray())),
-      parseScaffolds(jsonObject.getJsonArray("scaffolds", new JsonArray()))
+      parseContigs(mappings(jsonObject, "contigs")),
+      parseScaffolds(mappings(jsonObject, "scaffolds"))
     );
+  }
+
+  private static JsonArray mappings(JsonObject body, String field) {
+    final var value = body.getValue(field);
+    if (value == null) return new JsonArray();
+    if (value instanceof JsonArray entries) return entries;
+    throw new IllegalArgumentException("Missing or invalid field: " + field);
   }
 
   private static @NotNull List<@NotNull ContigNameMappingRequestDTO> parseContigs(final @NotNull JsonArray array) {
     final var result = new ArrayList<ContigNameMappingRequestDTO>(array.size());
     for (int i = 0; i < array.size(); i++) {
-      final var obj = array.getJsonObject(i);
-      result.add(new ContigNameMappingRequestDTO(obj.getInteger("contigId"), obj.getString("name")));
+      if (!(array.getValue(i) instanceof JsonObject obj)) {
+        throw new IllegalArgumentException("Each name mapping must be an object");
+      }
+      result.add(new ContigNameMappingRequestDTO(RequestJson.requireInt(obj, "contigId"), RequestJson.optionalString(obj, "name", null)));
     }
     return result;
   }
@@ -54,8 +65,10 @@ public record ImportNameMappingRequestDTO(
   private static @NotNull List<@NotNull ScaffoldNameMappingRequestDTO> parseScaffolds(final @NotNull JsonArray array) {
     final var result = new ArrayList<ScaffoldNameMappingRequestDTO>(array.size());
     for (int i = 0; i < array.size(); i++) {
-      final var obj = array.getJsonObject(i);
-      result.add(new ScaffoldNameMappingRequestDTO(obj.getLong("scaffoldId"), obj.getString("name")));
+      if (!(array.getValue(i) instanceof JsonObject obj)) {
+        throw new IllegalArgumentException("Each name mapping must be an object");
+      }
+      result.add(new ScaffoldNameMappingRequestDTO(RequestJson.requireLong(obj, "scaffoldId"), RequestJson.optionalString(obj, "name", null)));
     }
     return result;
   }

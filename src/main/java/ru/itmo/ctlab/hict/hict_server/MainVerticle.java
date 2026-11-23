@@ -471,26 +471,7 @@ public class MainVerticle extends AbstractVerticle {
     ));
     handlersHolders.add(this.backgroundJobs);
 
-    router.route().failureHandler(ctx -> {
-      final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError
-        ? httpError : null;
-      final boolean badInput = ctx.failure() instanceof IllegalArgumentException;
-      if (expected != null && expected.getStatusCode() < 500) {
-        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), expected.getStatusCode());
-      } else if (badInput) {
-        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), ctx.failure().getMessage());
-      } else {
-        log.error("An exception was caught at router top-level", ctx.failure());
-      }
-      final var message = failureMessage(ctx.failure());
-      final int statusCode = expected != null ? expected.getStatusCode()
-        : badInput ? 400
-        : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .setStatusCode(statusCode)
-        .end(Json.encode(Map.of("error", message)));
-    });
+    router.route().failureHandler(MainVerticle::respondFailure);
 
     log.info("Configuring router");
     handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));
@@ -508,10 +489,45 @@ public class MainVerticle extends AbstractVerticle {
     });
   }
 
+  static void respondFailure(io.vertx.ext.web.RoutingContext ctx) {
+    final var failure = ctx.failure();
+    final int statusCode;
+    if (failure instanceof io.vertx.ext.web.handler.HttpException http) {
+      statusCode = http.getStatusCode();
+    } else if (failure instanceof IllegalArgumentException || failure instanceof io.vertx.core.json.DecodeException) {
+      statusCode = 400;
+    } else if (failure instanceof NoOpenFileException || failure instanceof IllegalStateException && failure.getMessage() != null) {
+      statusCode = 409;
+    } else {
+      statusCode = ctx.statusCode() >= 400 ? ctx.statusCode() : 500;
+    }
+    final String message;
+    if (statusCode >= 500) {
+      final var reference = java.util.UUID.randomUUID().toString().substring(0, 8);
+      log.error("Request failed. Reference {} for {} {}", reference, ctx.request().method(), ctx.request().path(), failure);
+      message = "Internal error. Reference " + reference;
+    } else {
+      message = failureMessage(failure);
+      log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), statusCode);
+    }
+    if (ctx.response().headWritten() || ctx.response().ended()) return;
+    ctx.response()
+      .putHeader("content-type", "application/json")
+      .setStatusCode(statusCode)
+      .end(Json.encode(Map.of("error", message)));
+  }
+
   /** Vert.x keeps the user-facing explanation in payload, not getMessage() ("Conflict"). */
   public static String failureMessage(Throwable failure) {
-    if (failure instanceof io.vertx.ext.web.handler.HttpException http
-        && http.getPayload() != null && !http.getPayload().isBlank()) return http.getPayload();
-    return failure != null && failure.getMessage() != null ? failure.getMessage() : "Request failed";
+    if (failure instanceof NumberFormatException) return "Invalid number in the request";
+    if (failure instanceof io.vertx.core.json.DecodeException) return "Expected a JSON request object";
+    final var message = failure instanceof io.vertx.ext.web.handler.HttpException http && http.getPayload() != null
+      ? http.getPayload() : failure == null ? null : failure.getMessage();
+    if (message == null || message.isBlank() ||
+      JAVA_FAILURE_TEXT.matcher(message).find()) return "Request failed";
+    return message;
   }
+
+  private static final java.util.regex.Pattern JAVA_FAILURE_TEXT = java.util.regex.Pattern.compile(
+    "java\\.|javax\\.|Exception|Cannot invoke|Cannot read field|ClassCast|IndexOutOfBounds|For input string|ru\\.itmo|io\\.vertx");
 }

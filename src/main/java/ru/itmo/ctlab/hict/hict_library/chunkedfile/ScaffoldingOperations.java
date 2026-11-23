@@ -95,7 +95,10 @@ public class ScaffoldingOperations {
           .orElse(0L);
         // Contig and scaffold trees must use exactly the same insertion boundary.
         // A click inside an object means before that whole object.
-        long targetBp = Math.max(0, Math.min(targetStartBp, totalAssemblyLengthBp));
+        if (targetStartBp < 0 || targetStartBp > totalAssemblyLengthBp) {
+          throw new IllegalArgumentException("Move target must be within the assembly");
+        }
+        long targetBp = targetStartBp;
         if (targetBp >= range.startBp() && targetBp <= range.endBpExcl()) return;
         if (targetBp < totalAssemblyLengthBp) {
           final var target = resolveSelectionWithScaffolds(targetBp, targetBp + 1, contigTree, scaffoldTree);
@@ -117,8 +120,6 @@ public class ScaffoldingOperations {
   }
 
   public void scaffoldRegion(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units, final @Nullable LongFunction<ScaffoldDescriptor> scaffoldGenerator) {
-    assert (startIncl < endExcl) : "Rescaffolding: start >= end??";
-
     final var contigTree = this.chunkedFile.getContigTree();
     final var scaffoldTree = this.chunkedFile.getScaffoldTree();
 
@@ -126,6 +127,7 @@ public class ScaffoldingOperations {
       contigTree.getRootLock().readLock().lock();
       scaffoldTree.getRootLock().writeLock().lock();
 
+      validateRange(startIncl, endExcl, resolutionDescriptor, units);
       final long startBp = this.chunkedFile.convertUnits(
         startIncl,
         resolutionDescriptor,
@@ -158,8 +160,6 @@ public class ScaffoldingOperations {
 
 
   public void unscaffoldRegion(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units) {
-    assert (startIncl < endExcl) : "Unscaffolding: start >= end??";
-
     final var contigTree = this.chunkedFile.getContigTree();
     final var scaffoldTree = this.chunkedFile.getScaffoldTree();
 
@@ -167,6 +167,7 @@ public class ScaffoldingOperations {
       contigTree.getRootLock().readLock().lock();
       scaffoldTree.getRootLock().writeLock().lock();
 
+      validateRange(startIncl, endExcl, resolutionDescriptor, units);
       final long startBp = this.chunkedFile.convertUnits(
         startIncl,
         resolutionDescriptor,
@@ -219,8 +220,6 @@ public class ScaffoldingOperations {
   }
 
   public void moveRegionToDebris(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units) {
-    assert (startIncl < endExcl) : "Unscaffolding: start >= end??";
-
     final var contigTree = this.chunkedFile.getContigTree();
     final var scaffoldTree = this.chunkedFile.getScaffoldTree();
 
@@ -228,6 +227,7 @@ public class ScaffoldingOperations {
       contigTree.getRootLock().writeLock().lock();
       scaffoldTree.getRootLock().writeLock().lock();
 
+      validateRange(startIncl, endExcl, resolutionDescriptor, units);
       final long startBp = this.chunkedFile.convertUnits(
         startIncl,
         resolutionDescriptor,
@@ -261,17 +261,28 @@ public class ScaffoldingOperations {
     }
   }
 
+  public void validateRange(long start, long end, ResolutionDescriptor resolution, QueryLengthUnit units) {
+    final int order = resolution.getResolutionOrderInArray();
+    if (order < 0 || order >= chunkedFile.getResolutions().length ||
+      (units == QueryLengthUnit.BASE_PAIRS) != (order == 0)) {
+      throw new IllegalArgumentException("Resolution does not match the coordinate units");
+    }
+    final long length = chunkedFile.getContigTree().getLengthInUnits(units, resolution);
+    if (start < 0 || start >= end || end > length) {
+      throw new IllegalArgumentException("Select a nonempty range within the assembly");
+    }
+  }
+
   private @Nullable SelectionRange resolveSelectionWithScaffolds(
     final long queriedStartBpIncl,
     final long queriedEndBpExcl,
     final @NotNull ContigTree contigTree,
     final @NotNull ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree scaffoldTree
   ) {
-    final var startBp = Math.min(queriedStartBpIncl, queriedEndBpExcl);
-    final var endBp = Math.max(queriedStartBpIncl, queriedEndBpExcl);
-    if (startBp >= endBp) {
-      return null;
-    }
+    validateRange(queriedStartBpIncl, queriedEndBpExcl,
+      ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+    final var startBp = queriedStartBpIncl;
+    final var endBp = queriedEndBpExcl;
 
     final var initialExposed = contigTree.expose(
       ResolutionDescriptor.fromResolutionOrder(0),
@@ -326,7 +337,7 @@ public class ScaffoldingOperations {
   }
 
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
-    splitContigAtBin(splitPosition, resolutionDescriptor, units, null);
+    splitContigAtBin(splitPosition, resolutionDescriptor, units, null, false);
   }
 
   /** Cut at a boundary in the current oriented contig, retaining all sequence.
@@ -424,7 +435,7 @@ public class ScaffoldingOperations {
         scaffoldTree.replaceWith(new ScaffoldTree(parent.getLengthBp()));
         if (edit.exact()) splitContigAtBp(parent.getContigId(), edit.splitOffsetBp(), edit);
         else splitContigAtBin(edit.splitOffsetBp(), ResolutionDescriptor.fromResolutionOrder(0),
-          QueryLengthUnit.BASE_PAIRS, edit);
+          QueryLengthUnit.BASE_PAIRS, edit, false);
         left = tree.getContigDescriptors().get(edit.leftId());
         right = tree.getContigDescriptors().get(edit.rightId());
         if (left.getLengthBp() != edit.splitOffsetBp()) {
@@ -443,9 +454,13 @@ public class ScaffoldingOperations {
     }
   }
 
+  public void validateBinSplit(long splitPositionBp) {
+    splitContigAtBin(splitPositionBp, ResolutionDescriptor.fromResolutionOrder(0),
+      QueryLengthUnit.BASE_PAIRS, null, true);
+  }
+
   private void splitContigAtBin(long splitPosition, ResolutionDescriptor resolutionDescriptor,
-                                QueryLengthUnit units, ChunkedFile.SplitEdit replay) {
-    assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
+                                QueryLengthUnit units, ChunkedFile.SplitEdit replay, boolean validateOnly) {
 
     final var minResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(1);
     final long minBpResolution = this.chunkedFile.getResolutions()[1];
@@ -457,6 +472,10 @@ public class ScaffoldingOperations {
     try {
       lock.writeLock().lock();
       scaffoldLock.writeLock().lock();
+      if (splitPosition <= 0 || splitPosition == Long.MAX_VALUE) {
+        throw new IllegalArgumentException("Split position must be inside the assembly");
+      }
+      validateRange(splitPosition, splitPosition + 1, resolutionDescriptor, units);
       final var oldContigTreeRoot = contigTree.getRoot();
       final var oldAssemblyLengthBp = oldContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
       final var splitPositionBins = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, minResolutionDescriptor, QueryLengthUnit.BINS);
@@ -469,9 +488,8 @@ public class ScaffoldingOperations {
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);
       final var leftBps = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
+      if (es.segment() == null) throw new IllegalArgumentException("Split position is outside of any contig");
       final var oldContigNode = es.segment().push().updateSizes();
-
-      assert (oldContigNode != null) : "Split position is outside of any contig??";
 
       final var oldContigDescriptor = oldContigNode.getContigDescriptor();
       final var parentScaffold = scaffoldTree.getScaffoldAtBp(leftBps);
@@ -596,6 +614,7 @@ public class ScaffoldingOperations {
         newContigOffsetsInSourceFasta.get(i), oldContigDescriptor.isSharedBinSlice()
       )).toList();
 
+      if (validateOnly) return;
       newCds.forEach(cd -> contigTree.getContigDescriptors().put(cd.getContigId(), cd));
 
       final var newContigNodes = newCds.stream().map(cd -> ContigTree.Node.createNodeFromDescriptor(cd, oldContigNode.getTrueDirection())).toList();
