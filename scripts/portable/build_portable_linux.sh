@@ -6,13 +6,6 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
 PLATFORM="linux-x86_64"
 APP_NAME="HiCT"
-VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
-ABI_SUFFIX=""
-if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
-  ABI_SUFFIX="-musl"
-fi
-APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
-PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -89,11 +82,20 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   )
 fi
 
+VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/build/resources/main/version.txt")"
+ABI_SUFFIX=""
+if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
+  ABI_SUFFIX="-musl"
+fi
+APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
+PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
+
 FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
 if [[ ! -f "${FAT_JAR}" ]]; then
   echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" linux_x86_64
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1

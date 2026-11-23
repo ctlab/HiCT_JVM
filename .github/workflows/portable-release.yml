@@ -563,14 +563,18 @@ jobs:
         shell: bash
         run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/linux_x86_64 --target toolchains-dist/linux_x86_64
 
+      - name: Seal the Linux toolchain before building the fat JAR
+        run: python scripts/toolchains/prepare_bundled_tools.py --seal
+
       - name: Build fat JAR in manylinux2014
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.project.portableReleaseVersion=${{ env.HICT_BUILD_VERSION }}
         run: scripts/ci/linux_container_build.sh fatjar
 
       - name: Verify every bundled tool in the packaged JAR
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1235,6 +1239,9 @@ jobs:
         shell: bash
         run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/windows_x86_64 --target toolchains-dist/windows_x86_64
 
+      - name: Seal the Windows toolchain before packaging
+        run: python scripts/toolchains/prepare_bundled_tools.py --seal
+
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
@@ -1249,7 +1256,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1533,7 +1539,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1823,7 +1828,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -2228,7 +2232,7 @@ jobs:
           # uploads. The following step verifies skipped files by SHA-256 too.
           overwrite_files: false
 
-      - name: Prune obsolete automated assets after successful rolling upload
+      - name: Verify rolling upload and prune obsolete assets outside jvm-sfx-native
         if: ${{ success() && steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: actions/github-script@v8
         env:
@@ -2239,7 +2243,8 @@ jobs:
             const { prune } = require('./scripts/ci/rolling_release.cjs');
             await prune({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
               releaseId: process.env.HICT_PREVIOUS_RELEASE_ID,
-              previousAssets: JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
+              previousAssets: process.env.HICT_PORTABLE_RELEASE_TAG === "latest-jvm-sfx-native"
+                ? [] : JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
               directory: 'release-dist' });
 
       - name: Attach assets to release event

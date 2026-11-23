@@ -300,10 +300,6 @@ function Build-CustomPortableExe {
 }
 
 $projectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$version = (Get-Content (Join-Path $projectDir "version.txt") -Raw).Trim()
-$platform = "windows-x86_64"
-$appName = "HiCT"
-$appDir = Join-Path $DistRoot "$appName-$version-$platform"
 $artifactDir = Join-Path $projectDir "build\distributions"
 $jlink = Get-JdkTool "jlink.exe"
 $jarTool = Get-JdkTool "jar.exe"
@@ -329,11 +325,19 @@ if (-not $SkipGradle) {
   }
 }
 
+$version = (Get-Content (Join-Path $projectDir "build\resources\main\version.txt") -Raw).Trim()
+$platform = "windows-x86_64"
+$appName = "HiCT"
+$appDir = Join-Path $DistRoot "$appName-$version-$platform"
 $fatJarPath = Join-Path $projectDir "build\libs\hict_server-$version-fat.jar"
 if (-not (Test-Path -LiteralPath $fatJarPath -PathType Leaf)) {
   throw "The current version fat JAR was not found: $fatJarPath. Build shadowJar before packaging."
 }
 $fatJar = Get-Item -LiteralPath $fatJarPath
+& python (Join-Path $PSScriptRoot "verify_package_inputs.py") $fatJar.FullName windows_x86_64
+if ($LASTEXITCODE -ne 0) {
+  throw "Portable Windows package input verification failed."
+}
 $jarEntries = & $jarTool tf $fatJar.FullName
 if ($LASTEXITCODE -ne 0) {
   throw "Failed to inspect $($fatJar.FullName)"

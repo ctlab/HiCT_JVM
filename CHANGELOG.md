@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
+
 ### Open, save and recover
 
 - Open curated datasets from **File → Open Examples**. Follow downloads and conversion in Jobs, cancel or retry a stage, and reopen a ready example with its FASTA and recorded source attribution.

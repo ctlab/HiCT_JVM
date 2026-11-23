@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: >-
           bash ./gradlew test
-          testNativeProcessingBaseline shadowJar -x copyWebUI --no-daemon
+          testNativeProcessingBaseline shadowJar -PrequireBundledWebUI=true --no-daemon
       - name: Audit macOS JNI deployment targets and relocatable install names
         if: runner.os == 'macOS'
         shell: bash

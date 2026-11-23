@@ -14,8 +14,6 @@ TOOLCHAIN_PLATFORM="${HICT_DARWIN_PLATFORM_DIR:-darwin_${DARWIN_ARCH}}"
 PLATFORM="${HICT_DARWIN_ARTIFACT_PLATFORM:-darwin-${DARWIN_ARCH}}"
 source "${SCRIPT_DIR}/macos_target.sh"
 APP_NAME="HiCT"
-VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
-APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -24,7 +22,6 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${HICT_RUN_PAYLOAD_XZ_THREADS:-}" ]
 fi
 LAUNCHER_SOURCE="${SCRIPT_DIR}/macos_launcher/HiCTDarwinLauncher.cpp"
 LAUNCHER_BASENAME="hict-darwin-${DARWIN_ARCH}"
-LAUNCHER_BINARY="${APP_DIR}/bin/${LAUNCHER_BASENAME}"
 
 usage() {
   cat <<'EOF'
@@ -209,15 +206,16 @@ prepare_darwin_jhdf5_sidecar_archive() {
   echo "[darwin/portable] Bundled platform JHDF5 native archive: lib/${archive_name} (${platform_dir})"
 }
 
-HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
-if [[ -d "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" ]]; then
-  python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
-    --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
-    --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
-fi
-
-
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+    python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
+      --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
+      --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
+    python3 "${SCRIPT_DIR}/../toolchains/prepare_bundled_tools.py" --seal --platform "${TOOLCHAIN_PLATFORM}"
+  else
+    python3 "${SCRIPT_DIR}/../toolchains/prepare_bundled_tools.py" --platform "${TOOLCHAIN_PLATFORM}"
+  fi
   resolve_jhdf5_for_portable_release
   # macOS portable packages intentionally embed only the target platform's
   # JHDF5/HDF5 runtime sidecar.  The separately published fat JAR remains
@@ -231,11 +229,16 @@ fi
 
 
 
+VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/build/resources/main/version.txt")"
+APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
+LAUNCHER_BINARY="${APP_DIR}/bin/${LAUNCHER_BASENAME}"
+
 FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
 if [[ ! -f "${FAT_JAR}" ]]; then
   echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" "${TOOLCHAIN_PLATFORM}"
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
