@@ -135,8 +135,9 @@ See the example validation document for exact measurements and sampling limits.
 
 == Remote server over SSH
 
-The default services bind to all interfaces and accept browser requests through
-permissive CORS. They expose file access and assembly mutation without an
+Running `start-server` directly binds the services to all IPv4 interfaces
+(`0.0.0.0`) by default. Portable launchers default to loopback. The services
+accept browser requests through permissive CORS. They expose file access and assembly mutation without an
 authentication layer. Restrict access to trusted users. Set `HICT_BIND_HOST` to
 loopback and forward both ports over SSH.
 

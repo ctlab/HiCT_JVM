@@ -79,3 +79,64 @@ The current candidate and local Linux evidence are recorded in
 [release-qualification.md](release-qualification.md). Future checks must identify
 their exact revisions and artifacts and record platform-specific desktop
 interaction, installation and native-dialog evidence.
+
+## Candidate desktop qualification
+
+Use a clean browser profile and copies of the same inputs in each engine.
+Record the artifact SHA-256 and both commits from About and `/version`. Repeat
+launch from a writable path containing spaces and non-ASCII characters. On
+Windows record the WebView2 version. On Linux record the display server,
+desktop portal, and distribution. On macOS record the version of the OS and
+whether the engine is native to the machine's architecture.
+
+| Case | Expected behavior |
+|---|---|
+| Startup and provenance | The launcher starts both services. About and the API report the same real JVM and WebUI commits as the package receipt. |
+| Map and sequence | Open Examples, then open a native map or convert a pairs file. Link the matching FASTA. Use the FASTA chip to inspect its name, zoom to letters and change the alignment minimum. |
+| Contrast and layers | Display two sources with distinct colors. Check exact limits across zoom and assembly edits. Square-root coverage remains readable. Observed and O/E each retain their own limits. |
+| Editing and regions | Reverse, group, move and split. Use toolbar Undo and Redo. Cancel removal of all scaffolds and verify the AGP is unchanged. Select coordinates, check centering, resize a region and test Square selection on subsequent drags. |
+| Tracks | Drag and wheel-scroll a dense BED track on both axes, then zoom the map. Verify strand direction, item colors, and readable signal ticks. |
+| Analysis | Generate ModDotPlot and an alignment dotplot from small regions. Use both resolution sliders and individual checkboxes. Confirm a result opens as a source. Try the signal histogram and local sequence search. |
+| Guidance and errors | Request FASTA export without a linked FASTA. Verify guidance appears before the save picker. Exercise failed AGP import and a failed job. Check Details and Show log. |
+| Guide and options | Open Help and read the bundled guide offline. Open each Advanced section, check its options, and reopen it to verify the remembered state. |
+| Selection export | Open Edit, Copy, Export and Analyse with the keyboard. Export a region in three formats. Verify the cost warning with an expensive selection and cancel. Clipboard output is PNG. |
+| Native export | Save viewport and whole-map PNG, SVG and PDF. Also test zoomed and isolated views, spaces and non-ASCII paths, cancel, overwrite decline, approved overwrite and denied destinations. Compare pixels and check editable vector labels in a viewer. |
+| Figures | Verify physical sizes at single- and double-column widths. Preview rulers, annotations, map layers and snapshots. Check label legibility, the smallest-text reading and the warning below 5 pt. |
+| Settings reset | Cancel and confirm browser reset in each wrapper. Verify the actual storage state on the app origin, including localStorage, cookies, Cache Storage and IndexedDB. Test a failed start before reset. |
+| Launcher Stop | Start a job and stop HiCT from the Launcher. Check child processes exit and disposable job files are cleaned up. Open console logs for the stopped session, then restart. Repeat on Windows. |
+
+Fill in each engine's result with **PASS**, **FAIL**, or **NOT TESTED** and
+attach evidence for the exact artifact. Hosted startup checks have their own
+receipts and do not substitute for these interactive cases.
+
+### Linux x86-64
+
+| Engine | Result | Evidence |
+|---|---|---|
+| Tauri (WebKitGTK, X11 or Wayland) | NOT TESTED | |
+| Electron (X11 or Wayland) | NOT TESTED | |
+| System browser | NOT TESTED | |
+
+### Windows x86-64
+
+| Engine | Result | Evidence |
+|---|---|---|
+| Tauri (WebView2) | NOT TESTED | |
+| Electron | NOT TESTED | |
+| System browser | NOT TESTED | |
+
+### macOS arm64
+
+| Engine | Result | Evidence |
+|---|---|---|
+| Tauri (WKWebView) | NOT TESTED | |
+| Electron | NOT TESTED | |
+| System browser | NOT TESTED | |
+
+### macOS x86-64
+
+| Engine | Result | Evidence |
+|---|---|---|
+| Tauri (WKWebView) | NOT TESTED | |
+| Electron | NOT TESTED | |
+| System browser | NOT TESTED | |
