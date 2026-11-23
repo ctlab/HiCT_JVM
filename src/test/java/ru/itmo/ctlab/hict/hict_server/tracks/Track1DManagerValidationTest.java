@@ -58,17 +58,26 @@ class Track1DManagerValidationTest {
     final var map = ReinforcementHdf5Fixture.create(tempDir, "density", List.of(4L));
     try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(map, 1, 2)); var tracks = manager()) {
       final String feature = "tiny\t4\t11\tinterval\t0\t-\n";
-      tracks.openTrack(write("dense.bed", feature.repeat(12_001) + "tiny\t0\t17\tall\n"), null, null);
+      tracks.openTrack(write("dense.bed", feature.repeat(12_001) + "tiny\t0\t17\tall\ntiny\t7\t8\tmiddle\n"), null, null);
       for (int state = 0; state < 3; state++) {
         if (state == 1) file.scaffoldingOperations().splitContigAtBp(0, 7);
         if (state == 2) file.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
         var bins = tracks.querySequenceTracks(file, null, 0, 17, 17, 4).getTracks().getFirst().getBins();
         assertEquals(17, bins.size());
+        var overview = tracks.querySequenceTracks(file, null, 0, 17, 1, 4).getTracks().getFirst().getBins();
+        assertEquals(12_003, overview.getFirst().getCount());
         for (int bp = 0; bp < 17; bp++) {
           int source = state == 2 ? 16 - bp : bp;
-          assertEquals(source >= 4 && source < 11 ? 12_002 : 1, bins.get(bp).getCount());
+          assertEquals(1 + (source >= 4 && source < 11 ? 12_001 : 0) + (source == 7 ? 1 : 0), bins.get(bp).getCount());
         }
       }
+      file.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
+      int right = file.getAssemblyInfo().contigs().getLast().descriptor().getContigId();
+      file.scaffoldingOperations().splitContigAtBp(right, 2);
+      file.scaffoldingOperations().moveSelectionRangeBp(7, 9, 17);
+      // The first 15 assembly bases now cover source [0,7) and [9,17).
+      var moved = tracks.querySequenceTracks(file, null, 0, 15, 1, 4).getTracks().getFirst().getBins();
+      assertEquals(12_002, moved.getFirst().getCount());
     }
   }
 

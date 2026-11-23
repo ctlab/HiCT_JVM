@@ -3643,13 +3643,36 @@ public class Track1DManager implements AutoCloseable {
     // change the assembly-to-source mapping, including at a newly split bin.
     private long countOverlaps(String source, SourceInterval interval) {
       var ends = sortedEnds.get(source);
+      return lowerBoundByStart(featuresBySource.get(source), interval.end()) - firstEndAfter(ends, interval.start());
+    }
+
+    private long additionalOverlaps(String source, SourceInterval piece, long previousEnd) {
+      if (previousEnd == 0) return countOverlaps(source, piece);
+      if (piece.end() <= previousEnd) return 0;
+      var features = featuresBySource.get(source);
+      if (piece.start() <= previousEnd) {
+        return lowerBoundByStart(features, piece.end()) - lowerBoundByStart(features, previousEnd);
+      }
+      // A previous interval and this disjoint interval share precisely the
+      // features starting before the previous end and ending after this start.
+      long count = countOverlaps(source, piece);
+      var ends = prefixEnds.get(source);
+      for (int i = firstEndAfter(ends, piece.start()); i < features.size(); i++) {
+        var feature = features.get(i);
+        if (feature.start() >= previousEnd) break;
+        if (feature.end() > piece.start()) count--;
+      }
+      return count;
+    }
+
+    private static int firstEndAfter(long[] ends, long position) {
       int lo = 0, hi = ends.length;
       while (lo < hi) {
         int mid = (lo + hi) >>> 1;
-        if (ends[mid] <= interval.start()) lo = mid + 1;
+        if (ends[mid] <= position) lo = mid + 1;
         else hi = mid;
       }
-      return lowerBoundByStart(featuresBySource.get(source), interval.end()) - lo;
+      return lo;
     }
 
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
@@ -4053,7 +4076,15 @@ public class Track1DManager implements AutoCloseable {
       double step = (double) span / buckets;
       var counts = new long[buckets];
       for (var source : featuresBySource.keySet()) {
-        for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
+        var segments = sourceToAssemblySegments.getOrDefault(source, List.of());
+        // Visit fragments in source order so a model crossing an assembly cut
+        // contributes once to a display bucket, even after a move or reversal.
+        long[] previousEnds = null;
+        if (segments.size() > 1) {
+          segments = segments.stream().sorted(Comparator.comparingLong(AssemblySegment::sourceStart)).toList();
+          previousEnds = new long[buckets];
+        }
+        for (var segment : segments) {
           long start = Math.max(queryStartPx, segment.visiblePxStart());
           long end = Math.min(queryEndPx, segment.visiblePxEnd());
           if (end <= start) continue;
@@ -4063,7 +4094,11 @@ public class Track1DManager implements AutoCloseable {
             long left = queryStartPx + (long) Math.floor(i * step);
             long right = i + 1 == buckets ? queryEndPx : queryStartPx + (long) Math.floor((i + 1) * step);
             var interval = mapVisiblePxIntervalToSegmentSource(segment, left, right, bpResolution);
-            if (interval.isPresent()) counts[i] += countOverlaps(source, interval.get());
+            if (interval.isEmpty()) continue;
+            var piece = interval.get();
+            long previousEnd = previousEnds == null ? 0 : previousEnds[i];
+            counts[i] += additionalOverlaps(source, piece, previousEnd);
+            if (previousEnds != null) previousEnds[i] = Math.max(previousEnd, piece.end());
           }
         }
       }
@@ -4130,12 +4165,7 @@ public class Track1DManager implements AutoCloseable {
           // A long/nested feature can start before many short features. Searching
           // starts and backing up by one loses it; prefix maxima retain all overlaps.
           var ends = prefixEnds.get(sourceName);
-          int index = 0, limit = ends.length;
-          while (index < limit) {
-            int mid = (index + limit) >>> 1;
-            if (ends[mid] <= sourceInterval.start()) index = mid + 1;
-            else limit = mid;
-          }
+          int index = firstEndAfter(ends, sourceInterval.start());
           for (int i = index; i < sourceFeatures.size(); i++) {
             final var feature = sourceFeatures.get(i);
             if (feature.start() >= sourceInterval.end()) {
