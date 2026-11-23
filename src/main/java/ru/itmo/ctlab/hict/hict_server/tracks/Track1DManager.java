@@ -222,6 +222,36 @@ public class Track1DManager implements AutoCloseable {
   public @NotNull TrackSummary openTrack(final @NotNull String relativeFilename,
                                          final String requestedName,
                                          final String requestedColor) {
+    try (var candidate = prepareTrack(relativeFilename, requestedName, requestedColor)) {
+      return registerTrack(candidate);
+    }
+  }
+
+  public static final class PreparedTrack implements AutoCloseable {
+    private final String filename, name, color;
+    private final TrackType type;
+    private final List<String> warnings;
+    private TrackDataSource source;
+
+    private PreparedTrack(String filename, String name, String color, TrackType type, TrackDataSource source,
+                          List<String> warnings) {
+      this.filename = filename;
+      this.name = name;
+      this.color = color;
+      this.type = type;
+      this.source = source;
+      this.warnings = warnings;
+    }
+
+    @Override public synchronized void close() {
+      if (source != null) {
+        closeDataSourceQuietly(source);
+        source = null;
+      }
+    }
+  }
+
+  public PreparedTrack prepareTrack(String relativeFilename, String requestedName, String requestedColor) {
     final var resolvedPath = resolveDataPath(relativeFilename);
     final var trackType = TrackType.fromPath(resolvedPath);
     if (trackType == TrackType.UNSUPPORTED) {
@@ -229,11 +259,9 @@ public class Track1DManager implements AutoCloseable {
         "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/GFF/GTF/BigWig/BAM."
       );
     }
-    final var trackId = "trk_" + this.trackCounter.incrementAndGet();
     final var resolvedName = (requestedName == null || requestedName.isBlank())
       ? resolvedPath.getFileName().toString()
       : requestedName.trim();
-    final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
     final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
     final var report = dataSource.importReport();
     if (dataSource instanceof InMemoryTrackDataSource && dataSource.featureCountHint() == 0L) {
@@ -244,31 +272,28 @@ public class Track1DManager implements AutoCloseable {
           + ". The track list was not changed."
       );
     }
-    final var state = new TrackState(
-      trackId,
-      resolvedName,
-      trackType,
-      relativeFilename,
-      color,
-      true,
-      dataSource,
-      BamRenderMode.COVERAGE,
-      BigWigAggregationMode.MAX,
-      false,
-      true,
-      0.0d,
-      1.0d
-    );
+    return new PreparedTrack(relativeFilename, resolvedName, requestedColor, trackType, dataSource, report.warnings());
+  }
+
+  public TrackSummary registerTrack(PreparedTrack candidate) {
+    this.lock.writeLock().lock();
     try {
-      this.lock.writeLock().lock();
-      this.tracks.put(trackId, state);
-    } catch (final RuntimeException ex) {
-      closeDataSourceQuietly(dataSource);
-      throw ex;
+      synchronized (candidate) {
+        if (candidate.source == null) throw new IllegalStateException("Track preparation was cancelled");
+        final long number = this.trackCounter.incrementAndGet();
+        final var trackId = "trk_" + number;
+        final var color = normalizeColor(candidate.color, colorForIndex((int) number - 1));
+        final var state = new TrackState(
+          trackId, candidate.name, candidate.type, candidate.filename, color, true,
+          candidate.source, BamRenderMode.COVERAGE, BigWigAggregationMode.MAX, false, true, 0, 1
+        );
+        this.tracks.put(trackId, state);
+        candidate.source = null;
+        return state.toSummary().withImportWarnings(candidate.warnings);
+      }
     } finally {
       this.lock.writeLock().unlock();
     }
-    return state.toSummary().withImportWarnings(report.warnings());
   }
 
   public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
@@ -3602,65 +3627,101 @@ public class Track1DManager implements AutoCloseable {
     }
   }
 
+  private static final class FeatureEndIndex {
+    private final List<FeatureRange> features;
+    private final long[] maxEnds;
+    private final long[] sortedEnds;
+    private final int leafCount;
+
+    private FeatureEndIndex(List<FeatureRange> features) {
+      this.features = features;
+      this.leafCount = features.size() <= 1 ? 1 : Integer.highestOneBit(features.size() - 1) << 1;
+      this.maxEnds = new long[2 * leafCount];
+      for (int i = 0; i < features.size(); i++) maxEnds[leafCount + i] = features.get(i).end();
+      for (int i = leafCount - 1; i > 0; i--) maxEnds[i] = Math.max(maxEnds[2 * i], maxEnds[2 * i + 1]);
+      this.sortedEnds = features.stream().mapToLong(FeatureRange::end).sorted().toArray();
+    }
+
+    private int nextOverlap(int from, int until, long start) {
+      return nextOverlap(1, 0, leafCount, from, until, start);
+    }
+
+    private int nextOverlap(int node, int left, int right, int from, int until, long start) {
+      if (until <= left || from >= right || maxEnds[node] <= start) return until;
+      if (right - left == 1) return left;
+      final int middle = (left + right) >>> 1;
+      final int inLeft = nextOverlap(node * 2, left, middle, from, until, start);
+      return inLeft < until ? inLeft : nextOverlap(node * 2 + 1, middle, right, from, until, start);
+    }
+  }
+
   private record InMemoryTrackDataSource(@NotNull Map<String, List<FeatureRange>> featuresBySource,
                                          long featureCount,
                                          boolean hasSignalValues,
                                          boolean hasStructuredFeatures,
                                          @NotNull RenderStyle preferredRenderStyle,
-                                         @NotNull Map<String, long[]> prefixEnds,
-                                         @NotNull Map<String, long[]> sortedEnds,
+                                         @NotNull Map<String, FeatureEndIndex> featureIndex,
+                                         @NotNull Map<String, FeatureEndIndex> densityIndex,
                                          @NotNull ParseReport report) implements TrackDataSource {
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style) {
       this(features, count, signals, structured, style, ParseReport.EMPTY);
     }
+
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style, ParseReport report) {
+      this(features, count, signals, structured, style, indexFeatures(features), report);
+    }
+
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style,
-                                   ParseReport report) {
-      this(features, count, signals, structured, style, indexEnds(features), indexSortedEnds(features), report);
+                                   Map<String, FeatureEndIndex> index, ParseReport report) {
+      this(features, count, signals, structured, style, index, indexDensity(index), report);
     }
-    @Override
-    public @NotNull ParseReport importReport() {
+
+    @Override public @NotNull ParseReport importReport() {
       return report;
     }
-    private static Map<String, long[]> indexEnds(Map<String, List<FeatureRange>> features) {
-      var result = new HashMap<String, long[]>();
-      features.forEach((source, ranges) -> {
-        var ends = new long[ranges.size()]; long maximum = 0;
-        for (int i = 0; i < ranges.size(); i++) ends[i] = maximum = Math.max(maximum, ranges.get(i).end());
-        result.put(source, ends);
-      });
-      return result;
+
+    private static Map<String, FeatureEndIndex> indexFeatures(Map<String, List<FeatureRange>> features) {
+      var index = new HashMap<String, FeatureEndIndex>();
+      features.forEach((source, ranges) -> index.put(source, new FeatureEndIndex(ranges)));
+      return index;
     }
-    private static Map<String, long[]> indexSortedEnds(Map<String, List<FeatureRange>> features) {
-      var result = new HashMap<String, long[]>();
-      features.forEach((source, ranges) ->
-        result.put(source, ranges.stream().mapToLong(FeatureRange::end).sorted().toArray()));
-      return result;
+
+    private static Map<String, FeatureEndIndex> indexDensity(Map<String, FeatureEndIndex> index) {
+      final var wholeSequenceTypes = java.util.Set.of("region", "chromosome", "contig", "scaffold", "supercontig");
+      var density = new HashMap<String, FeatureEndIndex>();
+      index.forEach((source, full) -> {
+        final var ranges = full.features.stream()
+          .filter(feature -> feature.featureType() == null ||
+            !wholeSequenceTypes.contains(feature.featureType().toLowerCase(java.util.Locale.ROOT)))
+          .toList();
+        density.put(source, ranges.size() == full.features.size() ? full : new FeatureEndIndex(ranges));
+      });
+      return density;
     }
 
     // Count half-open source intervals using immutable endpoint ranks. Edits only
     // change the assembly-to-source mapping, including at a newly split bin.
-    private long countOverlaps(String source, SourceInterval interval) {
-      var ends = sortedEnds.get(source);
-      return lowerBoundByStart(featuresBySource.get(source), interval.end()) - firstEndAfter(ends, interval.start());
+    private static long countOverlaps(FeatureEndIndex index, SourceInterval interval) {
+      return lowerBoundByStart(index.features, interval.end()) - firstEndAfter(index.sortedEnds, interval.start());
     }
 
     private long additionalOverlaps(String source, SourceInterval piece, long previousEnd) {
-      if (previousEnd == 0) return countOverlaps(source, piece);
+      final var index = densityIndex.get(source);
+      if (previousEnd == 0) return countOverlaps(index, piece);
       if (piece.end() <= previousEnd) return 0;
-      var features = featuresBySource.get(source);
+      final var features = index.features;
+      final int previousStartLimit = lowerBoundByStart(features, previousEnd);
       if (piece.start() <= previousEnd) {
-        return lowerBoundByStart(features, piece.end()) - lowerBoundByStart(features, previousEnd);
+        return lowerBoundByStart(features, piece.end()) - previousStartLimit;
       }
-      // A previous interval and this disjoint interval share precisely the
-      // features starting before the previous end and ending after this start.
-      long count = countOverlaps(source, piece);
-      var ends = prefixEnds.get(source);
-      for (int i = firstEndAfter(ends, piece.start()); i < features.size(); i++) {
-        var feature = features.get(i);
-        if (feature.start() >= previousEnd) break;
-        if (feature.end() > piece.start()) count--;
+      // Each feature spanning the gap has already contributed to this bucket.
+      long count = countOverlaps(index, piece);
+      for (int i = index.nextOverlap(0, previousStartLimit, piece.start()); i < previousStartLimit;
+           i = index.nextOverlap(i + 1, previousStartLimit, piece.start())) {
+        count--;
       }
       return count;
     }
@@ -4061,7 +4122,7 @@ public class Track1DManager implements AutoCloseable {
       for (var source : featuresBySource.keySet()) {
         for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
           var interval = mapVisiblePxIntervalToSegmentSource(segment, queryStartPx, queryEndPx, bpResolution);
-          if (interval.isPresent()) overlaps += countOverlaps(source, interval.get());
+          if (interval.isPresent()) overlaps += countOverlaps(featureIndex.get(source), interval.get());
         }
       }
       if (overlaps <= FEATURE_DIRECT_RENDER_MAX_FEATURES) {
@@ -4162,18 +4223,11 @@ public class Track1DManager implements AutoCloseable {
             continue;
           }
           final var sourceInterval = sourceIntervalOptional.get();
-          // A long/nested feature can start before many short features. Searching
-          // starts and backing up by one loses it; prefix maxima retain all overlaps.
-          var ends = prefixEnds.get(sourceName);
-          int index = firstEndAfter(ends, sourceInterval.start());
-          for (int i = index; i < sourceFeatures.size(); i++) {
+          final var index = featureIndex.get(sourceName);
+          final int until = lowerBoundByStart(sourceFeatures, sourceInterval.end());
+          for (int i = index.nextOverlap(0, until, sourceInterval.start()); i < until;
+               i = index.nextOverlap(i + 1, until, sourceInterval.start())) {
             final var feature = sourceFeatures.get(i);
-            if (feature.start() >= sourceInterval.end()) {
-              break;
-            }
-            if (feature.end() <= sourceInterval.start()) {
-              continue;
-            }
             final var projected = projectSourceFeatureOnSegment(
               segment,
               feature,

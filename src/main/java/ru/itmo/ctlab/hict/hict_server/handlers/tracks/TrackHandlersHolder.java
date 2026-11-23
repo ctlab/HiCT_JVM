@@ -93,41 +93,47 @@ public class TrackHandlersHolder extends HandlersHolder {
 
     router.post("/tracks/open").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
-      if (scheduler == null) {
-        return;
-      }
-      final var request = ctx.body().asJsonObject();
-      final var filename = request.getString("filename");
-      if (filename == null || filename.isBlank()) {
-        ctx.fail(new IllegalArgumentException("Track filename is required"));
-        return;
-      }
-      final var manager = getTrackManager(ctx);
-      if (manager == null) {
-        return;
-      }
-      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.ASSEMBLY,
-        null,
-        () -> {
-          final var summary = manager.openTrack(
-            filename,
-            request.getString("name"),
-            request.getString("color")
-          );
-          manager.startPrecompute(chunkedFile, summary.getTrackId(), false);
+      if (scheduler == null) return;
+      final var request = RequestJson.requireObject(ctx);
+      final var filename = RequestJson.requireString(request, "filename");
+      final var name = RequestJson.optionalString(request, "name", null);
+      final var color = RequestJson.optionalString(request, "color", null);
+      final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+      record OpenTrackContext(ChunkedFile file, Track1DManager manager) {}
+      final var candidate = new java.util.concurrent.atomic.AtomicReference<Track1DManager.PreparedTrack>();
+      final var ended = new java.util.concurrent.atomic.AtomicBoolean();
+      ctx.addEndHandler(ignored -> {
+        ended.set(true);
+        final var pending = candidate.getAndSet(null);
+        if (pending != null) pending.close();
+      });
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        if (!(map.get("chunkedFile") instanceof ShareableWrappers.ChunkedFileWrapper file) ||
+          !(map.get("Track1DManager") instanceof ShareableWrappers.Track1DManagerWrapper tracks)) {
+          throw new NoOpenFileException("Open a map before adding tracks");
+        }
+        return new OpenTrackContext(file.getChunkedFile(), tracks.getTrack1DManager());
+      }, captured -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.TRACK, null, () -> {
+        final var prepared = captured.manager().prepareTrack(filename, name, color);
+        candidate.set(prepared);
+        if (ended.get()) {
+          prepared.close();
+          throw new java.util.concurrent.CancellationException("Track request closed");
+        }
+        return prepared;
+      }, prepared -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        try (prepared) {
+          if (!(map.get("chunkedFile") instanceof ShareableWrappers.ChunkedFileWrapper file) ||
+            file.getChunkedFile() != captured.file() ||
+            !(map.get("Track1DManager") instanceof ShareableWrappers.Track1DManagerWrapper tracks) ||
+            tracks.getTrack1DManager() != captured.manager()) {
+            throw new IllegalStateException("The open map changed while the track was loading. Add it again.");
+          }
+          final var summary = captured.manager().registerTrack(prepared);
+          captured.manager().startPrecompute(captured.file(), summary.getTrackId(), false);
           return summary;
-        },
-        summary -> ctx.response()
-          .putHeader("content-type", "application/json")
-          .end(Json.encode(summary))
-      );
+        }
+      }, summary -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(summary)))));
     });
 
     router.post("/tracks/open_cooler_weights").handler(ctx -> {

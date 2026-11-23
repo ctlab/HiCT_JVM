@@ -389,6 +389,18 @@ public class MainVerticle extends AbstractVerticle {
 
   private @NotNull Router createRouter() {
     final var router = Router.router(vertx);
+    final var shutdownToken = System.getenv("HICT_LAUNCHER_SHUTDOWN_TOKEN");
+    if (shutdownToken != null && !shutdownToken.isBlank()) {
+      router.post("/shutdown").handler(ctx -> {
+        final var remote = ctx.request().remoteAddress().hostAddress();
+        final var supplied = ctx.request().getHeader("X-HiCT-Shutdown-Token");
+        if (!launcherShutdownAuthorized(remote, shutdownToken, supplied)) {
+          ctx.response().setStatusCode(403).end();
+          return;
+        }
+        ctx.response().setStatusCode(202).end().onSuccess(ignored -> vertx.close());
+      });
+    }
     final var requestStatistics = new RequestStatistics();
     router.route().handler(CorsHandler.create()
       .allowedMethod(io.vertx.core.http.HttpMethod.GET)
@@ -487,6 +499,18 @@ public class MainVerticle extends AbstractVerticle {
         log.error("WebUI verticle deployment failed", ar.cause());
       }
     });
+  }
+
+  static boolean launcherShutdownAuthorized(String remote, String expected, String supplied) {
+    if (remote == null || expected == null || expected.isBlank() || supplied == null) return false;
+    try {
+      return java.net.InetAddress.getByName(remote).isLoopbackAddress()
+        && java.security.MessageDigest.isEqual(
+          expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          supplied.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    } catch (java.net.UnknownHostException malformed) {
+      return false;
+    }
   }
 
   static void respondFailure(io.vertx.ext.web.RoutingContext ctx) {

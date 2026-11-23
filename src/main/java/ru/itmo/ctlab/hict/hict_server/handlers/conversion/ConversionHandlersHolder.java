@@ -362,6 +362,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                       .equals(direction.deriveOutputPath(sourcePath).toAbsolutePath().normalize())) {
                         throw new IllegalArgumentException("Example opening requires its standard cached conversion destination");
                     }
+                    if (overwrite) JobArtifacts.requireClosedMap(vertx.sharedData().getLocalMap("hict_server"), outputPath);
                     prepareOutputPath(outputPath, overwrite);
                     final var requestedAssemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
                     final var currentAssemblyPath = useCurrentAssembly && direction == ConversionDirection.HICT_TO_MCOOL
@@ -461,6 +462,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                         }
                         final var direction = ConversionDirection.fromRequestOrSource(null, sourcePath);
                         final var outputPath = deriveOutputPath(sourcePath, direction);
+                        if (overwrite) JobArtifacts.requireClosedMap(vertx.sharedData().getLocalMap("hict_server"), outputPath);
                         prepareOutputPath(outputPath, overwrite);
                         final var perFileAssembly = assemblyByFileJson == null
                           ? assemblyFilename
@@ -908,7 +910,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                 throw new IllegalArgumentException("Unknown conversion direction: " + job.direction.wireName());
             }
             if (job.cancelRequested.get()) throw new java.util.concurrent.CancellationException();
-            JobArtifacts.publish(options.outputPath(), job.outputPath, job.overwrite);
+            JobArtifacts.publish(vertx.sharedData().getLocalMap("hict_server"), options.outputPath(), job.outputPath, job.overwrite);
             recordSuccessfulConversionIfPossible(job, requestedOptions);
             job.overallProgress = 1.0d;
             job.stageProgress = 1.0d;

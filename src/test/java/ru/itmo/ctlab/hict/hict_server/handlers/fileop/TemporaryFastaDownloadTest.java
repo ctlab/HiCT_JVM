@@ -3,6 +3,8 @@ package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.*;
@@ -12,8 +14,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TemporaryFastaDownloadTest {
+  @TempDir Path data;
+
+  private Vertx testVertx(boolean useProcessed) {
+    final var vertx = Vertx.vertx();
+    final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+    map.put("dataDirectory", new ShareableWrappers.PathWrapper(data));
+    if (useProcessed) map.put("processedDirectory", new ShareableWrappers.PathWrapper(data.resolve("processed")));
+    return vertx;
+  }
+
   @Test void disconnectDuringTransferRemovesThePreparedTemporaryFile() throws Exception {
-    var vertx = Vertx.vertx();
+    var vertx = testVertx(false);
     var temporary = new AtomicReference<Path>();
     try {
       var router = Router.router(vertx);
@@ -48,6 +60,7 @@ class TemporaryFastaDownloadTest {
         assertEquals('A', input.read());
         assertNotNull(temporary.get());
         assertTrue(Files.exists(temporary.get()));
+        assertEquals(data.resolve(".hict-tmp"), temporary.get().getParent());
       }
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
       while (Files.exists(temporary.get()) && System.nanoTime() < deadline) Thread.sleep(5);
@@ -56,7 +69,7 @@ class TemporaryFastaDownloadTest {
   }
 
   @Test void disconnectDuringPreparationStopsTheWriterAndRemovesItsTemporaryFile() throws Exception {
-    var vertx = Vertx.vertx();
+    var vertx = testVertx(true);
     var scheduler = new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler(vertx,
       new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.SchedulerConfig(10, 8, 30, java.util.Map.of()));
     var entered = new CountDownLatch(1);
@@ -112,7 +125,7 @@ class TemporaryFastaDownloadTest {
   }
 
   @Test void sendsCompleteBytesAndCleansSuccessFailureAndCancellation() throws Exception {
-    var vertx = Vertx.vertx();
+    var vertx = testVertx(true);
     try (var client = HttpClient.newHttpClient()) {
       var temporary = new AtomicReference<Path>();
       var router = Router.router(vertx);
@@ -142,6 +155,7 @@ class TemporaryFastaDownloadTest {
         assertNotNull(temporary.get());
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (Files.exists(temporary.get()) && System.nanoTime() < deadline) Thread.sleep(5);
+        assertEquals(data.resolve("processed"), temporary.get().getParent());
         assertFalse(Files.exists(temporary.get()), "Temporary FASTA must not survive a completed/failed/cancelled download");
       }
     } finally { vertx.close().toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS); }

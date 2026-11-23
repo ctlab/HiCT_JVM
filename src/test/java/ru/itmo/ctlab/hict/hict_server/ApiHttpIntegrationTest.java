@@ -1256,6 +1256,50 @@ class ApiHttpIntegrationTest {
       new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getJsonObject("assemblyInfo"));
   }
 
+  @Test
+  void historySurvivesOverlayAttachmentAndDetachment() throws Exception {
+    for (var name : List.of("primary", "overlay")) {
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, List.of(4L, 10L));
+    }
+    startValidationServer();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    final var original = post("/get_agp_for_assembly", "{}").body();
+    assertEquals(200, post("/reverse_selection_range", "{\"startBP\":0,\"endBP\":5}").statusCode());
+    final var edited = post("/get_agp_for_assembly", "{}").body();
+    assertTrue(!original.equals(edited));
+    final var history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"overlay.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    assertEquals(history, new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary"));
+    assertEquals(200, post("/secondary/close", "{}").statusCode());
+    assertEquals(history, new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary"));
+    var undo = post("/assembly/history/restore", new JsonObject()
+      .put("session", history.getString("session")).put("revision", history.getLong("revision"))
+      .put("action", "undo").encode());
+    assertEquals(200, undo.statusCode(), undo.body());
+    assertEquals(original, post("/get_agp_for_assembly", "{}").body());
+  }
+
+  @Test
+  void jobCannotReplaceEitherOpenSource() throws Exception {
+    for (var name : List.of("primary", "overlay")) {
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, List.of(4L, 10L));
+    }
+    startValidationServer();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"overlay.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+    final var staged = Files.writeString(tempDataDir.resolve("candidate"), "staged");
+    for (var filename : List.of("primary.hict.hdf5", "overlay.hict.hdf5")) {
+      final var output = tempDataDir.resolve(filename);
+      final var original = Files.readAllBytes(output);
+      final var rejected = org.junit.jupiter.api.Assertions.assertThrows(io.vertx.ext.web.handler.HttpException.class, () ->
+        ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts.publish(map, staged, output, true));
+      assertEquals(409, rejected.getStatusCode());
+      org.junit.jupiter.api.Assertions.assertArrayEquals(original, Files.readAllBytes(output));
+      assertTrue(Files.exists(staged));
+    }
+  }
+
   void startValidationServer() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {
       new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, scheduler).addHandlersToRouter(router);

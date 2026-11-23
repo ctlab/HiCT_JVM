@@ -316,6 +316,8 @@ public final class HictLauncherGui {
     private JLabel logLevelValueLabel;
     private Timer statusTimer;
     private volatile Process serverProcess;
+    private String serverShutdownToken;
+    private URI serverShutdownUri;
     private volatile boolean closing;
     private volatile Integer lastExitCode;
     private volatile boolean stopRequested;
@@ -1189,6 +1191,9 @@ public final class HictLauncherGui {
       processBuilder.directory(dataDir.toFile());
       final var env = processBuilder.environment();
       applyEnvironment(env, dataDir, tempDir);
+      this.serverShutdownToken = java.util.UUID.randomUUID().toString();
+      this.serverShutdownUri = URI.create("http://127.0.0.1:" + normalizedPort("VXPORT", "5000") + "/shutdown");
+      env.put("HICT_LAUNCHER_SHUTDOWN_TOKEN", this.serverShutdownToken);
 
       appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
       appendLauncherLog("Runtime temp directory: " + tempDir);
@@ -1743,10 +1748,14 @@ public final class HictLauncherGui {
       stopBundledBrowsers("before stopping HiCT");
       appendLauncherLog("Stopping HiCT server process...");
       final var serverChildren = process.descendants().toList();
-      process.destroy();
       try {
+        if (requestGracefulShutdown() && process.waitFor(10, TimeUnit.SECONDS)) {
+          appendLauncherLog("HiCT finished cleaning up and stopped.");
+          return;
+        }
+        process.destroy();
         if (!process.waitFor(5, TimeUnit.SECONDS)) {
-          appendLauncherLog("HiCT did not stop gracefully within 5 seconds; terminating it forcibly.");
+          appendLauncherLog("HiCT did not stop within the shutdown deadline. Terminating the process.");
           process.destroyForcibly();
           process.waitFor(5, TimeUnit.SECONDS);
         }
@@ -1759,6 +1768,20 @@ public final class HictLauncherGui {
           this.serverProcess = null;
         }
         SwingUtilities.invokeLater(this::updateButtons);
+      }
+    }
+
+    private boolean requestGracefulShutdown() throws InterruptedException {
+      if (this.serverShutdownUri == null || this.serverShutdownToken == null) return false;
+      final var request = HttpRequest.newBuilder(this.serverShutdownUri)
+        .timeout(Duration.ofSeconds(2))
+        .header("X-HiCT-Shutdown-Token", this.serverShutdownToken)
+        .POST(HttpRequest.BodyPublishers.noBody()).build();
+      try {
+        return this.httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() == 202;
+      } catch (IOException unavailable) {
+        appendLauncherLog("The server did not answer the graceful shutdown request.");
+        return false;
       }
     }
 

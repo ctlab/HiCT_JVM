@@ -46,5 +46,8 @@ public final class EditJournal<S> {
     throw new IllegalArgumentException("History entry is no longer available");
   }
   public S stateAt(int index) { return entries.get(index).state(); }
+  public void transformStates(java.util.function.UnaryOperator<S> transform) {
+    entries.replaceAll(entry -> new Entry<>(entry.item(), transform.apply(entry.state())));
+  }
   public void movedTo(int index) { if (cursor != index) { cursor = index; revision++; } }
 }

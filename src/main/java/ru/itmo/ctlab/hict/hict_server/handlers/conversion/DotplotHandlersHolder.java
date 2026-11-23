@@ -250,10 +250,10 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
       if (job.cancelRequested.get()) throw new java.util.concurrent.CancellationException();
       try (var files = Files.list(staging)) {
         for (var file : files.filter(path -> !path.equals(output)).toList()) {
-          JobArtifacts.publish(file, job.outputDirectory.resolve(file.getFileName()), job.options.overwrite());
+          JobArtifacts.publish(vertx.sharedData().getLocalMap("hict_server"), file, job.outputDirectory.resolve(file.getFileName()), job.options.overwrite());
         }
       }
-      JobArtifacts.publish(output, hictPath, job.options.overwrite());
+      JobArtifacts.publish(vertx.sharedData().getLocalMap("hict_server"), output, hictPath, job.options.overwrite());
       job.outputPath = hictPath;
       job.overallProgress = 1.0d;
       job.stageProgress = 1.0d;

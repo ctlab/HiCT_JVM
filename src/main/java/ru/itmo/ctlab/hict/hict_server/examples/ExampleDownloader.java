@@ -190,15 +190,30 @@ public final class ExampleDownloader {
   }
 
 
-  public ExampleDownloader(final @NotNull Path dataDirectory) {
-    this(dataDirectory, UrlPolicy.production(), SAFETY_MARGIN);
+  @FunctionalInterface
+  public interface CachedFileRemoval {
+    void delete(Path path) throws IOException;
   }
 
-  /** For tests only: the production constructor above is the only one the server uses. */
+  private final CachedFileRemoval cachedFileRemoval;
+
+  public ExampleDownloader(final @NotNull Path dataDirectory) {
+    this(dataDirectory, Files::deleteIfExists);
+  }
+
+  public ExampleDownloader(final @NotNull Path dataDirectory, CachedFileRemoval cachedFileRemoval) {
+    this(dataDirectory, UrlPolicy.production(), SAFETY_MARGIN, cachedFileRemoval);
+  }
+
   ExampleDownloader(final @NotNull Path dataDirectory, final @NotNull UrlPolicy policy, final long freeSpaceMargin) {
+    this(dataDirectory, policy, freeSpaceMargin, Files::deleteIfExists);
+  }
+
+  private ExampleDownloader(Path dataDirectory, UrlPolicy policy, long freeSpaceMargin, CachedFileRemoval cachedFileRemoval) {
     this.dataDirectory = dataDirectory;
     this.policy = policy;
     this.freeSpaceMargin = freeSpaceMargin;
+    this.cachedFileRemoval = cachedFileRemoval;
     this.client = new PinnedDownloadClient();
   }
 
@@ -373,7 +388,7 @@ public final class ExampleDownloader {
       progress.update(Files.size(target), Files.size(target));
       return;
     }
-    Files.deleteIfExists(target);
+    cachedFileRemoval.delete(target);
     final var part = folder.resolve(name + ".part");
     final var meta = folder.resolve(name + ".part.json");
     var uri = URI.create(file.getString("url"));

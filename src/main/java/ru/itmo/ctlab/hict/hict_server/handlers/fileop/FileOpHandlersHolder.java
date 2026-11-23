@@ -793,88 +793,62 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
     router.post("/link_fasta").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
-      if (scheduler == null) {
-        return;
+      if (scheduler == null) return;
+      final var request = RequestJson.requireObject(ctx);
+      final var filename = RequestJson.requireString(request, "fastaFilename");
+      final var mismatchOption = request.getValue("allowMismatch");
+      if (mismatchOption != null && !(mismatchOption instanceof Boolean)) {
+        throw new IllegalArgumentException("Missing or invalid field: allowMismatch");
       }
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.ASSEMBLY,
-        null,
-        () -> {
-          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new NoOpenFileException("Open a Hi-C file before linking FASTA");
+      final var source = RequestJson.optionalString(request, "source", ASSEMBLY_SOURCE_PRIMARY)
+        .trim().toUpperCase(java.util.Locale.ROOT);
+      if (!ASSEMBLY_SOURCE_PRIMARY.equals(source) && !ASSEMBLY_SOURCE_SECONDARY.equals(source)) {
+        throw new IllegalArgumentException("FASTA source must be PRIMARY or SECONDARY");
+      }
+      final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+      final var sourceKey = ASSEMBLY_SOURCE_SECONDARY.equals(source) ? SECONDARY_CHUNKED_FILE_KEY : PRIMARY_CHUNKED_FILE_KEY;
+      record FastaCandidate(ChunkedFile file, Path path) {}
+      record PreparedFasta(FastaLinkResponseDTO response, java.util.Map<String, String> aliases) {}
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final var target = resolveChunkedFileWrapperBySource(map, source).getChunkedFile();
+        final var data = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+        final var path = data.resolve(filename).normalize().toAbsolutePath();
+        if (!path.startsWith(data.toAbsolutePath().normalize())) {
+          throw new IllegalArgumentException("FASTA path must stay inside the configured data directory");
+        }
+        if (!Files.isRegularFile(path)) {
+          throw new IllegalArgumentException("FASTA file " + filename + " does not exist");
+        }
+        return new FastaCandidate(target, path);
+      }, candidate -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.EXPORT, null, () -> {
+        final var processor = candidate.file().getFastaProcessor();
+        final var report = processor.analyzeLinkCandidate(candidate.path());
+        final boolean needsConfirmation = report.hasWarnings() && !Boolean.TRUE.equals(mismatchOption);
+        final var aliases = !needsConfirmation && ASSEMBLY_SOURCE_PRIMARY.equals(source)
+          ? java.util.Map.copyOf(processor.buildSourceNameAliases(candidate.path()))
+          : java.util.Map.<String, String>of();
+        return new PreparedFasta(FastaLinkResponseDTO.fromReport(report, !needsConfirmation, needsConfirmation), aliases);
+      }, prepared -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        if (!(map.get(sourceKey) instanceof ShareableWrappers.ChunkedFileWrapper current) ||
+          current.getChunkedFile() != candidate.file()) {
+          throw new IllegalStateException("The open map changed while the FASTA was loading. Link it again.");
+        }
+        if (!prepared.response().linked()) return prepared.response();
+        final var path = new ShareableWrappers.PathWrapper(candidate.path());
+        if (ASSEMBLY_SOURCE_SECONDARY.equals(source)) {
+          map.put(SECONDARY_FASTA_PATH_KEY, path);
+          map.put(SECONDARY_FASTA_FILENAME_KEY, filename);
+        } else {
+          map.put("linkedFastaPath", path);
+          map.put("linkedFastaFilename", filename);
+          map.put(PRIMARY_FASTA_PATH_KEY, path);
+          map.put(PRIMARY_FASTA_FILENAME_KEY, filename);
+          if (map.get("Track1DManager") instanceof ShareableWrappers.Track1DManagerWrapper tracks) {
+            tracks.getTrack1DManager().setLinkedFastaAliasesBySource(prepared.aliases());
           }
-          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
-          if (dataDirectoryWrapper == null) {
-            throw new RuntimeException("Data directory is not present in local map");
-          }
-          final var requestJSON = ctx.body().asJsonObject();
-          final var fastaFilename = requestJSON.getString("fastaFilename");
-          final boolean allowMismatch = requestJSON.getBoolean("allowMismatch", false);
-          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
-            .trim()
-            .toUpperCase();
-          if (fastaFilename == null || fastaFilename.isBlank()) {
-            throw new IllegalArgumentException("FASTA filename is required");
-          }
-          final ChunkedFile targetChunkedFile;
-          final String normalizedSource;
-          if (ASSEMBLY_SOURCE_SECONDARY.equals(requestedSource)) {
-            final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-            if (secondaryWrapper == null) {
-              throw new IllegalStateException("Attach a secondary source before linking a secondary FASTA");
-            }
-            targetChunkedFile = secondaryWrapper.getChunkedFile();
-            normalizedSource = ASSEMBLY_SOURCE_SECONDARY;
-          } else {
-            targetChunkedFile = chunkedFileWrapper.getChunkedFile();
-            normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
-          }
-
-          final Path fastaPath = dataDirectoryWrapper.getPath().resolve(fastaFilename).normalize().toAbsolutePath();
-          if (!fastaPath.startsWith(dataDirectoryWrapper.getPath())) {
-            throw new IllegalArgumentException("FASTA path " + fastaFilename + " is outside DATA_DIR");
-          }
-          if (!Files.exists(fastaPath) || !Files.isRegularFile(fastaPath)) {
-            throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
-          }
-
-          log.info("Linking {} FASTA file {}", normalizedSource, fastaPath);
-          final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
-          final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
-          if (!requiresConfirmation) {
-            // Alias construction reads/indexes FASTA and can fail. Do it before
-            // publishing any of the paths that the sequence/track APIs consume.
-            final var aliases = ASSEMBLY_SOURCE_PRIMARY.equals(normalizedSource)
-              ? java.util.Map.copyOf(targetChunkedFile.getFastaProcessor().buildSourceNameAliases(fastaPath))
-              : java.util.Map.<String, String>of();
-            if (ASSEMBLY_SOURCE_SECONDARY.equals(normalizedSource)) {
-              map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
-              map.put(SECONDARY_FASTA_FILENAME_KEY, fastaFilename);
-            } else {
-              map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
-              map.put("linkedFastaFilename", fastaFilename);
-              map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
-              map.put(PRIMARY_FASTA_FILENAME_KEY, fastaFilename);
-              final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-              if (trackManagerWrapper != null) {
-                trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
-                  aliases
-                );
-              }
-            }
-            log.info("Linked {} FASTA file {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
-          } else {
-            log.info("FASTA link for {} needs confirmation: {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
-          }
-          return FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation);
-        },
-        response -> ctx.response()
-          .putHeader("content-type", "application/json")
-          .end(Json.encode(response))
-      );
+        }
+        return prepared.response();
+      }, response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response)))));
     });
 
     router.post("/get_fasta_for_assembly").handler(ctx -> {
@@ -996,11 +970,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         ctx, scheduler,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
-          }
-          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var chunkedFile = resolveActiveAssemblyChunkedFile(map);
 
           final var records = java.util.List.copyOf(requestJSON.getBoolean("preserveImportedGaps", false)
             ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()

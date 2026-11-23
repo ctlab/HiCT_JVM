@@ -96,6 +96,24 @@ paths:
               schema: { type: object }
         '409':
           description: Stale session or revision. Fetch the journal and retry deliberately.
+  /shutdown:
+    post:
+      x-internal: true
+      summary: Stop a server started by the local Launcher
+      operationId: launcherShutdown
+      parameters:
+        - in: header
+          name: X-HiCT-Shutdown-Token
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Shutdown requested by the owning Launcher over loopback.
+        '403':
+          description: Invalid token or non-loopback caller.
+        '404':
+          description: The server was started without Launcher shutdown support.
+
   /version:
     get:
       tags: [Info]
