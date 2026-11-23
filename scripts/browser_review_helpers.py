@@ -4,9 +4,9 @@ from pathlib import PurePosixPath
 
 
 def expand_slider_limits(page):
-    details = page.locator("details.range-details")
+    details = page.locator("#signal-advanced")
     if details.get_attribute("open") is None:
-        details.locator("summary").click()
+        details.locator(":scope > summary").click()
 
 
 def link_fasta(page, filename):

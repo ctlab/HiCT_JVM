@@ -179,7 +179,7 @@ class OverlayFixture { public static void main(String[] a) {
                 if iteration == 0:
                     page.get_by_label('Save a reusable copy under DATA_DIR').check()
                     page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
-                page.get_by_label('Display completed result').select_option('overlay' if iteration else 'below')
+                page.get_by_label('Show result as').select_option('overlay' if iteration else 'below')
                 assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
                 if iteration == 0:
                     page.screenshot(path=str(out / 'moddotplot-dialog.png'))
@@ -463,7 +463,7 @@ class OverlayFixture { public static void main(String[] a) {
                 assert len(text.strip())>15, 'PDF labels must remain editable text'
             menu().get_by_role('menuitem', name='Generate ModDotPlot for selection…', exact=True).click()
             assert page.get_by_label('Analysis scope').input_value() == 'selection'
-            page.get_by_label('Display completed result').select_option('none')
+            page.get_by_label('Show result as').select_option('none')
             previous_pipeline = json.loads(app.http('/render_pipeline/get', {}))
             with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
                 page.get_by_role('dialog', name='ModDotPlot', exact=True).get_by_role('button', name='Generate', exact=True).click()

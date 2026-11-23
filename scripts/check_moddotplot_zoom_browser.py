@@ -106,7 +106,7 @@ def main():
                 page.get_by_label("Analysis scope").select_option("selection")
                 # This check isolates the primary triangle; selection analyses
                 # otherwise default to an intentional overlay on both halves.
-                dialog.get_by_label("Display completed result", exact=True).select_option("below")
+                dialog.get_by_label("Show result as", exact=True).select_option("below")
                 for checkbox in dialog.locator(".resolution-options input").all():
                     checkbox.uncheck()
                 dialog.locator('.resolution-options input[value="5000"]').check()

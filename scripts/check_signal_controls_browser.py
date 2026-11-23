@@ -91,11 +91,9 @@ def main():
             advanced = page.locator("#signal-advanced")
             advanced.locator(":scope > summary").click()
             page.locator("#scaling-across-zoom").select_option("none")
-            lower = page.get_by_role(
-                "spinbutton", name="Lower signal threshold", exact=True
+            lower = page.get_by_label("Lower signal threshold", exact=True
             )
-            upper = page.get_by_role(
-                "spinbutton", name="Upper signal threshold", exact=True
+            upper = page.get_by_label("Upper signal threshold", exact=True
             )
             lower.fill("0")
             upper.fill("11")
@@ -171,13 +169,9 @@ def main():
                 assert [lower.input_value(), upper.input_value()] == thresholds
                 assert pipeline() == graph
             page.get_by_role("button", name="Focus range", exact=True).click()
-            details = page.locator("details.range-details")
-            details.locator("summary").click()
-            minimum = page.get_by_role(
-                "spinbutton", name="Slider minimum signal", exact=True
+            minimum = page.get_by_label("Slider minimum signal", exact=True
             )
-            maximum = page.get_by_role(
-                "spinbutton", name="Slider maximum signal", exact=True
+            maximum = page.get_by_label("Slider maximum signal", exact=True
             )
             assert float(minimum.input_value()) == float(thresholds[0])
             assert float(maximum.input_value()) == float(thresholds[1])
@@ -290,8 +284,7 @@ def main():
             )
             expect(targets.locator("option")).to_have_count(2)
             targets.select_option("upper.top")
-            upper = page.get_by_role(
-                "spinbutton", name="Upper signal threshold", exact=True
+            upper = page.get_by_label("Upper signal threshold", exact=True
             )
             page.wait_for_function(
                 "document.querySelector('[aria-label=\"Upper signal threshold\"]').value === '22'"

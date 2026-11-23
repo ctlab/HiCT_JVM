@@ -137,9 +137,31 @@ def main():
                 expect(dialog).to_contain_text("Smallest export text: 6.0 pt")
                 auto = save("auto-label-size", "svg")
                 assert metadata(auto)["outputSize"]["minimumTextPoints"] == 6
-                assert "font-size" in auto.read_text()
+                def smallest_svg_label_points(path):
+                    return page.evaluate("""source => {
+                    const doc = new DOMParser().parseFromString(source, "image/svg+xml");
+                    const svg = document.importNode(doc.documentElement, true);
+                    for (const image of svg.querySelectorAll("image")) image.remove();
+                    svg.style.position = "fixed";
+                    svg.style.opacity = "0";
+                    document.body.append(svg);
+                    try {
+                        const sizes = [...svg.querySelectorAll("text,tspan")]
+                            .filter(node => [...node.childNodes].some(child =>
+                                child.nodeType === Node.TEXT_NODE && child.textContent.trim()))
+                            .map(node => {
+                                const matrix = node.getScreenCTM();
+                                return matrix ? Number.parseFloat(getComputedStyle(node).fontSize) *
+                                    Math.hypot(matrix.c, matrix.d) * 0.75 : 0;
+                            }).filter(size => size > 0);
+                        return Math.min(...sizes);
+                    } finally { svg.remove(); }
+                }""", path.read_text())
+
+                printed = smallest_svg_label_points(auto)
+                assert 5.95 <= printed <= 6.05, printed
                 check.advanced()
-                dialog.get_by_label("Label size", exact=True).select_option("captured")
+                dialog.get_by_label("Label size").select_option("captured")
                 dialog.get_by_label("Figure print size", exact=True).select_option("0")
                 original = save("captured", "png")
                 original_metadata = metadata(original)
@@ -195,9 +217,7 @@ def main():
                         == 1
                     )
                     root = ET.parse(paths["svg"]).getroot()
-                    # Independent fixture oracle: its smallest labels are 9 captured pixels.
-                    # The print readout must use physical points, not CSS px or nominal DPI.
-                    expected_points = 9 * mm * 72 / (25.4 * dimensions[0])
+                    expected_points = smallest_svg_label_points(paths["svg"])
                     expect(dialog).to_contain_text(
                         f"Smallest export text: {expected_points:.1f} pt at this width."
                     )

@@ -130,11 +130,9 @@ def main():
 
             def bounds():
                 return [
-                    page.get_by_role(
-                        "spinbutton", name="Slider minimum signal", exact=True
+                    page.get_by_label("Slider minimum signal", exact=True
                     ).input_value(),
-                    page.get_by_role(
-                        "spinbutton", name="Slider maximum signal", exact=True
+                    page.get_by_label("Slider maximum signal", exact=True
                     ).input_value(),
                 ]
 
@@ -153,16 +151,12 @@ def main():
                 advanced.locator(":scope > summary").click()
                 page.locator("#scaling-across-zoom").select_option("none")
                 wait()
-                page.get_by_role(
-                    "spinbutton", name="Lower signal threshold", exact=True
+                page.get_by_label("Lower signal threshold", exact=True
                 ).fill("0")
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("8")
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
-                details = page.locator(".range-details")
-                details.locator(":scope > summary").click()
                 graph = post("/render_pipeline/get")
                 opts = options()
                 start = len(requests)

@@ -226,8 +226,7 @@ def main():
                 assert gamma() == saved_gamma
                 record("source-switch-keeps-independent-midpoints-and-inputs")
                 # Typed thresholds and a logarithmic slider axis preserve the color curve.
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("22")
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
@@ -254,11 +253,7 @@ def main():
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Linear", exact=True
                 ).click()
-                details = page.locator("details.range-details")
-                if details.get_attribute("open") is None:
-                    details.locator("summary").click()
-                maximum = page.get_by_role(
-                    "spinbutton", name="Slider maximum signal", exact=True
+                maximum = page.get_by_label("Slider maximum signal", exact=True
                 )
                 maximum.fill("10000")
                 maximum.press("Tab")

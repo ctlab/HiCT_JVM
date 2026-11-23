@@ -203,11 +203,9 @@ def main():
                     if advanced.get_attribute("open") is None:
                         advanced.locator(":scope > summary").click()
                     page.locator("#scaling-across-zoom").select_option("none")
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill("0")
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill(str(float(expected.max())))
                     page.get_by_role("button", name="Apply", exact=True).click()
                     check.settle()

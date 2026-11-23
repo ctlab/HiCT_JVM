@@ -61,6 +61,9 @@ def main():
 
         def editor_open():
             check.menu("View", "Rendering pipeline…")
+            advanced = page.locator(".pipeline-root details.hict-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
             page.locator(".graph-canvas").wait_for(state="visible")
             page.wait_for_function(
                 "document.querySelector('.graph-canvas').data.graph._nodes.length>2"

@@ -156,8 +156,7 @@ def main():
             page.get_by_role("slider", name="Upper threshold", exact=True).press("Home")
             page.wait_for_timeout(500)
             threshold = float(
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).input_value()
             )
             assert threshold > 1e-100, threshold
@@ -248,12 +247,10 @@ def main():
                             assert not np.array_equal(
                                 tile("PRIMARY"), baseline_primary
                             ), mode
-                        upper = page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        upper = page.get_by_label("Upper signal threshold", exact=True
                         )
                         assert float(upper.input_value()) == 100, upper.input_value()
-                        lower = page.get_by_role(
-                            "spinbutton", name="Lower signal threshold", exact=True
+                        lower = page.get_by_label("Lower signal threshold", exact=True
                         )
                         assert float(lower.input_value()) == 80, lower.input_value()
                     results.append(

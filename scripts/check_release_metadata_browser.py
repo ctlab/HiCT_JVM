@@ -53,11 +53,13 @@ def main():
                 "async ()=>(await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
             )
         page.get_by_role("link", name="Help", exact=True).click()
-        guide = page.get_by_role("link", name="User guide and shortcuts", exact=True)
-        guide_href = guide.get_attribute("href")
-        assert guide_href == "./docs/user-guide.md"
-        guide_text = context.request.get(args.url.rstrip("/") + "/docs/user-guide.md").text()
-        assert "## Keyboard and pointer actions" in guide_text
+        page.get_by_role("link", name="User guide and shortcuts…", exact=True).click()
+        guide = page.get_by_role("dialog", name="User guide and shortcuts")
+        guide.get_by_role("heading", name="Keyboard and pointer actions", exact=True).wait_for()
+        page.screenshot(path=str(output / "user-guide.png"))
+        guide.get_by_role("button", name="Close", exact=True).click()
+        guide_href = "./docs/user-guide.md"
+        page.get_by_role("link", name="Help", exact=True).click()
         page.get_by_role("link", name="About HiCT…", exact=True).click()
         dialog = page.get_by_role("dialog", name="About HiCT")
         dialog.get_by_role("heading", name="How to cite", exact=True).wait_for()

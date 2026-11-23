@@ -220,9 +220,9 @@ def main():
             assert sizes.input_value() == "37, 50"
             dialog.get_by_text("Estimated storage", exact=False).wait_for()
             assert dialog.get_by_label("Analysis scope").input_value() == "selection"
-            dialog.get_by_label("Display completed result").select_option("below")
+            dialog.get_by_label("Show result as").select_option("below")
             if not dialog.get_by_label("Worker threads", exact=True).is_visible():
-                dialog.get_by_text("Advanced", exact=True).click()
+                check.advanced()
             dialog.get_by_label("Worker threads").fill("2")
             cold_start = time.monotonic()
             with page.expect_response(
@@ -265,8 +265,8 @@ def main():
             dialog.locator('input[value="1000"]').check()
             assert sizes.input_value() == "1, 50, 1000"
             dialog.get_by_label("Analysis scope").select_option("selection")
-            dialog.get_by_label("Display completed result").select_option("above")
-            dialog.get_by_text("Advanced", exact=True).click()
+            dialog.get_by_label("Show result as").select_option("above")
+            check.advanced()
             dialog.get_by_label("Sample every (bp)", exact=True).fill("1")
             cold_start = time.monotonic()
             with page.expect_response(

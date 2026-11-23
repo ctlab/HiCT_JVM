@@ -141,8 +141,7 @@ def main():
                 raise AssertionError("Expected visualization request did not start")
 
             def set_upper(value, apply=True):
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill(str(value))
                 if apply:
                     page.locator("#gradient-apply-button").click()
@@ -221,8 +220,7 @@ def main():
                 while not held:
                     page.wait_for_timeout(10)
                 page.locator("#signal-transform-log").click()
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("100")
                 page.locator("#gradient-apply-button").click()
                 # Give the legacy overlapping Apply time to start; the fixed queue may keep it waiting.
@@ -240,8 +238,7 @@ def main():
                     and not actual["applyCoolerWeights"]
                 ), actual
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("100")
                 expect(page.locator("#signal-transform-log")).to_have_attribute(
@@ -325,8 +322,7 @@ def main():
                     actual_graph["lowerExpression"]["input"] == original_secondary_input
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("750")
                 assert tile("SECONDARY").getpixel((4, 4))[1] < 130, tile(
@@ -360,8 +356,7 @@ def main():
                 )
                 assert tile("SECONDARY").tobytes() != before_secondary
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("175")
                 record(
@@ -400,8 +395,7 @@ def main():
                     and graph["lowerExpression"]["maxSignal"] == 18
                 ), graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("18")
                 record(
@@ -445,8 +439,7 @@ def main():
                     wait()
                     assert options()["colormap"]["maxSignal"] == value
                     expect(
-                        page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        page.get_by_label("Upper signal threshold", exact=True
                         )
                     ).to_have_value(str(value))
                     record(
@@ -482,8 +475,7 @@ def main():
                     and tile().tobytes() == before_pixels
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("20")
                 expect(
@@ -529,8 +521,7 @@ def main():
                     and tile().tobytes() == before_pixels
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("30")
                 expect(
@@ -593,8 +584,7 @@ def main():
                     post("/render_pipeline/get")["lowerExpression"] == secondary_before
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("55")
                 record(
@@ -620,8 +610,7 @@ def main():
                 assert graph["upperExpression"] == primary_before, graph
                 assert graph["lowerExpression"]["maxSignal"] == 0.75, graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("0.75")
                 record(
@@ -730,8 +719,7 @@ def main():
                     and graph["lowerExpression"]["maxSignal"] == 900
                 ), graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("900")
                 record(

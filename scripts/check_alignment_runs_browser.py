@@ -148,7 +148,7 @@ def main():
                 assert not rendered()['features']
             check.step('empty-alignment-is-explicit',no_hit)
             def reverse_assembly():
-                scope('row','All Rows');scope('column','All Columns')
+                scope('row','All rows');scope('column','All columns')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,4000)')
                 with page.expect_response('**/reverse_selection_range') as response:page.get_by_role('button',name='Reverse Selection',exact=True).click()
                 assert response.value.ok;check.settle()

@@ -142,24 +142,21 @@ class BrowserCheck:
         )
 
     def menu(self, menu, action):
-        trigger = self.page.get_by_role("link", name=menu, exact=True)
-        if not trigger.count():
-            trigger = self.page.get_by_role("button", name=menu, exact=True)
+        trigger = self.page.get_by_role("link", name=menu, exact=True).or_(
+            self.page.get_by_role("button", name=menu, exact=True)
+        )
         trigger.click()
-        target = self.page.get_by_role("link", name=action, exact=True)
+        options = trigger.locator("..")
+        target = options.get_by_role("link", name=action, exact=True)
         for role in ("button", "menuitemradio", "menuitemcheckbox"):
-            if target.count():
-                break
-            target = self.page.get_by_role(role, name=action, exact=True)
+            target = target.or_(options.get_by_role(role, name=action, exact=True))
         target.click()
 
     def advanced(self):
-        for detail in self.page.locator('[role="dialog"]:visible details').all():
-            if (
-                detail.locator("summary").inner_text().strip() == "Advanced"
-                and detail.get_attribute("open") is None
-            ):
-                detail.locator("summary").click()
+        for toggle in self.page.locator(
+            '[role="dialog"]:visible details.hict-advanced:not([open]) > summary:visible'
+        ).all():
+            toggle.click()
 
     def choose_file(self, filename):
         dialog = self.page.locator(".modal.show").last

@@ -92,6 +92,9 @@ def main():
 
             page.get_by_role('link', name='View', exact=True).click()
             page.get_by_role('link', name='Rendering pipeline…', exact=True).click()
+            advanced = page.locator(".pipeline-root details.hict-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
             page.locator('.graph-canvas').wait_for(state='visible')
             page.wait_for_timeout(500)
             graph = page.evaluate('''() => {const c=document.querySelector('.graph-canvas').data;

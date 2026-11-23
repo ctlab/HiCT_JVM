@@ -54,7 +54,7 @@ def main():
                 f"async()=>await {manager}.networkManager.requestManager.getRenderPipelineConfig()"
             )
             menus = page.locator('nav a[data-bs-toggle="dropdown"]')
-            assert menus.count() == 6
+            expect(menus).to_have_count(7)
             for menu in menus.all():
                 menu.focus()
                 menu.press("ArrowDown")

@@ -261,8 +261,8 @@ def main():
             row.press("Escape")
             assert row.input_value() == "two"
             for label, query in (
-                ("Rows scope", "All Rows"),
-                ("Columns scope", "All Columns"),
+                ("Rows scope", "All rows"),
+                ("Columns scope", "All columns"),
             ):
                 field = page.get_by_role("textbox", name=label, exact=True)
                 field.fill(query)

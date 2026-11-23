@@ -112,7 +112,7 @@ with sync_playwright() as pw:
         )
         page.wait_for_timeout(1500)
         clicks = page.evaluate("window.quickStartClicks")
-        assert clicks == ["File", "Open Examples…", "Open example"], clicks
+        assert clicks == ["File", "Examples…", "Open example"], clicks
         assert (
             page.get_by_role("dialog", name="Open with options", exact=True).count() == 0
         )
@@ -309,7 +309,7 @@ with sync_playwright() as pw:
                 "heading", name="No contact map open", exact=True
             ).wait_for()
             with page.expect_file_chooser() as chooser:
-                file_action("Open session")
+                file_action("Open session…")
             chooser.value.set_files(session_path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

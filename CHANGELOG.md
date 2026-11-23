@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the empty workspace focused on opening a map, and retain full signal threshold precision while editing rounded values.
 - Add browser checks for assembly safeguards, export destinations, error feedback, and contrast across zoom levels.
 - Keep everyday dialog controls visible and move detailed options under Advanced. Open maps with optional sequence and layout in three steps, and read the user guide inside HiCT.
 - Group region commands into Edit, Copy, Export and Analyse. Print figures at a chosen width with an adjustable minimum label size.

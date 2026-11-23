@@ -223,11 +223,9 @@ def main():
                     if details.get_attribute("open") is None:
                         details.locator("summary").click()
                     page.locator("#scaling-across-zoom").select_option("none")
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill("0")
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill("11")
                     page.locator("#gradient-apply-button").click()
                     check.settle()
@@ -326,8 +324,7 @@ def main():
 
                     def change_range(index=index, width=width):
                         before = pixel("before-" + str(width))
-                        upper = page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        upper = page.get_by_label("Upper signal threshold", exact=True
                         )
                         upper.fill(str(22 + index * 11))
                         page.locator("#gradient-apply-button").click()

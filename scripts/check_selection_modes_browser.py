@@ -69,7 +69,7 @@ def main():
                 for key,value in values.items():dialog.locator('#region-'+key).fill(str(value))
             def export_fasta(filename, coords):
                 with page.expect_response('**/get_fasta_for_selection') as response, page.expect_download() as download:
-                    page.get_by_role('button', name='Export FASTA for selection…', exact=True).click()
+                    page.get_by_role('button', name='Export FASTA for selection', exact=True).click()
                 assert response.value.ok, response.value.text()
                 request = response.value.request.post_data_json
                 assert [request[key] for key in ['fromBpX', 'fromBpY', 'toBpX', 'toBpY']] == coords, request
@@ -169,7 +169,7 @@ def main():
                 dialog.get_by_role('button',name='Select region',exact=True).click();check.settle();assert state()['region']==expected,state()
                 page.keyboard.press('Escape');check.settle();assert state()['region'] is None
             check.step('typed-scoped-coordinates-export-and-escape',typed_region)
-            scope('row','All Rows');scope('column','All Columns')
+            scope('row','All rows');scope('column','All columns')
             assert page.evaluate('''()=>window.__hictBenchmark.manager().viewAndLayersManager.getActiveContigBordersLayer().getSource().getFeatures().some(f=>f.get('trackType')==='contigBorders')''')
             def export_without_overlays():
                 def export(name):
