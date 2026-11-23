@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Undo and redo from the toolbar, confirm scaffold removal, and link the matching FASTA directly from export guidance.
+- Show readable errors with diagnostic details, check for an open map before joining a running session, and show the tool log when dotplot generation fails.
+
 - Keep square-root coverage readable when zooming, restore exact contrast limits for each source, and keep zoom controls within the available detail levels.
 
 - Keep assembly edits available while opening tracks or linking FASTA, retain Undo when overlays change, and protect open maps from replacement.

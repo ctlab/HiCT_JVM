@@ -29,6 +29,7 @@ class ApiRobustnessTest {
     api.tempDataDir = data;
     try {
       api.startValidationServer();
+      assertEquals(false, new JsonObject(api.get("/session/availability").body()).getBoolean("available"));
       rejected(409, api.post("/reverse_selection_range", "{\"startBP\":0,\"endBP\":1}"));
       rejected(409, api.get("/get_tile?level=1"));
       rejected(409, api.post("/assembly/history/restore", "{\"action\":\"undo\"}"));
@@ -36,6 +37,7 @@ class ApiRobustnessTest {
         rejected(400, api.post("/open", body));
       }
       assertEquals(200, api.post("/open", "{\"filename\":\"map.hict.hdf5\"}").statusCode());
+      assertEquals(true, new JsonObject(api.get("/session/availability").body()).getBoolean("available"));
       final String agp = api.post("/get_agp_for_assembly", "{}").body();
       final String history = api.post("/assembly/history", "{}").body();
       assertFalse(agp.isEmpty());

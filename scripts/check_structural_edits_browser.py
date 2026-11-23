@@ -153,12 +153,14 @@ def main():
             )
 
         def button_action(name, endpoint):
-            if name in ("Undo assembly edit", "Redo assembly edit"):
-                page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response(
                 lambda response: response.url.endswith(endpoint)
             ) as response:
-                page.locator("button[aria-label=" + json.dumps(name) + "]").click()
+                page.get_by_role("button", name=name, exact=True).click()
+                if endpoint == "/unscaffold_all":
+                    page.get_by_role("alertdialog", name="Remove all scaffolds?").get_by_role(
+                        "button", name=re.compile(r"^Remove \d+ scaffolds?$")
+                    ).click()
             assert response.value.ok, response.value.text()
             check.settle()
 
@@ -168,9 +170,9 @@ def main():
             after = snapshot()
             assert after["agpSha256"] != before["agpSha256"], name
             for button, expected in [
-                ("Undo assembly edit", before),
-                ("Redo assembly edit", after),
-                ("Undo assembly edit", before),
+                ("Undo", before),
+                ("Redo", after),
+                ("Undo", before),
             ]:
                 button_action(button, "/assembly/history/restore")
                 actual = snapshot()
@@ -203,7 +205,16 @@ def main():
                 )
                 == 4
             )
-            button_action("Unscaffold all", "/unscaffold_all")
+            before_cancel = snapshot()
+            page.get_by_role("button", name="Remove all scaffolds…", exact=True).click()
+            confirm = page.get_by_role("alertdialog", name="Remove all scaffolds?")
+            assert confirm.get_by_role("button", name="Cancel").evaluate(
+                "button => document.activeElement === button"
+            )
+            page.keyboard.press("Escape")
+            confirm.wait_for(state="hidden")
+            assert snapshot() == before_cancel
+            button_action("Remove all scaffolds…", "/unscaffold_all")
             select_orders()
             round_trip(
                 "reverse",
@@ -230,14 +241,14 @@ def main():
             )
             round_trip(
                 "unscaffold-all",
-                lambda: button_action("Unscaffold all", "/unscaffold_all"),
+                lambda: button_action("Remove all scaffolds…", "/unscaffold_all"),
             )
-            button_action("Unscaffold all", "/unscaffold_all")
+            button_action("Remove all scaffolds…", "/unscaffold_all")
             select_orders()
             round_trip(
                 "debris",
                 lambda: button_action(
-                    "Move selection to debris", "/move_selection_to_debris"
+                    "Move to unplaced (debris)…", "/move_selection_to_debris"
                 ),
             )
 

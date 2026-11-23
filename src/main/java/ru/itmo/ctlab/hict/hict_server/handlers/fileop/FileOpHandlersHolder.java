@@ -33,6 +33,7 @@ import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
@@ -732,6 +733,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           .put("renderPipeline", saved.renderPipeline().copy())
           .put("tracks", saved.tracks().copy());
       }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
+
+    router.get("/session/availability").handler(ctx -> {
+      final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+      ctx.response().putHeader("content-type", "application/json").end(
+        new JsonObject().put("available", map.get(PRIMARY_CHUNKED_FILE_KEY) != null).encode());
     });
 
     router.post("/attach").handler(ctx -> {

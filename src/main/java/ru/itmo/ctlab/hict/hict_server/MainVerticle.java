@@ -543,6 +543,7 @@ public class MainVerticle extends AbstractVerticle {
 
   /** Vert.x keeps the user-facing explanation in payload, not getMessage() ("Conflict"). */
   public static String failureMessage(Throwable failure) {
+    if (failure instanceof NoOpenFileException) return "Open a map first";
     if (failure instanceof NumberFormatException) return "Invalid number in the request";
     if (failure instanceof io.vertx.core.json.DecodeException) return "Expected a JSON request object";
     final var message = failure instanceof io.vertx.ext.web.handler.HttpException http && http.getPayload() != null

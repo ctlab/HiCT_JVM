@@ -99,7 +99,7 @@ def main():
             scaffold=page.evaluate('''()=>{const m=window.__hictBenchmark.manager();return [...m.scaffoldHolder.scaffoldTable.values()].find(s=>s.scaffoldBordersBP?.startBP===0&&s.scaffoldBordersBP?.endBP===2000);}''')
             assert scaffold,scaffold
             def scaffold_pick():
-                choose('Shift selects scaffolds')
+                choose('Scaffolds')
                 page.keyboard.down('Shift');page.mouse.click(*point(500,500));page.keyboard.up('Shift');check.settle()
                 s=state();assert len(s['ids'])==2 and len(s['scaffolds'])==1 and s['highlights']==1,s
                 page.evaluate('''()=>window.__hictBenchmark.manager().viewAndLayersManager.restoreViewPosition({centerBp:[1000,1000],resolution:.008})''');check.settle()
@@ -114,6 +114,10 @@ def main():
                 for key,target in {'rowStart':250,'rowEnd':900,'columnStart':300,'columnEnd':750}.items():
                     assert abs(s['region'][key]-target)<=5,s
                 assert not s['ids'] and s['entityRange'] is None and s['highlights']==0,s
+                square = page.get_by_label('Square selection', exact=True)
+                square.check()
+                assert state()['region'] == s['region']
+                square.uncheck()
                 before=len(edits);page.get_by_role('button',name='Reverse Selection',exact=True).click();check.settle();assert len(edits)==before
                 page.mouse.click(*point(500,500));check.settle();assert state()['region']==s['region']
                 page.mouse.click(*point(2200,2200));check.settle();assert state()['region'] is None,state()
@@ -123,7 +127,7 @@ def main():
             def hide_scoped():
                 choose('Hide borders in scoped view')
                 assert page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager;return [l.getActiveContigBordersLayer(),l.getActiveScaffoldBordersLayer()].every(layer=>layer.getSource().getFeatures().every(f=>!['contigBorders','scaffoldBorders'].includes(f.get('trackType'))));}''')
-                choose('Shift selects contigs')
+                choose('Contigs')
                 page.keyboard.down('Shift');page.mouse.click(*point(1200,1200));page.keyboard.up('Shift');check.settle()
                 assert len(state()['ids'])==1 and state()['highlights']==1,state()
             check.step('scoped-borders-and-visible-selection',hide_scoped)
@@ -195,7 +199,7 @@ def main():
                 dialog.wait_for(state='hidden')
                 check.settle()
                 before = state()
-                choose('Copy selection coordinates')
+                choose('Copy coordinates')
                 page.get_by_text('Selection coordinates copied', exact=True).wait_for()
                 assert page.evaluate('navigator.clipboard.readText()') == (
                     'Assembly coordinates (bp, 1-based inclusive)\n'

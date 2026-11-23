@@ -464,6 +464,22 @@ paths:
           description: Unsupported or oversized state
         '409':
           description: Active map session changed or another client saved newer workspace settings; attach again before saving.
+  /session/availability:
+    get:
+      tags: [Files]
+      summary: Check whether a running session has a map to join
+      operationId: getSessionAvailability
+      responses:
+        '200':
+          description: Whether a primary contact map is open.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available]
+                properties:
+                  available: { type: boolean }
+
   /attach:
     post:
       tags: [Files]
@@ -477,6 +493,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AttachResponse'
+        '404':
+          description: The server has no open session.
   /close:
     post:
       tags: [Files]
