@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
+- Refresh the threshold fields immediately when a visualization preset changes the signal range.
 - Keep only the current verified portable downloads on the rolling branch release.
 - Keep the Selection menu accessible in short windows and replace rounded thresholds cleanly when entering exact values.
 - Keep the empty workspace focused on opening a map, and retain full signal threshold precision while editing rounded values.

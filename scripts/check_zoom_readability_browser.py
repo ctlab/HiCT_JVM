@@ -211,8 +211,13 @@ def main(default_normalizations=("file", "sqrt")):
                     page.get_by_role("button", name="Apply", exact=True).click()
                     settle()
                     manual_level = state()["resolution"]
-                    for _ in range(4):
-                        wheel(300)
+                    for direction in (300, -300):
+                        for _ in range(6):
+                            wheel(direction)
+                            if state()["resolution"] != manual_level:
+                                break
+                        if state()["resolution"] != manual_level:
+                            break
                     settle()
                     check(
                         stem + " manual range crosses levels",

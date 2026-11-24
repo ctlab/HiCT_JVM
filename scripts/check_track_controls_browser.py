@@ -270,7 +270,9 @@ def main():
             assert len(api("/tracks/list")) == 1
 
         def precompute():
-            dialog.locator('summary').filter(has_text='Preparation').click()
+            advanced = dialog.locator('details[data-advanced-id="tracks"]')
+            if advanced.get_attribute('open') is None:
+                advanced.locator(':scope > summary').click()
             with page.expect_response("**/tracks/precompute/start") as response:
                 dialog.get_by_role("button", name="Precompute all", exact=True).click()
             assert response.value.ok
