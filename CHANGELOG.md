@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep Notifications visible in short windows while the editing tools scroll independently.
 - Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
 - Refresh the threshold fields immediately when a visualization preset changes the signal range.
 - Keep only the current verified portable downloads on the rolling branch release.

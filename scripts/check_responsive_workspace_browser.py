@@ -172,13 +172,37 @@ def main():
                 ), point
                 return list(picture.getpixel(tuple(point)))
 
+            def notification_access():
+                notification = page.get_by_role("button", name="Open notifications", exact=True)
+                assert notification.evaluate("""button => {
+                    const bounds = button.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                        bounds.left + bounds.width / 2, bounds.top + bounds.height / 2
+                    );
+                    return bounds.bottom <= innerHeight && button.contains(hit);
+                }""")
+                upper = page.locator(".toolbar-upper")
+                if upper.evaluate("pane => pane.scrollHeight > pane.clientHeight"):
+                    before = notification.bounding_box()
+                    upper.evaluate("pane => { pane.scrollTop = pane.scrollHeight; }")
+                    assert upper.evaluate("pane => pane.scrollTop > 0")
+                    assert notification.bounding_box() == before
+                    upper.evaluate("pane => { pane.scrollTop = 0; }")
+
             try:
                 page.goto(url)
+                for height in (720, 900):
+                    page.set_viewport_size({"width": 1440, "height": height})
+                    notification_access()
+                page.set_viewport_size({"width": 1440, "height": 1000})
                 page.evaluate(
                     "a=>window.__hictBenchmark.open(a.primary,a.api,a.fasta)",
                     {"primary": primary, "api": api.url, "fasta": fasta},
                 )
                 check.settle()
+                page.set_viewport_size({"width": 1280, "height": 720})
+                notification_access()
+                page.set_viewport_size({"width": 1440, "height": 1000})
 
                 def prepare():
                     check.menu("View", "Sources and layers…")
