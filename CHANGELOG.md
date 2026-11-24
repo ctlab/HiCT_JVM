@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep signal scales readable when the track background changes.
 - Keep the opening wizard controls in view, clarify menu guidance, and move optional gap and compatibility settings under Advanced.
 - Retry failed figure previews with the keyboard, keep export settings in place, and announce when the preview is ready.
 - Keep the map wider in narrow windows, with expandable map tools and full filenames in Sources.
