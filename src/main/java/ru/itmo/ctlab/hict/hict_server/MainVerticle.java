@@ -445,7 +445,8 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
     this.normalization = new NormalizationHandlersHolder(vertx);
-    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange);
+    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange,
+      this.normalization::cancelForSecondaryChange);
     handlersHolders.add(this.fileOperations);
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));

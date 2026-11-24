@@ -109,6 +109,10 @@ Use the Visualization sidebar to change the color range, signal transform and
 normalization, then Apply. Slider scale changes the slider's response. Signal
 transform changes the displayed values. Square-root coverage uses a single
 whole-map domain at each resolution. Bins without contacts remain empty.
+When two sources are open, choose **Primary** or **Secondary** in Visualization
+before setting Normalization. For example, use square-root coverage for the
+Hi-C contacts while a ModDotPlot keeps its sequence scores. Sessions remember
+each source's choice.
 Show O/E uses a diverging log-ratio range centered at one. It compares each
 contact with the fitted mean of positive finite signals at the same distance
 within its scaffold or unscaffolded contig. A measured zero with a positive

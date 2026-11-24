@@ -76,14 +76,16 @@ import java.util.Objects;
 public class FileOpHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final Runnable cancelCoverage;
+  private final Runnable cancelSecondaryCoverage;
 
   public FileOpHandlersHolder(Vertx vertx) {
-    this(vertx, () -> {});
+    this(vertx, () -> {}, () -> {});
   }
 
-  public FileOpHandlersHolder(Vertx vertx, Runnable cancelCoverage) {
+  public FileOpHandlersHolder(Vertx vertx, Runnable cancelCoverage, Runnable cancelSecondaryCoverage) {
     this.vertx = vertx;
     this.cancelCoverage = cancelCoverage;
+    this.cancelSecondaryCoverage = cancelSecondaryCoverage;
   }
 
   private static final String PRIMARY_CHUNKED_FILE_KEY = "chunkedFile";
@@ -413,7 +415,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
             dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath(), filePath,
             new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
-          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
+          synchronized (map) {
+            cancelSecondaryCoverage.run();
+            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
+          }
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
           if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
@@ -448,8 +453,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
-          map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          final ShareableWrappers.ChunkedFileWrapper secondary;
+          synchronized (map) {
+            cancelSecondaryCoverage.run();
+            secondary = (ShareableWrappers.ChunkedFileWrapper) map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          }
+          closeChunkedFileWrapper(secondary);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
           map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
