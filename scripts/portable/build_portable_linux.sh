@@ -221,7 +221,8 @@ release size, and avoid opaque native self-extracting packers.
 EOF
 
 runtime_options=()
-trim_native_heap_option="-XX:TrimNativeHeapInterval=30000"
+trim_native_heap_interval_ms=5000
+trim_native_heap_option="-XX:TrimNativeHeapInterval=${trim_native_heap_interval_ms}"
 jdk_java="$(dirname "$(readlink -f "${JLINK}")")/java"
 if [[ -z "${ABI_SUFFIX}" ]] &&
    env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
@@ -242,7 +243,7 @@ fi
 if (( ${#runtime_options[@]} > 0 )); then
   env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
     "${APP_DIR}/runtime/bin/java" -XX:+PrintFlagsFinal -version 2>&1 |
-    grep -E 'TrimNativeHeapInterval[[:space:]]*=[[:space:]]*30000[[:space:]]'
+    grep -E "TrimNativeHeapInterval[[:space:]]*=[[:space:]]*${trim_native_heap_interval_ms}[[:space:]]"
 fi
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
