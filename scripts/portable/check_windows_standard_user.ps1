@@ -73,8 +73,11 @@ try {
     $launcher = $package.Path
     $version = & $launcher --version
     if ($LASTEXITCODE -ne 0 -or "HiCT $($config.Version)" -notin $version) { throw "Unexpected $($package.Name) version." }
-    & $launcher check-toolchains --require-hdf5-native
+    & $launcher check-toolchains --require-hdf5-native 2>&1 | Tee-Object -Variable nativeLog
     if ($LASTEXITCODE -ne 0) { throw "HDF5 failed under the standard account." }
+    if (-not ($nativeLog -match "Using installed JHDF5 native library")) {
+      throw "The $($package.Name) launcher did not load the installed JHDF5 DLLs under the standard account."
+    }
     $outputMap = Join-Path $config.Work "$($package.Name) matrix Δ.hict.hdf5"
     & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
     if ($LASTEXITCODE -ne 0) { throw "Conversion failed under the standard account." }

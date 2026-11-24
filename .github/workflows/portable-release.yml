@@ -1327,6 +1327,8 @@ jobs:
             $jar = Resolve-Path "build/libs/hict_server-$version-fat.jar"
             java --class-path $jar src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java $env:DATA_DIR
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # Test the installed package, independently of the build checkout's native archive.
+            Remove-Item Env:HICT_JHDF5_NATIVES_ARCHIVE, Env:HICT_JHDF5_NATIVE_ARCHIVE -ErrorAction SilentlyContinue
             $inputMap = Join-Path $env:DATA_DIR "tiny-primary.mcool"
             $inputHash = (Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash
             (Get-Item -LiteralPath $inputMap).IsReadOnly = $true
@@ -1348,8 +1350,11 @@ jobs:
               $oldTmp = $env:TMP
               try {
                 $env:TEMP = $env:TMP = $env:HICT_TEMP_DIR = $blockedTemp
-                & $launcher check-toolchains --require-hdf5-native --quiet
+                & $launcher check-toolchains --require-hdf5-native 2>&1 | Tee-Object -Variable nativeLog
                 if ($LASTEXITCODE -ne 0) { throw "HDF5 failed through $label." }
+                if (-not ($nativeLog -match "Using installed JHDF5 native library")) {
+                  throw "The $label launcher did not load the installed JHDF5 DLLs."
+                }
                 $outputMap = Join-Path $workspace "$label converted.hict.hdf5"
                 # The tiny Java fixture exercises direct HDF5 I/O. The native-tool gate above supplies a hictk-built Cooler.
                 & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
@@ -1397,8 +1402,9 @@ jobs:
               Assert-NativeConversion $exe "EXE"
             }
             $zip = Join-Path $downloads "$basename-portable.zip"
-            Expand-Archive -LiteralPath $zip -DestinationPath $workspace
-            $launcher = Get-ChildItem -LiteralPath $workspace -Recurse -Filter "HiCT.cmd" | Select-Object -First 1
+            $zipRoot = Join-Path $workspace "extracted ZIP"
+            Expand-Archive -LiteralPath $zip -DestinationPath $zipRoot
+            $launcher = Get-ChildItem -LiteralPath $zipRoot -Recurse -Filter "HiCT.cmd" | Select-Object -First 1
             if (-not $launcher) { throw "The Windows ZIP does not contain HiCT.cmd." }
             Assert-BuildIdentity $launcher.FullName
             Assert-NativeConversion $launcher.FullName "ZIP"

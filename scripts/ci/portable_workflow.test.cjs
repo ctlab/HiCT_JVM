@@ -71,6 +71,16 @@ test('automatic jvm-sfx-native releases preserve existing tags and assets', () =
   assert.match(prune, /steps\.collect-assets\.outputs\.rolling_release == 'true'/);
 });
 
+test('Windows qualification loads native DLLs from each installed package', () => {
+  const windows = job('windows-portable');
+  const gate = windows.match(/      - name: Exercise both Windows packages with a redirected runtime\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.ok(gate, 'Missing installed Windows package qualification');
+  assert.match(gate, /Remove-Item Env:HICT_JHDF5_NATIVES_ARCHIVE/);
+  assert.match(gate, /Using installed JHDF5 native library/);
+  assert.match(gate, /Expand-Archive -LiteralPath \$zip -DestinationPath \$zipRoot\n +\$launcher = Get-ChildItem -LiteralPath \$zipRoot/);
+  assert.match(gate, /check_windows_standard_user\.ps1 .* -ZipLauncher \$launcher\.FullName/);
+});
+
 test('native cache source hashes exclude generated Python bytecode', () => {
   const sequence = fs.readFileSync('.github/workflows/sequence-tools.yml', 'utf8');
   assert.match(sequence, /'scripts\/sequence_analysis\/\*\*'/);
