@@ -623,20 +623,33 @@ bool canWritePrivateFile(const std::wstring &directory) {
   }
 }
 
-std::wstring selectRuntimeTempDir(const std::wstring &dataDir, const std::wstring &appHome) {
+std::vector<std::wstring> runtimeTempCandidates(const std::wstring &dataDir, const std::wstring &appHome) {
   const auto localHiCTDir = getLocalHiCTDirectory();
   const auto configuredTempDir = getEnvironmentVariableValue(L"HICT_TEMP_DIR");
-  const std::vector<std::wstring> candidates{
+  return {
       configuredTempDir,
       localHiCTDir.empty() ? L"" : joinPath(localHiCTDir, L"runtime"),
       joinPath(getTempDirectory(), L"HiCT\\runtime"),
       joinPath(dataDir, L"tmp"),
       joinPath(appHome, L"tmp")};
+}
 
-  for (const auto &candidate : candidates) {
-    if (!candidate.empty() && canWritePrivateFile(candidate)) return candidate;
-  }
-  return L"";
+bool prepareRuntimeTempDir(const std::wstring &candidate, const std::wstring &appHome,
+                           const std::wstring &javaCommand, const std::wstring &jar,
+                           const std::wstring &configuredOptions, bool requireNative) {
+  if (!canWritePrivateFile(candidate)) return false;
+  SetEnvironmentVariableW(L"HICT_TEMP_DIR", candidate.c_str());
+  SetEnvironmentVariableW(L"TMP", candidate.c_str());
+  SetEnvironmentVariableW(L"TEMP", candidate.c_str());
+  if (!requireNative) return true;
+
+  const auto probe = javaCommand + L" " + quoteArg(L"-Djava.io.tmpdir=" + candidate)
+                   + L" " + configuredOptions + L" -jar " + quoteArg(jar)
+                   + L" check-toolchains --require-hdf5-native --quiet";
+  if (runProcess(probe, appHome, true) == 0) return true;
+  std::wcerr << L"The native HDF5 check failed with working folder " << candidate
+             << L". Trying another folder.\n";
+  return false;
 }
 
 std::wstring getDataDirectory(const std::wstring &selfPath) {
@@ -785,6 +798,16 @@ int run() {
     return extractPayload(selfPath, manifest, target, false);
   }
   const bool versionOnly = argv != nullptr && argc == 2 && std::wcscmp(argv[1], L"--version") == 0;
+  bool needsNativeCheck = argv != nullptr && (argc == 1
+      || (argc > 1 && (std::wcscmp(argv[1], L"start-server") == 0
+                   || std::wcscmp(argv[1], L"start-api-server") == 0
+                   || std::wcscmp(argv[1], L"launcher") == 0
+                   || std::wcscmp(argv[1], L"convert") == 0)));
+  for (int i = 1; needsNativeCheck && i < argc; ++i) {
+    if (std::wcscmp(argv[i], L"--help") == 0 || std::wcscmp(argv[i], L"-h") == 0) {
+      needsNativeCheck = false;
+    }
+  }
   if (argv != nullptr) {
     LocalFree(argv);
   }
@@ -828,16 +851,33 @@ int run() {
 
   const auto dataDir = getDataDirectory(selfPath);
   createDirectories(dataDir);
-  auto tempDir = selectRuntimeTempDir(dataDir, appHome);
+  SetEnvironmentVariableW(L"HICT_APP_HOME", appHome.c_str());
+  SetEnvironmentVariableW(L"HICT_JAR_PATH", jar.c_str());
+  defaultEnvironment(L"HICT_BIND_HOST", L"127.0.0.1");
+  if (args.empty()) defaultEnvironment(L"HICT_LAUNCHER_MODE", L"gui");
+  const auto webRoot = joinPath(appHome, L"webui");
+  if (fileExists(joinPath(webRoot, L"index.html"))) defaultEnvironment(L"WEBUI_ROOT", webRoot);
+  const auto tools = joinPath(appHome, L"toolchains\\windows_x86_64");
+  if (fileExists(joinPath(tools, L"manifest.json"))) defaultEnvironment(L"HICT_TOOLCHAIN_DIR", tools);
+  const auto browsers = joinPath(appHome, L"browsers\\windows_x86_64");
+  if (directoryExists(browsers)) defaultEnvironment(L"HICT_BROWSER_DIR", browsers);
+
+  std::wstring tempDir;
+  for (const auto &candidate : runtimeTempCandidates(dataDir, appHome)) {
+    if (prepareRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, needsNativeCheck)) {
+      tempDir = candidate;
+      break;
+    }
+  }
   if (tempDir.empty() && argc == 1 && isConsoleOwnedByThisProcess()) {
     const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its temporary files. Choose a writable working folder to retry.");
     if (!chosen.empty()) {
       const auto candidate = joinPath(chosen, L"HiCT\\runtime");
-      if (canWritePrivateFile(candidate)) tempDir = candidate;
+      if (prepareRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, needsNativeCheck)) tempDir = candidate;
     }
   }
   if (tempDir.empty()) {
-    throw std::runtime_error("No writable runtime folder was found. Choose a working folder or set HICT_TEMP_DIR.");
+    throw std::runtime_error("HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.");
   }
   if (!environmentVariableIsDefined(L"PROCESSED_DIR")) {
     const auto processed = joinPath(dataDir, L"processed");
@@ -850,21 +890,6 @@ int run() {
   SetEnvironmentVariableW(L"HICT_PORTABLE_DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_EXE_PATH", selfPath.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_CACHE_DIR", cacheRoot.c_str());
-  SetEnvironmentVariableW(L"HICT_TEMP_DIR", tempDir.c_str());
-  SetEnvironmentVariableW(L"TMP", tempDir.c_str());
-  SetEnvironmentVariableW(L"TEMP", tempDir.c_str());
-
-  SetEnvironmentVariableW(L"HICT_APP_HOME", appHome.c_str());
-  SetEnvironmentVariableW(L"HICT_JAR_PATH", jar.c_str());
-  defaultEnvironment(L"HICT_BIND_HOST", L"127.0.0.1");
-  if (args.empty()) defaultEnvironment(L"HICT_LAUNCHER_MODE", L"gui");
-  const auto webRoot = joinPath(appHome, L"webui");
-  if (fileExists(joinPath(webRoot, L"index.html"))) defaultEnvironment(L"WEBUI_ROOT", webRoot);
-  const auto tools = joinPath(appHome, L"toolchains\\windows_x86_64");
-  if (fileExists(joinPath(tools, L"manifest.json"))) defaultEnvironment(L"HICT_TOOLCHAIN_DIR", tools);
-  const auto browsers = joinPath(appHome, L"browsers\\windows_x86_64");
-  if (directoryExists(browsers)) defaultEnvironment(L"HICT_BROWSER_DIR", browsers);
-
   command += L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir) + L" " + configuredOptions + jarAndArguments;
   const int exitCode = runProcess(command, dataDir);
   pauseOnFailureIfNeeded(exitCode);

@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
 import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
@@ -60,8 +61,9 @@ public class FSHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final FileFingerprintService fingerprintService = new FileFingerprintService();
   private static final Pattern RUNTIME_COMPONENT = Pattern.compile(
-    "(?:hict-jhdf5-native-(?:archive-)?|hict-native-processing-|hict-hic-pipeline-|"
-      + "hict-hictk-load-pipeline-|hict-mcool-pyramid-pipeline-|hict-hict-to-mcool-)[0-9]+");
+    "(?:(?:nativelib-loader_|hict-jhdf5-native-(?:archive-)?|hict-native-processing-|hict-hic-pipeline-|"
+      + "hict-hictk-load-pipeline-|hict-mcool-pyramid-pipeline-|hict-hict-to-mcool-)[0-9]+"
+      + "|hict-jhdf5-native-resource-[0-9]+\\.tar\\.gz|hict-current-assembly-[0-9]+\\.agp)");
   private static final List<String> FASTA_SUFFIXES = List.of(
     ".fasta", ".fa", ".fna", ".fas",
     ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
@@ -413,9 +415,11 @@ public class FSHandlersHolder extends HandlersHolder {
     boolean contains(Path path) {
       final var absolute = path.toAbsolutePath().normalize();
       if (absolute.startsWith(uploadDirectory)) return true;
-      if (absolute.equals(root) || !absolute.startsWith(runtimeDirectory) || absolute.equals(runtimeDirectory)) {
-        return false;
+      if (absolute.equals(root)) return false;
+      for (var part : root.relativize(absolute)) {
+        if (JobArtifacts.isStagingDirectoryName(part.toString())) return true;
       }
+      if (!absolute.startsWith(runtimeDirectory) || absolute.equals(runtimeDirectory)) return false;
       final var component = runtimeDirectory.relativize(absolute).getName(0).toString();
       return component.equals("hict-toolchains") || RUNTIME_COMPONENT.matcher(component).matches();
     }

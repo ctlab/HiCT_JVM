@@ -122,17 +122,22 @@ public class HDF5LibraryInitializer {
     }
 
     try {
-      final var sidecarPath = prepareSidecarJhdf5NativeLibraryPath();
-      if (sidecarPath.isPresent()) {
-        log.info("Using sidecar JHDF5 native library {}", sidecarPath.get());
+      final var installedPath = prepareInstalledWindowsJhdf5NativeLibraryPath();
+      if (installedPath.isPresent()) {
+        log.info("Using installed JHDF5 native library {}", installedPath.get());
       } else {
-        final var embeddedArchivePath = prepareEmbeddedJhdf5NativeLibraryPath();
-        if (embeddedArchivePath.isPresent()) {
-          log.info("Using embedded JHDF5 native archive library {}", embeddedArchivePath.get());
+        final var sidecarPath = prepareSidecarJhdf5NativeLibraryPath();
+        if (sidecarPath.isPresent()) {
+          log.info("Using sidecar JHDF5 native library {}", sidecarPath.get());
         } else {
-          prepareBundledJhdf5NativeLibraryPath().ifPresent(path ->
-            log.info("Using bundled JHDF5 native library {}", path)
-          );
+          final var embeddedArchivePath = prepareEmbeddedJhdf5NativeLibraryPath();
+          if (embeddedArchivePath.isPresent()) {
+            log.info("Using embedded JHDF5 native archive library {}", embeddedArchivePath.get());
+          } else {
+            prepareBundledJhdf5NativeLibraryPath().ifPresent(path ->
+              log.info("Using bundled JHDF5 native library {}", path)
+            );
+          }
         }
       }
     } catch (final IOException err) {
@@ -603,6 +608,37 @@ public class HDF5LibraryInitializer {
       if (extractedJhdf5.isPresent()) {
         return extractedJhdf5;
       }
+    }
+    return Optional.empty();
+  }
+
+  private static Optional<Path> prepareInstalledWindowsJhdf5NativeLibraryPath() {
+    final var appHome = System.getenv("HICT_APP_HOME");
+    final var sidecarOverride = System.getenv("HICT_JHDF5_NATIVES_ARCHIVE");
+    if (!System.getProperty("os.name", "").startsWith("Windows")
+        || appHome == null || appHome.isBlank()
+        || sidecarOverride != null && !sidecarOverride.isBlank()
+        || System.getProperty("native.libpath.jhdf5") != null
+        || System.getProperty("native.libpath.hdf5") != null) return Optional.empty();
+
+    final var lib = Path.of(appHome).toAbsolutePath().normalize().resolve("lib");
+    for (final var candidate : bundledJhdf5NativeResourceDirectories()) {
+      final var directory = lib.resolve(candidate);
+      final var hdf5 = directory.resolve("hdf5.dll");
+      final var jhdf5 = directory.resolve("jhdf5.dll");
+      if (!Files.isRegularFile(hdf5) || !Files.isRegularFile(jhdf5)) continue;
+      try {
+        System.load(hdf5.toString());
+        System.load(jhdf5.toString());
+      } catch (UnsatisfiedLinkError | SecurityException failure) {
+        log.warn("Cannot load the packaged Windows HDF5 DLLs from {}. Trying the native archive.", directory, failure);
+        continue;
+      }
+      setNativeLibraryPropertyIfUnset("hdf5", hdf5);
+      setNativeLibraryPropertyIfUnset("jhdf5", jhdf5);
+      extractedJhdf5NativeDirectories.put(directory.toString(), directory);
+      jniExtractor.absolutePathsCollection.add(directory.toString());
+      return Optional.of(jhdf5);
     }
     return Optional.empty();
   }

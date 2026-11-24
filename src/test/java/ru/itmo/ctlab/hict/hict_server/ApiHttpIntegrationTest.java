@@ -494,6 +494,10 @@ class ApiHttpIntegrationTest {
     final var library = Files.createDirectories(runtime.resolve("hict-jhdf5-native-328"));
     Files.writeString(library.resolve("jhdf5.dll"), "runtime library");
     Files.writeString(library.resolve("private.mcool"), "intermediate data");
+    final var nativeLoader = Files.createDirectories(runtime.resolve("nativelib-loader_328"));
+    Files.writeString(nativeLoader.resolve("blosc.dll"), "runtime library");
+    final var incomplete = ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts.stage(runtime, java.util.UUID.randomUUID().toString());
+    Files.writeString(incomplete.resolve("incomplete.mcool"), "partial conversion");
     Files.writeString(runtime.resolve("sample.pairs.gz"), "user data");
     Files.writeString(runtime.resolve("sample.mcool"), "user data");
     final var outsideRuntime = Files.createDirectories(tempDataDir.resolve("project/hict-jhdf5-native-328"));
@@ -510,6 +514,8 @@ class ApiHttpIntegrationTest {
         assertTrue(response.body().contains("sample.mcool"), response.body());
         assertFalse(response.body().contains("private.mcool"), response.body());
         assertFalse(response.body().contains("jhdf5.dll"), response.body());
+        assertFalse(response.body().contains("nativelib-loader_328"), response.body());
+        assertFalse(response.body().contains("incomplete.mcool"), response.body());
       }
       assertTrue(post("/list_files", "{}").body().contains("another.mcool"));
       assertEquals(400, post("/list_directory", "{\"directory\":\"tmp/hict-jhdf5-native-328\"}").statusCode());

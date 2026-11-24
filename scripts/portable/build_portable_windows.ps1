@@ -362,6 +362,28 @@ New-Item -ItemType Directory -Force -Path (Join-Path $appDir "licenses") | Out-N
 New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
 Copy-Item -Force $fatJar.FullName (Join-Path $appDir "lib\hict.jar")
+
+# Load the packaged DLLs from a stable location independent of the user's
+# working and data folders. Keep the embedded archive as a fallback.
+$jhdf5ArchiveEntry = @($jarEntries | Where-Object { $_ -match '^libs/sis-jhdf5-[^/]+-natives\.tar\.gz$' })
+if ($jhdf5ArchiveEntry.Count -ne 1) {
+  throw "Expected one packaged JHDF5 native archive in the fat JAR."
+}
+$jhdf5Root = Join-Path $appDir "lib"
+Push-Location $jhdf5Root
+try {
+  Invoke-Native -FilePath $jarTool -Arguments @("xf", $fatJar.FullName, $jhdf5ArchiveEntry[0])
+  Invoke-Native -FilePath "tar" -Arguments @("-xzf", $jhdf5ArchiveEntry[0], "native/jhdf5/amd64-Windows/")
+  Remove-Item -LiteralPath (Join-Path $jhdf5Root "libs") -Recurse -Force
+}
+finally {
+  Pop-Location
+}
+foreach ($dependency in @("hdf5.dll", "jhdf5.dll")) {
+  if (-not (Test-Path -LiteralPath (Join-Path $jhdf5Root "native\jhdf5\amd64-Windows\$dependency"))) {
+    throw "The packaged JHDF5 DLL $dependency is missing."
+  }
+}
 Copy-Item -Force (Join-Path $projectDir "LICENSE") (Join-Path $appDir "licenses\HiCT_JVM_LICENSE")
 Copy-Item -Force (Join-Path $projectDir "THIRD_PARTY_LICENSES.md") (Join-Path $appDir "licenses\THIRD_PARTY_LICENSES.md")
 $webUiLicense = Join-Path $projectDir "..\HiCT_WebUI\LICENSE"
@@ -536,6 +558,16 @@ if not defined HICT_BIND_HOST (
 
 set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="--version" goto :Version
+set "HICT_RUNTIME_PREFLIGHT="
+if "%~1"=="" set "HICT_RUNTIME_PREFLIGHT=1"
+if "%~1"=="start-server" set "HICT_RUNTIME_PREFLIGHT=1"
+if "%~1"=="start-api-server" set "HICT_RUNTIME_PREFLIGHT=1"
+if "%~1"=="launcher" set "HICT_RUNTIME_PREFLIGHT=1"
+if "%~1"=="convert" set "HICT_RUNTIME_PREFLIGHT=1"
+if "%~2"=="--help" set "HICT_RUNTIME_PREFLIGHT="
+if "%~2"=="-h" set "HICT_RUNTIME_PREFLIGHT="
+if "%~3"=="--help" set "HICT_RUNTIME_PREFLIGHT="
+if "%~3"=="-h" set "HICT_RUNTIME_PREFLIGHT="
 call :WarnWebView2IfNeeded
 call :SelectRuntimeTempDir
 if errorlevel 1 exit /b 1
@@ -574,42 +606,54 @@ exit /b %ERRORLEVEL%
 
 :SelectRuntimeTempDir
 if defined HICT_TEMP_DIR (
-  call :CanWriteRuntimeDir "%HICT_TEMP_DIR%"
+  call :CanUseRuntimeDir "%HICT_TEMP_DIR%"
   if not errorlevel 1 exit /b 0
 )
 if defined LOCALAPPDATA (
-  call :CanWriteRuntimeDir "%LOCALAPPDATA%\HiCT\runtime"
+  call :CanUseRuntimeDir "%LOCALAPPDATA%\HiCT\runtime"
   if not errorlevel 1 (
     set "HICT_TEMP_DIR=%LOCALAPPDATA%\HiCT\runtime"
     exit /b 0
   )
 )
 if defined USERPROFILE (
-  call :CanWriteRuntimeDir "%USERPROFILE%\AppData\Local\HiCT\runtime"
+  call :CanUseRuntimeDir "%USERPROFILE%\AppData\Local\HiCT\runtime"
   if not errorlevel 1 (
     set "HICT_TEMP_DIR=%USERPROFILE%\AppData\Local\HiCT\runtime"
     exit /b 0
   )
 )
 if defined TEMP (
-  call :CanWriteRuntimeDir "%TEMP%\HiCT\runtime"
+  call :CanUseRuntimeDir "%TEMP%\HiCT\runtime"
   if not errorlevel 1 (
     set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
     exit /b 0
   )
 )
-call :CanWriteRuntimeDir "%DATA_DIR%\tmp"
+call :CanUseRuntimeDir "%DATA_DIR%\tmp"
 if not errorlevel 1 (
   set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
   exit /b 0
 )
-call :CanWriteRuntimeDir "%APP_HOME%\tmp"
+call :CanUseRuntimeDir "%APP_HOME%\tmp"
 if not errorlevel 1 (
   set "HICT_TEMP_DIR=%APP_HOME%\tmp"
   exit /b 0
 )
-echo No writable runtime folder was found. Check HiCT's working folder or set HICT_TEMP_DIR.
+echo HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.
 exit /b 1
+
+:CanUseRuntimeDir
+call :CanWriteRuntimeDir "%~1"
+if errorlevel 1 exit /b 1
+if not defined HICT_RUNTIME_PREFLIGHT exit /b 0
+setlocal
+set "TEMP=%~1"
+set "TMP=%~1"
+"%JAVA_EXE%" "-Djava.io.tmpdir=%~1" %HICT_JAVA_OPTS% -jar "%HICT_JAR_PATH%" check-toolchains --require-hdf5-native --quiet >nul 2>nul
+set "HICT_NATIVE_STATUS=%ERRORLEVEL%"
+if not "%HICT_NATIVE_STATUS%"=="0" echo The native HDF5 check failed with working folder "%~1". Trying another folder.
+endlocal & exit /b %HICT_NATIVE_STATUS%
 
 :CanWriteRuntimeDir
 set "HICT_PROBE_DIR=%~1"

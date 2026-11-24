@@ -13,11 +13,19 @@ import java.util.Comparator;
 
 /** Job-owned incomplete outputs stay separate until publication succeeds. */
 public final class JobArtifacts {
+  private static final String STAGING_PREFIX = ".hict-incomplete-";
+  private static final java.util.regex.Pattern STAGING_NAME = java.util.regex.Pattern.compile(
+    "\\.hict-incomplete-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}-[0-9]+");
+
   private JobArtifacts() { }
 
   public static Path stage(Path directory, String id) throws IOException {
     Files.createDirectories(directory);
-    return Files.createTempDirectory(directory, ".hict-incomplete-" + id + "-");
+    return Files.createTempDirectory(directory, STAGING_PREFIX + id + "-");
+  }
+
+  public static boolean isStagingDirectoryName(String name) {
+    return name.startsWith(STAGING_PREFIX) && STAGING_NAME.matcher(name).matches();
   }
 
   public static void requireClosedMap(LocalMap<String, Object> map, Path target) throws IOException {

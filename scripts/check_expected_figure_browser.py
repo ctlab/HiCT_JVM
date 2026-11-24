@@ -448,8 +448,12 @@ def main():
                         "**/visualization/captures/*/validate", hold_validation
                     )
                     retry = dialog.get_by_role("button", name="Retry preview", exact=True)
-                    retry.focus()
-                    retry.press("Enter")
+                    for _ in range(40):
+                        if retry.evaluate("(button) => button === document.activeElement"):
+                            break
+                        page.keyboard.press("Tab")
+                    expect(retry).to_be_focused()
+                    page.keyboard.press("Enter")
                     expect(dialog.locator("#export-svg-button")).to_be_enabled()
                     expect(dialog.get_by_text("Figure preview ready.", exact=True)).to_be_visible()
                     expect(dialog.get_by_role("alert")).to_have_count(0)

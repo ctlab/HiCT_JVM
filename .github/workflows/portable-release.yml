@@ -1297,15 +1297,21 @@ jobs:
             $jar = Resolve-Path "build/libs/hict_server-$version-fat.jar"
             java --class-path $jar src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java $env:DATA_DIR
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $inputMap = Join-Path $env:DATA_DIR "tiny-primary.mcool"
+            $inputHash = (Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash
+            (Get-Item -LiteralPath $inputMap).IsReadOnly = $true
             $blockedTemp = Join-Path $workspace "Unavailable temp"
             Set-Content -LiteralPath $blockedTemp -Value "This file cannot serve as a folder."
-            function Assert-BuildIdentity($launcher) {
-              $lines = & $launcher --version
-              if ($LASTEXITCODE -ne 0 -or "HiCT $version" -notin $lines -or
+            function Assert-BuildLines($label, $exitCode, $lines) {
+              if ($exitCode -ne 0 -or "HiCT $version" -notin $lines -or
                   "JVM revision $env:GITHUB_SHA" -notin $lines -or
                   "WebUI revision $env:HICT_WEBUI_REF" -notin $lines) {
-                throw "Unexpected build identity from $launcher. Output: $lines"
+                throw "Unexpected build identity from $label. Output: $lines"
               }
+            }
+            function Assert-BuildIdentity($launcher) {
+              $lines = & $launcher --version
+              Assert-BuildLines $launcher $LASTEXITCODE $lines
             }
             function Assert-NativeConversion($launcher, $label) {
               $oldTemp = $env:TEMP
@@ -1314,11 +1320,18 @@ jobs:
                 $env:TEMP = $env:TMP = $env:HICT_TEMP_DIR = $blockedTemp
                 & $launcher check-toolchains --require-hdf5-native --quiet
                 if ($LASTEXITCODE -ne 0) { throw "HDF5 failed through $label." }
-                $inputMap = Join-Path $env:DATA_DIR "tiny-primary.mcool"
                 $outputMap = Join-Path $workspace "$label converted.hict.hdf5"
                 & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --chunk-size 64 --parallelism 1
                 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap)) {
                   throw "The $label launcher could not convert the fixture with redirected temp."
+                }
+                $roundTrip = Join-Path $workspace "$label reopened.mcool"
+                & $launcher convert hict-to-mcool --input $outputMap --output $roundTrip --chunk-size 64 --parallelism 1
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $roundTrip)) {
+                  throw "The $label launcher could not reopen the converted fixture."
+                }
+                if ((Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash -ne $inputHash) {
+                  throw "The $label launcher changed the source matrix."
                 }
               } finally {
                 $env:TEMP = $oldTemp
@@ -1328,6 +1341,27 @@ jobs:
             }
             $exe = Join-Path $downloads "$basename.exe"
             if (Test-Path -LiteralPath $exe) {
+              if ($env:HICT_WINDOWS_EXE_MODE -eq "custom") {
+                $coldStarts = @()
+                try {
+                  for ($i = 1; $i -le 2; $i++) {
+                    $log = Join-Path $workspace "cold-start-$i.log"
+                    $process = Start-Process -FilePath $exe -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput $log
+                    $coldStarts += @{ Process = $process; Log = $log }
+                  }
+                  foreach ($start in $coldStarts) {
+                    if (-not $start.Process.WaitForExit(240000)) {
+                      throw "A concurrent cold Windows launch exceeded its deadline."
+                    }
+                    Assert-BuildLines $exe $start.Process.ExitCode (Get-Content -LiteralPath $start.Log)
+                  }
+                } finally {
+                  foreach ($start in $coldStarts) {
+                    if (-not $start.Process.HasExited) { $start.Process.Kill($true) }
+                    $start.Process.Dispose()
+                  }
+                }
+              }
               Assert-BuildIdentity $exe
               Assert-NativeConversion $exe "EXE"
             }
