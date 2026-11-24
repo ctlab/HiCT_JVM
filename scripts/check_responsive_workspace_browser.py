@@ -206,10 +206,11 @@ def main():
                 page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
                 check.settle()
                 ribbon = page.locator(".header-ribbon")
-                selection = ribbon.get_by_role("button", name="Selection", exact=True)
+                expect(ribbon.get_by_role("button", name="Selection", exact=True)).to_be_visible()
                 ribbon_height = ribbon.bounding_box()["height"]
                 square_box = ribbon.get_by_text("Square selection", exact=True).bounding_box()
                 check.select_range()
+                selection = ribbon.get_by_role("button", name=re.compile(r"^Region · "))
                 expect(selection).to_have_attribute("title", re.compile(r"^Region:"))
                 assert ribbon.bounding_box()["height"] == ribbon_height <= 56, (
                     ribbon_height,
@@ -355,12 +356,20 @@ def main():
                             .get_attribute("title")
                             == secondary
                         )
+                        source_toggle = page.get_by_role("button", name="Sources", exact=True)
+                        compact = source_toggle.is_visible()
+                        if compact:
+                            source_toggle.press("Enter")
+                            expect(source_toggle).to_have_attribute("aria-expanded", "true")
                         assert (
                             page.get_by_role(
                                 "button", name="Relink FASTA", exact=True
                             ).get_attribute("title")
                             == fasta
                         )
+                        if compact:
+                            page.keyboard.press("Escape")
+                            expect(source_toggle).to_have_attribute("aria-expanded", "false")
                         menus()
                         measurements.append(result)
                         pixel("workspace-" + str(width))
@@ -389,6 +398,34 @@ def main():
                         f"visible-range-controls-change-pixels-and-preserve-contacts-{width}",
                         change_range,
                     )
+
+                def compact_map():
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    hide_sidebar = page.get_by_role("button", name="Hide side panel", exact=True)
+                    if hide_sidebar.is_visible():
+                        hide_sidebar.click()
+                    map_area = page.locator(".interactive-workspace_content")
+                    tools_toggle = page.get_by_role("button", name="Map tools", exact=True)
+                    tools = page.get_by_role("region", name="Map tools", exact=True)
+                    tracks_toggle = page.get_by_role("button", name="Tracks", exact=True)
+                    tracks = page.locator("#workspace-horizontal-tracks")
+                    expect(tools).to_be_hidden()
+                    expect(tracks).to_be_hidden()
+                    assert map_area.bounding_box()["width"] >= 390 * 0.7
+                    tools_toggle.press("Enter")
+                    expect(tools).to_be_visible()
+                    tools_toggle.press("Tab")
+                    expect(tools).to_be_focused()
+                    page.keyboard.press("Escape")
+                    expect(tools_toggle).to_be_focused()
+                    expect(tools).to_be_hidden()
+                    tracks_toggle.press("Enter")
+                    expect(tracks).to_be_visible()
+                    tracks_toggle.press("Enter")
+                    expect(tracks).to_be_hidden()
+                    assert raw() == known
+
+                check.step("map-and-keyboard-panels-at-390", compact_map)
 
                 def restore_choice():
                     page.set_viewport_size({"width": 800, "height": 600})

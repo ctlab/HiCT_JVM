@@ -2427,6 +2427,19 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
 
+      - name: Verify versioned jvm-sfx-native assets
+        if: ${{ github.event_name == 'push' && github.ref_name == 'jvm-sfx-native' && steps.collect-assets.outputs.rolling_release == 'false' }}
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { verifyAssets } = require('./scripts/ci/rolling_release.cjs');
+            const tag = process.env.HICT_PORTABLE_RELEASE_TAG;
+            const { data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` });
+            if (ref.object.type !== 'commit' || ref.object.sha !== context.sha) {
+              throw new Error(`Release tag ${tag} does not point to ${context.sha}`);
+            }
+            await verifyAssets({ github, context, tag, directory: 'release-dist' });
+
       - name: Attach assets to selected release tag
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' }}
         uses: softprops/action-gh-release@v2

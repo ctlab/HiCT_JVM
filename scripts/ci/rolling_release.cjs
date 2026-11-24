@@ -45,11 +45,11 @@ async function prepare({ github, context, core, tag }) {
     .map(({ id, name }) => ({ id, name }))));
 }
 
-async function prune({ github, context, tag, releaseId, previousAssets, directory }) {
+async function verifyAssets({ github, context, tag, releaseId, directory }) {
   const expected = fs.readdirSync(directory, { withFileTypes: true })
     .filter(entry => entry.isFile())
     .map(entry => ({ name: entry.name, size: fs.statSync(path.join(directory, entry.name)).size }));
-  if (!expected.length) throw new Error('Refusing cleanup without a local asset set');
+  if (!expected.length) throw new Error('Cannot verify a release without a local asset set');
   const release = (await github.rest.repos.getReleaseByTag({ ...context.repo, tag })).data;
   if (releaseId && String(release.id) !== String(releaseId)) {
     throw new Error('Rolling release changed during publication; refusing cleanup');
@@ -57,21 +57,24 @@ async function prune({ github, context, tag, releaseId, previousAssets, director
   const current = await github.paginate(github.rest.repos.listReleaseAssets, {
     ...context.repo, release_id: release.id, per_page: 100,
   });
-  // Validate the entire new set before the first deletion, even if the uploader
-  // has reported success. Incomplete or unexpected uploads preserve old assets.
   for (const file of expected) {
     const uploaded = current.find(asset => asset.name === file.name
       && asset.state === 'uploaded' && asset.size === file.size);
     if (!uploaded) {
-      throw new Error(`Uploaded asset missing or incomplete: ${file.name}; refusing cleanup`);
+      throw new Error(`Uploaded asset missing or incomplete: ${file.name}`);
     }
     const hash = createHash('sha256');
     for await (const chunk of fs.createReadStream(path.join(directory, file.name))) hash.update(chunk);
     if (uploaded.digest !== `sha256:${hash.digest('hex')}`) {
-      throw new Error(`Uploaded asset digest differs: ${file.name}; refusing cleanup`);
+      throw new Error(`Uploaded asset digest differs: ${file.name}`);
     }
   }
-  const names = new Set(expected.map(file => file.name));
+  return { current, names: new Set(expected.map(file => file.name)) };
+}
+
+async function prune({ github, context, tag, releaseId, previousAssets, directory }) {
+  // Validate the entire upload before deleting any obsolete assets.
+  const { current, names } = await verifyAssets({ github, context, tag, releaseId, directory });
   for (const old of previousAssets) {
     if (!names.has(old.name) && current.some(asset =>
       asset.id === old.id && asset.name === old.name && isManagedAsset(asset, tag))) {
@@ -80,4 +83,4 @@ async function prune({ github, context, tag, releaseId, previousAssets, director
   }
 }
 
-module.exports = { prepare, prune };
+module.exports = { prepare, prune, verifyAssets };

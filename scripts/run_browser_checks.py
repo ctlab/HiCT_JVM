@@ -37,8 +37,14 @@ def main():
         "check_error_feedback_browser.py": ["--file", "structural.hict.hdf5"],
         "check_sqrt_zoom_fit_browser.py": ["--files", "structural.hict.hdf5"],
     }
-    attached = ["check_color_midpoint_browser.py", "check_figure_print_size_browser.py",
-                "check_visualization_transactions_browser.py", "check_tracks_workspace_browser.py"]
+    attached = {
+        "check_color_midpoint_browser.py": True,
+        "check_figure_print_size_browser.py": False,
+        "check_visualization_transactions_browser.py": True,
+        "check_tracks_workspace_browser.py": True,
+        "check_responsive_workspace_browser.py": True,
+        "check_expected_figure_browser.py": False,
+    }
     failures = []
     with tempfile.TemporaryDirectory(prefix="hict-browser-checks-", dir="/tmp") as scratch:
         scratch = Path(scratch)
@@ -71,13 +77,12 @@ def main():
                                     failures.append(f"{run}: {name}")
                         finally:
                             shutil.rmtree(data)
-                    for name in attached:
+                    for name, separate_data in attached.items():
                         out = args.output.resolve() / f"run-{run}" / Path(name).stem
                         out.mkdir(parents=True)
                         command = [sys.executable, str(SCRIPTS / name), "--jar", str(args.jar.resolve()),
                             "--webui", str(args.webui.resolve())]
-                        if name in ("check_color_midpoint_browser.py", "check_visualization_transactions_browser.py",
-                                    "check_tracks_workspace_browser.py"):
+                        if separate_data:
                             command += ["--data-dir", str(scratch / Path(name).stem)]
                         command += ["--output", str(scratch / (Path(name).stem + "-results"))]
                         if not run_check(command, out):
