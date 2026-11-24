@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
 - Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.
 - Dim Find and Go to along with the other disabled ribbon controls before a map opens.
 - Keep the replacement map open when a previous Close map request is slow.

@@ -190,6 +190,38 @@ def main():
                     assert notification.bounding_box() == before
                     upper.evaluate("pane => { pane.scrollTop = 0; }")
 
+            def desktop_toolbar_fit():
+                for width, height in ((1280, 720), (1366, 768), (1440, 900), (1920, 1080)):
+                    page.set_viewport_size({"width": width, "height": height})
+                    toolbar = page.locator(".toolbar-outer")
+                    problems = toolbar.evaluate("""toolbar => {
+                        const outside = [];
+                        const column = toolbar.querySelector(".toolbar-upper");
+                        const viewport = column.getBoundingClientRect();
+                        for (const button of toolbar.querySelectorAll("button")) {
+                            if (!button.getClientRects().length) continue;
+                            const bounds = button.getBoundingClientRect();
+                            const name = button.getAttribute("aria-label") || button.title;
+                            const limit = column.contains(button) ? viewport.bottom : innerHeight;
+                            if (bounds.bottom > limit + 1 || bounds.top < 0) {
+                                outside.push([name, "clipped", Math.ceil(Math.max(bounds.bottom - limit, -bounds.top))]);
+                            }
+                            if (button.matches(":disabled, [aria-disabled=true]")) continue;
+                            const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                            if (!button.contains(hit)) outside.push([name, "obscured"]);
+                        }
+                        return outside;
+                    }""")
+                    assert not problems, (width, height, problems)
+
+                page.set_viewport_size({"width": 900, "height": 520})
+                upper = page.locator(".toolbar-upper")
+                expect(upper).to_have_class(re.compile("toolbar-upper--more-below"))
+                upper.evaluate("pane => { pane.scrollTop = pane.scrollHeight; }")
+                expect(upper).not_to_have_class(re.compile("toolbar-upper--more-below"))
+                expect(page.get_by_role("button", name="Open notifications", exact=True)).to_be_in_viewport()
+                page.set_viewport_size({"width": 1440, "height": 1000})
+
             try:
                 page.goto(url)
 
@@ -218,6 +250,7 @@ def main():
                     {"primary": primary, "api": api.url, "fasta": fasta},
                 )
                 check.settle()
+                check.step("desktop-toolbar-controls-fit-and-scroll-fade", desktop_toolbar_fit)
                 page.set_viewport_size({"width": 1280, "height": 720})
                 notification_access()
                 page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
