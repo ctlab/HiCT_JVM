@@ -97,7 +97,17 @@ public class HictCli implements Runnable {
     CommandLine.usage(this, System.out);
   }
 
-  public static void main(final String[] args) {
+  public static void main(final String[] javaArgs) {
+    final String[] args;
+    try {
+      args = Boolean.getBoolean("hict.windows.launcher.argv")
+        ? decodeWindowsLauncherArguments(System.getenv("HICT_WINDOWS_LAUNCHER_ARGV"))
+        : javaArgs;
+    } catch (final IllegalArgumentException ex) {
+      System.err.println(ex.getMessage());
+      System.exit(CommandLine.ExitCode.USAGE);
+      return;
+    }
     final CommandLine commandLine = new CommandLine(new HictCli())
       .setCaseInsensitiveEnumValuesAllowed(true)
       .setParameterExceptionHandler(HictCli::handleParameterException)
@@ -142,6 +152,24 @@ public class HictCli implements Runnable {
       return;
     }
     System.exit(exitCode);
+  }
+
+  static String[] decodeWindowsLauncherArguments(final String payload) {
+    if (payload == null || payload.isEmpty()) {
+      throw new IllegalArgumentException("The Windows launcher did not supply the command-line arguments.");
+    }
+    final var args = new ArrayList<String>();
+    int offset = 0;
+    while (offset < payload.length()) {
+      // The native launcher prefixes each UTF-16 argument with its length + 1.
+      final int length = payload.charAt(offset++) - 1;
+      if (length < 0 || length > payload.length() - offset) {
+        throw new IllegalArgumentException("The Windows launcher supplied invalid command-line arguments.");
+      }
+      args.add(payload.substring(offset, offset + length));
+      offset += length;
+    }
+    return args.toArray(String[]::new);
   }
 
   private static int handleParameterException(final CommandLine.ParameterException ex,

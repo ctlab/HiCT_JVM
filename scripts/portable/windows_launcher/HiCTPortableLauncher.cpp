@@ -31,6 +31,7 @@
 #include <cwchar>
 #include <cctype>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -665,21 +666,31 @@ std::wstring getDataDirectory(const std::wstring &selfPath) {
   return selfDir;
 }
 
-std::wstring buildForwardedArguments() {
+std::vector<std::wstring> readArguments() {
   int argc = 0;
-  LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  const std::unique_ptr<LPWSTR, decltype(&LocalFree)> argv(
+      CommandLineToArgvW(GetCommandLineW(), &argc), &LocalFree);
   if (argv == nullptr) {
-    return L"";
+    throw std::runtime_error("Cannot read the Windows command line.");
   }
-  std::wstring result;
-  for (int i = 1; i < argc; ++i) {
-    if (!result.empty()) {
-      result.push_back(L' ');
-    }
-    result += quoteArg(argv[i]);
+  return {argv.get() + 1, argv.get() + argc};
+}
+
+std::wstring javaJarWithArguments(const std::wstring &jar, const std::vector<std::wstring> &args) {
+  if (args.empty()) return L" -jar " + quoteArg(jar);
+  // Java 21 narrows its Windows command line to the ANSI code page. Its
+  // Windows environment remains UTF-16. Each argument consumes one length
+  // code unit (length + 1, so there are no NULs) plus its original contents.
+  // This is no longer than the original command line's argument tail.
+  std::wstring payload;
+  for (const auto &arg : args) {
+    payload.push_back(static_cast<wchar_t>(arg.size() + 1));
+    payload.append(arg);
   }
-  LocalFree(argv);
-  return result;
+  if (!SetEnvironmentVariableW(L"HICT_WINDOWS_LAUNCHER_ARGV", payload.c_str())) {
+    throw std::runtime_error("Cannot pass the Windows command-line arguments to Java.");
+  }
+  return L" -Dhict.windows.launcher.argv=true -jar " + quoteArg(jar);
 }
 
 bool isConsoleOwnedByThisProcess() {
@@ -782,34 +793,37 @@ int extractPayload(const std::wstring &selfPath,
 
 int run() {
   const auto selfPath = getSelfPath();
+  const auto args = readArguments();
+#ifdef HICT_EXTRACTED_LAUNCHER
+  const auto appHome = dirnameOf(dirnameOf(selfPath));
+  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
+  const auto jar = joinPath(appHome, L"lib\\hict.jar");
+  const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
+  std::wstring command = quoteArg(java);
+  if (args.empty() || args.front() != L"--version") {
+    const auto tempDir = getEnvironmentVariableValue(L"HICT_TEMP_DIR");
+    command += L" -XX:MaxRAMPercentage=50.0 " + quoteArg(L"-Djava.io.tmpdir=" + tempDir);
+  }
+  return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), L"");
+#else
   const auto manifest = readManifest(selfPath);
   printStartupHeader();
 
-  int argc = 0;
-  LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-  if (argv != nullptr && argc >= 2 && std::wcscmp(argv[1], L"--hict-run-help") == 0) {
+  if (!args.empty() && args.front() == L"--hict-run-help") {
     printUsage();
-    LocalFree(argv);
     return 0;
   }
-  if (argv != nullptr && argc >= 3 && std::wcscmp(argv[1], L"--hict-extract-only") == 0) {
-    const std::wstring target = argv[2];
-    LocalFree(argv);
-    return extractPayload(selfPath, manifest, target, false);
+  if (args.size() >= 2 && args.front() == L"--hict-extract-only") {
+    return extractPayload(selfPath, manifest, args[1], false);
   }
-  const bool versionOnly = argv != nullptr && argc == 2 && std::wcscmp(argv[1], L"--version") == 0;
-  bool needsNativeCheck = argv != nullptr && (argc == 1
-      || (argc > 1 && (std::wcscmp(argv[1], L"start-server") == 0
-                   || std::wcscmp(argv[1], L"start-api-server") == 0
-                   || std::wcscmp(argv[1], L"launcher") == 0
-                   || std::wcscmp(argv[1], L"convert") == 0)));
-  for (int i = 1; needsNativeCheck && i < argc; ++i) {
-    if (std::wcscmp(argv[i], L"--help") == 0 || std::wcscmp(argv[i], L"-h") == 0) {
+  const bool versionOnly = args.size() == 1 && args.front() == L"--version";
+  bool needsNativeCheck = args.empty() || args.front() == L"start-server"
+      || args.front() == L"start-api-server" || args.front() == L"launcher" || args.front() == L"convert";
+  for (const auto &arg : args) {
+    if (arg == L"--help" || arg == L"-h") {
       needsNativeCheck = false;
+      break;
     }
-  }
-  if (argv != nullptr) {
-    LocalFree(argv);
   }
 
   const auto cacheKey = utf8ToWide(shortPayloadCacheKey(manifest));
@@ -825,7 +839,7 @@ int run() {
     if (extractExit == 0 && canLaunchBundledJava(cacheRoot, manifest)) break;
     if (extractExit == 0) extractExit = 1;
   }
-  if (extractExit != 0 && argc == 1 && isConsoleOwnedByThisProcess()) {
+  if (extractExit != 0 && args.empty() && isConsoleOwnedByThisProcess()) {
     const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its portable files. Choose a writable folder to retry.");
     if (!chosen.empty()) {
       cacheRoot = joinPath(joinPath(chosen, L"HiCT\\payloads"), cacheKey);
@@ -839,14 +853,12 @@ int run() {
   }
 
   const auto appHome = joinPath(cacheRoot, utf8ToWide(manifest.appDirName));
-  const auto args = buildForwardedArguments();
   const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
   const auto jar = joinPath(appHome, L"lib\\hict.jar");
   const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
   std::wstring command = quoteArg(java) + L" -XX:MaxRAMPercentage=50.0";
-  const auto jarAndArguments = L" -jar " + quoteArg(jar) + (args.empty() ? L"" : L" " + args);
   if (versionOnly) {
-    return runProcess(command + L" " + configuredOptions + jarAndArguments, appHome);
+    return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), appHome);
   }
 
   const auto dataDir = getDataDirectory(selfPath);
@@ -869,7 +881,7 @@ int run() {
       break;
     }
   }
-  if (tempDir.empty() && argc == 1 && isConsoleOwnedByThisProcess()) {
+  if (tempDir.empty() && args.empty() && isConsoleOwnedByThisProcess()) {
     const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its temporary files. Choose a writable working folder to retry.");
     if (!chosen.empty()) {
       const auto candidate = joinPath(chosen, L"HiCT\\runtime");
@@ -890,10 +902,11 @@ int run() {
   SetEnvironmentVariableW(L"HICT_PORTABLE_DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_EXE_PATH", selfPath.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_CACHE_DIR", cacheRoot.c_str());
-  command += L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir) + L" " + configuredOptions + jarAndArguments;
+  command += L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir) + L" " + configuredOptions + javaJarWithArguments(jar, args);
   const int exitCode = runProcess(command, dataDir);
   pauseOnFailureIfNeeded(exitCode);
   return exitCode;
+#endif
 }
 
 } // namespace

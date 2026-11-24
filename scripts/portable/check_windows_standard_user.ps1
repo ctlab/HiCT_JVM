@@ -80,7 +80,9 @@ try {
     }
     $outputMap = Join-Path $config.Work "$($package.Name) matrix Δ.hict.hdf5"
     & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
-    if ($LASTEXITCODE -ne 0) { throw "Conversion failed under the standard account." }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap -PathType Leaf)) {
+      throw "$($package.Name) failed to create the exact Unicode output path under the standard account."
+    }
     $reopened = Join-Path $config.Work "$($package.Name) reopened.mcool"
     & $launcher convert hict-to-mcool --input $outputMap --output $reopened --export-mode INTERNAL --chunk-size 64 --parallelism 1
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $reopened)) { throw "Cannot reopen the converted matrix." }

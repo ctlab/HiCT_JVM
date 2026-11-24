@@ -187,6 +187,29 @@ function Get-LittleEndianUInt64Bytes {
   return [BitConverter]::GetBytes($Value)
 }
 
+function Build-WindowsLauncher {
+  param(
+    [Parameter(Mandatory = $true)][string]$Output,
+    [switch]$Extracted
+  )
+  $clExe = Get-Command "cl.exe" -ErrorAction SilentlyContinue
+  if (-not $clExe) {
+    throw "cl.exe is required for Windows portable packaging. Run from a Visual Studio Developer shell or configure MSVC in CI."
+  }
+  $launcherSource = Join-Path $PSScriptRoot "windows_launcher\HiCTPortableLauncher.cpp"
+  $defines = @("/DUNICODE", "/D_UNICODE", "/D_WIN32_WINNT=0x0601")
+  if ($Extracted) {
+    $defines += "/DHICT_EXTRACTED_LAUNCHER"
+  }
+  Invoke-Native -FilePath $clExe.Source -Arguments (@(
+    "/nologo", "/std:c++17", "/O2", "/MT", "/EHsc"
+  ) + $defines + @(
+    "/Fo:$Output.obj", "/Fe:$Output", $launcherSource,
+    "shell32.lib", "ole32.lib", "/link", "/SUBSYSTEM:CONSOLE,6.01"
+  ))
+  Remove-Item -LiteralPath "$Output.obj"
+}
+
 function Build-CustomPortableExe {
   param(
     [Parameter(Mandatory = $true)][string]$SevenZipExe,
@@ -199,7 +222,6 @@ function Build-CustomPortableExe {
 
   $archivePath = Join-Path $BuildDir "payload.7z"
   $launcherStub = Join-Path $BuildDir "HiCTPortableLauncher.stub.exe"
-  $launcherSource = Join-Path $PSScriptRoot "windows_launcher\HiCTPortableLauncher.cpp"
   $lzmaNoticeTarget = Join-Path $AppDirectory "licenses\LZMA_SDK_NOTICE.txt"
 
   $extractorCandidates = @(Find-StandaloneSevenZipExtractors -Roots @($SevenZipRoot, $BuildDir))
@@ -220,26 +242,7 @@ function Build-CustomPortableExe {
     Pop-Location
   }
 
-  $clExe = Get-Command "cl.exe" -ErrorAction SilentlyContinue
-  if (-not $clExe) {
-    throw "cl.exe is required for the custom Windows portable EXE. Run from a Visual Studio Developer shell or configure MSVC in CI."
-  }
-  Invoke-Native -FilePath $clExe.Source -Arguments @(
-    "/nologo",
-    "/std:c++17",
-    "/O2",
-    "/MT",
-    "/EHsc",
-    "/DUNICODE",
-    "/D_UNICODE",
-    "/D_WIN32_WINNT=0x0601",
-    "/Fe:$launcherStub",
-    $launcherSource,
-    "shell32.lib",
-    "ole32.lib",
-    "/link",
-    "/SUBSYSTEM:CONSOLE,6.01"
-  )
+  Build-WindowsLauncher -Output $launcherStub
 
   $launcherManifest = Join-Path $BuildDir "HiCTPortableLauncher.manifest"
   @'
@@ -529,6 +532,8 @@ if (-not (Test-Path -LiteralPath $crt)) {
   Copy-Item -LiteralPath $jdkCrt -Destination $crt
 }
 
+Build-WindowsLauncher -Output (Join-Path $appDir "bin\hict-cli.exe") -Extracted
+
 @'
 @echo off
 setlocal
@@ -590,18 +595,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%~1"=="" (
-  if not defined HICT_LAUNCHER_MODE set "HICT_LAUNCHER_MODE=gui"
-  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
-) else (
-  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+if "%~1"=="" if not defined HICT_LAUNCHER_MODE (
+  set "HICT_LAUNCHER_MODE=gui"
 )
+"%APP_HOME%\bin\hict-cli.exe" %*
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
 exit /b %HICT_EXIT_CODE%
 
 :Version
-"%JAVA_EXE%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+"%APP_HOME%\bin\hict-cli.exe" %*
 exit /b %ERRORLEVEL%
 
 :SelectRuntimeTempDir

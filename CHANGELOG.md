@@ -6,13 +6,14 @@
 - Keep the map wider in narrow windows, with expandable map tools and full filenames in Sources.
 - Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.
 - Prefer per-user working folders in the Windows portable launcher and recover when redirected temporary folders are unwritable.
+- Preserve Unicode command-line filenames in the Windows EXE and portable ZIP.
 - Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
 - Make edited, original and AGP assembly order explicit when exporting a Cooler matrix.
 - Add section links to the bundled user guide and keep notifications behind active dialogs.
 - Keep Notifications visible in short windows while the editing tools scroll independently.
 - Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
 - Refresh the threshold fields immediately when a visualization preset changes the signal range.
-- Keep only the current verified portable downloads on the rolling branch release.
+- Publish branch previews as versioned prereleases with one verified asset set per build.
 - Keep the Selection menu accessible in short windows and replace rounded thresholds cleanly when entering exact values.
 - Keep the empty workspace focused on opening a map, and retain full signal threshold precision while editing rounded values.
 - Add browser checks for assembly safeguards, export destinations, error feedback, and contrast across zoom levels.

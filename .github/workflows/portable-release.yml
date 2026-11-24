@@ -992,12 +992,11 @@ jobs:
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' || ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found. Visual Studio Build Tools are required for hictk/custom EXE builds."
+            throw "vswhere.exe was not found. Visual Studio Build Tools are required for the Windows portable launchers."
           }
 
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -1355,13 +1354,13 @@ jobs:
                 if (-not ($nativeLog -match "Using installed JHDF5 native library")) {
                   throw "The $label launcher did not load the installed JHDF5 DLLs."
                 }
-                $outputMap = Join-Path $workspace "$label converted.hict.hdf5"
+                $outputMap = Join-Path $workspace "$label converted Δ.hict.hdf5"
                 # The tiny Java fixture exercises direct HDF5 I/O. The native-tool gate above supplies a hictk-built Cooler.
                 & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
                 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap)) {
                   throw "The $label launcher could not convert the fixture with redirected temp."
                 }
-                $roundTrip = Join-Path $workspace "$label reopened.mcool"
+                $roundTrip = Join-Path $workspace "$label reopened 測試.mcool"
                 & $launcher convert hict-to-mcool --input $outputMap --output $roundTrip --export-mode INTERNAL --chunk-size 64 --parallelism 1
                 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $roundTrip)) {
                   throw "The $label launcher could not reopen the converted fixture."
