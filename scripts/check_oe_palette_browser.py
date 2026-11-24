@@ -754,7 +754,7 @@ def main():
                         outcome = page.evaluate(
                             """async()=>{try {await window.__hictBenchmark.manager().visualizationManager.applyObservedExpectedPalette({min:.25,max:4,startColor:'#2166acff',endColor:'#b2182bff'});return 'wrongly applied';}catch(e){return e.message;}}"""
                         )
-                        assert "Select Show O/E" in outcome, outcome
+                        assert "Select Observed/Expected" in outcome, outcome
                         assert (
                             options() == before
                             and post("/render_pipeline/get") == editor_observed

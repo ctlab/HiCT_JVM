@@ -463,7 +463,7 @@ def main():
                         p.get_by_text("This example will open when ready.", exact=False)
                     ).to_have_count(0)
                     row.get_by_role(
-                        "button", name="Open Examples to resume", exact=True
+                        "button", name="Resume in Examples…", exact=True
                     ).click()
                     d = page.get_by_role("dialog", name="Examples", exact=True)
                     expect(
@@ -503,7 +503,7 @@ def main():
                     expect(row).to_contain_text("cancelled")
                     assert filename() == "examples/jobs-failure/example.hict.hdf5"
                     row.get_by_role(
-                        "button", name="Open Examples to resume", exact=True
+                        "button", name="Resume in Examples…", exact=True
                     ).click()
                     d = page.get_by_role("dialog", name="Examples", exact=True)
                     card(d, "cancel").get_by_role(
@@ -959,7 +959,7 @@ def main():
                     )
                     page.screenshot(path=str(out / "conversion-error-details.png"))
                     row.get_by_role(
-                        "button", name="Open Examples to retry", exact=True
+                        "button", name="Retry in Examples…", exact=True
                     ).click()
                     retry_dialog = page.get_by_role(
                         "dialog", name="Examples", exact=True
@@ -1066,7 +1066,7 @@ def main():
                                 "cancel-running-example-keeps-inputs-removes-output-and-stops-owned-hictk"
                             )
                         row.get_by_role(
-                            "button", name="Open Examples to retry", exact=True
+                            "button", name="Retry in Examples…", exact=True
                         ).click()
                         retry_dialog = page.get_by_role(
                             "dialog", name="Examples", exact=True
