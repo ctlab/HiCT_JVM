@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $env:GITHUB_ACTIONS -or $env:RUNNER_OS -ne "Windows") {
+if ($env:GITHUB_ACTIONS -ne "true" -or $env:RUNNER_OS -ne "Windows") {
   throw "Run the disposable-user check on a dedicated Windows CI runner."
 }
 
@@ -76,10 +76,10 @@ try {
     & $launcher check-toolchains --require-hdf5-native
     if ($LASTEXITCODE -ne 0) { throw "HDF5 failed under the standard account." }
     $outputMap = Join-Path $config.Work "$($package.Name) matrix Δ.hict.hdf5"
-    & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --chunk-size 64 --parallelism 1
+    & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
     if ($LASTEXITCODE -ne 0) { throw "Conversion failed under the standard account." }
     $reopened = Join-Path $config.Work "$($package.Name) reopened.mcool"
-    & $launcher convert hict-to-mcool --input $outputMap --output $reopened --chunk-size 64 --parallelism 1
+    & $launcher convert hict-to-mcool --input $outputMap --output $reopened --export-mode INTERNAL --chunk-size 64 --parallelism 1
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $reopened)) { throw "Cannot reopen the converted matrix." }
     if ((Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash -ne $startHash) { throw "Input matrix changed." }
   }

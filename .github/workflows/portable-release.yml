@@ -1351,12 +1351,13 @@ jobs:
                 & $launcher check-toolchains --require-hdf5-native --quiet
                 if ($LASTEXITCODE -ne 0) { throw "HDF5 failed through $label." }
                 $outputMap = Join-Path $workspace "$label converted.hict.hdf5"
-                & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --chunk-size 64 --parallelism 1
+                # The tiny Java fixture exercises direct HDF5 I/O. The native-tool gate above supplies a hictk-built Cooler.
+                & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
                 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap)) {
                   throw "The $label launcher could not convert the fixture with redirected temp."
                 }
                 $roundTrip = Join-Path $workspace "$label reopened.mcool"
-                & $launcher convert hict-to-mcool --input $outputMap --output $roundTrip --chunk-size 64 --parallelism 1
+                & $launcher convert hict-to-mcool --input $outputMap --output $roundTrip --export-mode INTERNAL --chunk-size 64 --parallelism 1
                 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $roundTrip)) {
                   throw "The $label launcher could not reopen the converted fixture."
                 }
