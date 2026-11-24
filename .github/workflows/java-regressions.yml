@@ -33,7 +33,7 @@ jobs:
           cache: gradle
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Verify pinned browser checkout and release safeguards
         run: node --test scripts/portable/check_webui_checkout.mjs scripts/ci/rolling_release.test.cjs scripts/ci/portable_workflow.test.cjs scripts/ci/portable_artifact_selection.test.cjs
       - name: Check copied POSIX tool command permissions

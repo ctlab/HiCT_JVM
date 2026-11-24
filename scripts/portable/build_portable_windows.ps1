@@ -236,6 +236,7 @@ function Build-CustomPortableExe {
     "/Fe:$launcherStub",
     $launcherSource,
     "shell32.lib",
+    "ole32.lib",
     "/link",
     "/SUBSYSTEM:CONSOLE,6.01"
   )
@@ -492,6 +493,19 @@ exact license text of the component used by the build runner.
   --no-man-pages `
   --compress=zip-6 `
   --output (Join-Path $appDir "runtime")
+if ($LASTEXITCODE -ne 0) { throw "jlink failed with exit code $LASTEXITCODE." }
+
+# Both HDF5 and its filter DLLs import this runtime. Keep that dependency
+# next to the bundled Java executable, where the Windows loader can find it.
+$runtimeBin = Join-Path $appDir "runtime\bin"
+$crt = Join-Path $runtimeBin "vcruntime140.dll"
+if (-not (Test-Path -LiteralPath $crt)) {
+  $jdkCrt = Join-Path (Split-Path -Parent $jlink) "vcruntime140.dll"
+  if (-not (Test-Path -LiteralPath $jdkCrt)) {
+    throw "The release JDK did not provide the app-local vcruntime140.dll required by HDF5."
+  }
+  Copy-Item -LiteralPath $jdkCrt -Destination $crt
+}
 
 @'
 @echo off

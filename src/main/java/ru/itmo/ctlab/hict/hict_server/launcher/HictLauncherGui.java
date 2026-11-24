@@ -221,6 +221,7 @@ public final class HictLauncherGui {
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY, "Folders and network"),
+      new ConfigSpec("HICT_TEMP_DIR", "Working folder", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("PROCESSED_DIR", "Processed/cache directory", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("HICT_BIND_HOST", "Bind host", "127.0.0.1", PathKind.NONE, "Folders and network"),
       new ConfigSpec("VXPORT", "API port", "5000", PathKind.NONE, "Folders and network"),
@@ -1176,17 +1177,20 @@ public final class HictLauncherGui {
       final Path dataDir;
       final Path tempDir;
       final Path processedDir;
+      dataDir = normalizePath(getFieldValue("DATA_DIR"));
       try {
-        dataDir = normalizePath(getFieldValue("DATA_DIR"));
-        Files.createDirectories(dataDir);
         tempDir = selectExecutableRuntimeTempDir(dataDir);
-        Files.createDirectories(tempDir);
+      } catch (final IOException ex) {
+        showWorkingFolderRecovery("HiCT could not use its working folder.", "HICT_TEMP_DIR", ex);
+        return;
+      }
+      try {
         final var defaultProcessed = dataDir.resolve("processed");
         final var configuredProcessed = getFieldValue("PROCESSED_DIR");
         final var requestedProcessed = configuredProcessed.isBlank() ? defaultProcessed : normalizePath(configuredProcessed);
         processedDir = prepareProcessedDirectory(requestedProcessed, defaultProcessed, tempDir);
-      } catch (final Exception ex) {
-        showError("Cannot prepare HiCT’s working folder", ex);
+      } catch (final IOException | RuntimeException ex) {
+        showWorkingFolderRecovery("HiCT could not use its processed-data folder.", "PROCESSED_DIR", ex);
         return;
       }
 
@@ -1347,11 +1351,11 @@ public final class HictLauncherGui {
 
     private Path selectExecutableRuntimeTempDir(final Path dataDir) throws IOException {
       final var candidates = new ArrayList<Path>();
-      addTempCandidate(candidates, firstNonBlank(System.getenv("HICT_TEMP_DIR"), System.getenv("HICT_EXEC_TEMP_DIR")));
+      addTempCandidate(candidates, firstNonBlank(getFieldValue("HICT_TEMP_DIR"), System.getenv("HICT_EXEC_TEMP_DIR")));
       if (isWindows()) {
-        final var localAppData = System.getenv("LOCALAPPDATA");
-        if (localAppData != null && !localAppData.isBlank()) {
-          addTempCandidate(candidates, normalizePath(localAppData).resolve("HiCT/runtime").toString());
+        final var localAppData = safeNormalizePath(System.getenv("LOCALAPPDATA"));
+        if (localAppData != null) {
+          addTempCandidate(candidates, localAppData.resolve("HiCT/runtime").toString());
         }
       }
       addTempCandidate(candidates, dataDir.resolve("tmp").toString());
@@ -1401,13 +1405,44 @@ public final class HictLauncherGui {
       }
     }
 
-    private static void addTempCandidate(final List<Path> candidates, final String rawPath) {
+    private void addTempCandidate(final List<Path> candidates, final String rawPath) {
       if (rawPath == null || rawPath.isBlank()) {
         return;
       }
-      final var candidate = normalizePath(rawPath);
+      final var candidate = safeNormalizePath(rawPath);
+      if (candidate == null) return;
       if (candidates.stream().noneMatch(existing -> existing.equals(candidate))) {
         candidates.add(candidate);
+      }
+    }
+
+    private void showWorkingFolderRecovery(String message, String key, Exception failure) {
+      final var details = new java.io.StringWriter();
+      failure.printStackTrace(new java.io.PrintWriter(details));
+      appendLauncherLog(message + " " + failure);
+      final var actions = new String[]{"Choose working folder…", "Copy details", "Cancel"};
+      while (true) {
+        final int action = JOptionPane.showOptionDialog(this.frame,
+          message + System.lineSeparator() + "Choose a folder you can write to, then retry.",
+          "HiCT Launcher", JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE,
+          null, actions, actions[0]);
+        if (action == 0) {
+          final var chooser = new JFileChooser();
+          chooser.setDialogTitle("Choose a working folder for HiCT");
+          chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+          if (chooser.showDialog(this.frame, "Use folder and retry") == JFileChooser.APPROVE_OPTION) {
+            this.fields.get(key).setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
+            SwingUtilities.invokeLater(this::startHiCT);
+          }
+          return;
+        }
+        if (action != 1) return;
+        try {
+          java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+            .setContents(new StringSelection(message + System.lineSeparator() + details), null);
+        } catch (IllegalStateException busy) {
+          appendLauncherLog("The clipboard is temporarily unavailable. See Console logs for details.");
+        }
       }
     }
 
