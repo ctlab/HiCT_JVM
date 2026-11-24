@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show the full region dimensions in the desktop ribbon while keeping it on one row. Align the empty workspace card and its opening actions.
 - Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
 - Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.
 - Dim Find and Go to along with the other disabled ribbon controls before a map opens.
