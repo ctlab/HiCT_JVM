@@ -8,6 +8,7 @@ import http.server
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import threading
@@ -202,6 +203,17 @@ def main():
                 check.settle()
                 page.set_viewport_size({"width": 1280, "height": 720})
                 notification_access()
+                page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
+                check.settle()
+                ribbon = page.locator(".header-ribbon")
+                selection = ribbon.get_by_role("button", name="Selection", exact=True)
+                ribbon_height = ribbon.bounding_box()["height"]
+                square_box = ribbon.get_by_text("Square selection", exact=True).bounding_box()
+                check.select_range()
+                expect(selection).to_have_attribute("title", re.compile(r"^Region:"))
+                assert ribbon.bounding_box()["height"] == ribbon_height
+                assert ribbon.get_by_text("Square selection", exact=True).bounding_box() == square_box
+                page.keyboard.press("Escape")
                 page.set_viewport_size({"width": 1440, "height": 1000})
 
                 def prepare():

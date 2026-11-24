@@ -134,7 +134,7 @@ def main():
 
             for extension in ('png', 'svg', 'pdf'):
                 def figure(extension=extension):
-                    page.get_by_role('button', name='Export', exact=True).click()
+                    page.get_by_role('button', name='Export…', exact=True).click()
                     with page.expect_download(timeout=90000) as download:
                         page.locator('#export-' + extension + '-button').click()
                     path = out / ('figure.' + extension)

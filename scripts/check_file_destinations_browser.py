@@ -159,7 +159,7 @@ def main():
             check.step('stale-selection-is-rejected-after-picker-delay',stale_selection)
             def figures():
                 for extension in ('svg','png','pdf'):
-                    if not page.locator('#export-'+extension+'-button').is_visible():page.get_by_role('button',name='Export',exact=True).click()
+                    if not page.locator('#export-'+extension+'-button').is_visible():page.get_by_role('button',name='Export…',exact=True).click()
                     page.locator('#export-'+extension+'-button').click()
                     page.wait_for_function('ext=>window.__fileQA.last.endsWith("."+ext)',arg=extension);check.settle()
                     path=artifact('figure.'+extension);assert path.stat().st_size>1000
@@ -179,7 +179,7 @@ def main():
                 page.evaluate('()=>{window.showSaveFilePicker=window.__qaSavePicker;}');save_session()
             check.step('browser-download-fallback-is-not-confirmed-save',fallback)
             def folders():
-                field=page.get_by_placeholder('Relative folder or file path under DATA_DIR')
+                field=page.get_by_placeholder('Relative path in the HiCT data folder')
                 check.menu('File','Open map…');field.fill('maps');field.press('Enter');check.settle();check.choose_file('sequence.hict.hdf5')
                 with page.expect_response('**/open') as response:page.get_by_role('button',name='Load',exact=True).click()
                 assert response.value.ok;check.settle()

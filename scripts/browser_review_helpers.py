@@ -16,7 +16,7 @@ def link_fasta(page, filename):
     dialog = page.locator(".modal.show").filter(has_text="Select FASTA file")
     file = PurePosixPath(filename)
     if str(file.parent) != ".":
-        path = dialog.get_by_placeholder("Relative folder or file path under DATA_DIR")
+        path = dialog.get_by_placeholder("Relative path in the HiCT data folder")
         path.fill(str(file.parent))
         with page.expect_response(lambda response: response.url.endswith("/list_directory")):
             path.press("Enter")

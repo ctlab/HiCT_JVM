@@ -123,7 +123,7 @@ def main():
                 )
                 files = {}
                 for extension in ("png", "svg"):
-                    page.get_by_role("button", name="Export", exact=True).click()
+                    page.get_by_role("button", name="Export…", exact=True).click()
                     with page.expect_download(timeout=90000) as download:
                         page.locator(f"#export-{extension}-button").click()
                     path = out / ("actual-map." + extension)

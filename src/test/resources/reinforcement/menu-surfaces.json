@@ -123,13 +123,13 @@
     "id": "menu-08",
     "menu": "View",
     "action": "Rendering pipeline…",
-    "heading": "Rendering Pipeline",
+    "heading": "Rendering pipeline",
     "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Rendering Pipeline",
+    "surfaceExpected": "Visible heading: Rendering pipeline",
     "functionalExpected": "Edit and apply a custom graph, verify exact pixels and save/reopen without losing expressions.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -153,13 +153,13 @@
     "id": "menu-10",
     "menu": "View",
     "action": "Restrict resolutions…",
-    "heading": "Restrict Resolutions",
+    "heading": "Restrict resolutions",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Restrict Resolutions",
+    "surfaceExpected": "Visible heading: Restrict resolutions",
     "functionalExpected": "Change enabled levels and verify zoom visits only enabled levels without losing secondary layers.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"

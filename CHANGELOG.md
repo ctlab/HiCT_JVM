@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
 - Keep Notifications visible in short windows while the editing tools scroll independently.
 - Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
 - Refresh the threshold fields immediately when a visualization preset changes the signal range.

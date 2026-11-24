@@ -736,7 +736,7 @@ def main():
                 wait_held(held)
                 check.menu("View", "Rendering pipeline…")
                 dialog = page.get_by_role(
-                    "dialog", name="Rendering Pipeline", exact=True
+                    "dialog", name="Rendering pipeline", exact=True
                 )
                 expect(
                     dialog.get_by_role("button", name="Apply", exact=True)

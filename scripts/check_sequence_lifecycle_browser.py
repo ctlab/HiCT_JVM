@@ -370,7 +370,7 @@ class OverlayFixture { public static void main(String[] a) {
             assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
             # Editing and reapplying the graph must not silently downgrade it to LINEAR.
             check.menu('View', 'Rendering pipeline…')
-            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering pipeline', exact=True))
             with page.expect_response(lambda r: '/render_pipeline/set' in r.url):
                 dialog.get_by_role('button', name='Apply', exact=True).click()
             dialog.get_by_role('button', name='Close', exact=True).click()
@@ -388,7 +388,7 @@ class OverlayFixture { public static void main(String[] a) {
             preset_results = []
             for preset in ('primary_only', 'dotplot_overlay', 'moddotplot_below', 'moddotplot_overlay'):
                 check.menu('View', 'Rendering pipeline…')
-                dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+                dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering pipeline', exact=True))
                 dialog.locator('.pipeline-preset-select').select_option(preset)
                 before_load = json.loads(app.http('/render_pipeline/get', {}))
                 dialog.get_by_role('button', name='Load preset', exact=True).click()

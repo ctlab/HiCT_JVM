@@ -191,6 +191,20 @@ def main():
                         entry['surfaces'].append(case['id'])
                 result['controls'] = controls
                 target.screenshot(path=str(output / (case['id'] + '.png')))
+                if case['id'] in ('menu-02', 'menu-03'):
+                    if case['id'] == 'menu-02':
+                        dialog.locator('details[data-advanced-id="convert-matrices"] > summary').click()
+                        picker_name = 'Select optional .assembly file'
+                    else:
+                        picker_name = 'Select source .hict.hdf5'
+                    browse = dialog.get_by_role('button', name='Browse…', exact=True).first
+                    browse.click()
+                    picker = target.get_by_role('dialog', name=picker_name, exact=True)
+                    picker.wait_for()
+                    target.keyboard.press('Escape')
+                    picker.wait_for(state='hidden')
+                    assert browse.evaluate('button => document.activeElement === button')
+                    result['nestedEscape'] = 'Escape closes the file picker and returns focus to Browse'
                 if case['id'] in ('menu-12', 'menu-13', 'menu-14'):
                     target.get_by_role('dialog').get_by_role('button', name='Link FASTA…', exact=True).click()
                     target.get_by_role('heading', name='Select FASTA file', exact=True).wait_for(state='visible')
@@ -224,6 +238,13 @@ def main():
                     target.wait_for_function('document.activeElement!==document.body && document.activeElement.getClientRects().length>0')
                     result['dismissal'] = 'actual Close preserves assembly and restores visible focus'
                     result['focusReturn'] = target.evaluate('document.activeElement.outerHTML')
+                    if case['id'] in ('menu-02', 'menu-03'):
+                        target.get_by_role('link', name=case['menu'], exact=True).click()
+                        action.click()
+                        dialog.wait_for()
+                        target.keyboard.press('Escape')
+                        dialog.wait_for(state='hidden')
+                        result['quickEscape'] = 'Escape closes the newly opened dialog'
                 elif case['heading'] is None:
                     target.close()
                 after_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})

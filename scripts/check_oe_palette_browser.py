@@ -372,7 +372,7 @@ def main():
                         check.menu("View", "Rendering pipeline…")
                         dialog = page.get_by_role("dialog")
                         dialog.get_by_role(
-                            "heading", name="Rendering Pipeline", exact=True
+                            "heading", name="Rendering pipeline", exact=True
                         ).wait_for()
                         page.screenshot(path=str(out / "ratio-pipeline-editor.png"))
                         with page.expect_response(

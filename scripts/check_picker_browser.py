@@ -45,7 +45,7 @@ def main():
             check.menu("File", "Open map…")
             dialog = page.get_by_role("dialog").last
             path = dialog.get_by_placeholder(
-                "Relative folder or file path under DATA_DIR"
+                "Relative path in the HiCT data folder"
             )
             filter_input = dialog.get_by_placeholder(
                 "Filter current folder by file name or path"

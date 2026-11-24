@@ -132,7 +132,7 @@ def main():
             results.append({"test": "Sidebar collapse and restore preserve viewport"})
             check.menu("View", "Restrict resolutions…")
             dialog = page.get_by_role("dialog").filter(
-                has=page.get_by_role("heading", name="Restrict Resolutions", exact=True)
+                has=page.get_by_role("heading", name="Restrict resolutions", exact=True)
             )
             switches = dialog.get_by_role("switch")
             levels = [
