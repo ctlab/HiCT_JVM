@@ -58,7 +58,7 @@ def main():
                 assert submit.is_enabled(), (key,value)
             results.append({"field":key,"rejected":invalid,"accepted":valid})
         assert post("/convert/jobs/list", {}) == before_jobs
-        dialog.get_by_role("button", name="Dismiss", exact=True).click()
+        dialog.get_by_role("button", name="Cancel", exact=True).click()
         dialog.wait_for(state="hidden")
         check.menu("Selection", "Select region by coordinates…")
         edit = page.get_by_role("dialog", name="Select region by coordinates")

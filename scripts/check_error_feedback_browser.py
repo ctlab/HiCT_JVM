@@ -81,6 +81,11 @@ def main():
         dialog.get_by_role("button", name="Generate", exact=True).click()
         error_toast("ModDotPlot could not finish")
         expect(dialog.get_by_role("alert")).to_have_text("ModDotPlot could not finish. The bundled tool reported an error.")
+        assert dialog.evaluate("""modal => {
+            const toaster = document.querySelector('[data-sonner-toaster]');
+            return Number(getComputedStyle(toaster).zIndex) <
+                Number(getComputedStyle(modal).zIndex);
+        }""")
         expect(dialog.get_by_role("button", name="Generate", exact=True)).to_be_enabled()
         dialog.get_by_text("Show log", exact=True).click()
         expect(dialog.get_by_label("ModDotPlot log")).to_contain_text("test adapter stopped")

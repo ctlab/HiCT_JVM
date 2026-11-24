@@ -191,6 +191,19 @@ def main():
                         entry['surfaces'].append(case['id'])
                 result['controls'] = controls
                 target.screenshot(path=str(output / (case['id'] + '.png')))
+                if case['id'] == 'menu-20':
+                    contents = dialog.get_by_role('navigation', name='Guide sections')
+                    section = contents.get_by_role('link', name='Navigate and select', exact=True)
+                    section.click()
+                    assert section.get_attribute('aria-current') == 'location'
+                    heading = dialog.get_by_role('heading', name='Navigate and select', exact=True)
+                    assert heading.evaluate('element => document.activeElement === element')
+                    with target.expect_popup() as opened_guide:
+                        dialog.get_by_role('link', name='Open in a new tab', exact=True).click()
+                    standalone_guide = opened_guide.value
+                    standalone_guide.get_by_role('heading', name='HiCT user guide', exact=True).wait_for()
+                    standalone_guide.close()
+                    result['guideNavigation'] = 'Guide sections move focus and the standalone guide opens successfully'
                 if case['id'] in ('menu-02', 'menu-03'):
                     if case['id'] == 'menu-02':
                         dialog.locator('details[data-advanced-id="convert-matrices"] > summary').click()

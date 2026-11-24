@@ -283,5 +283,19 @@
     "functionalExpected": "Verify version, source links and attribution against packaged dependencies.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-20",
+    "menu": "Help",
+    "action": "User guide and shortcuts…",
+    "heading": "User guide and shortcuts",
+    "source": "src/app/ui/components/upper_ribbon/UserGuideModal.vue",
+    "prerequisites": [
+      "Bundled user guide"
+    ],
+    "surfaceExpected": "Visible heading: User guide and shortcuts",
+    "functionalExpected": "Navigate to a section and open the rendered guide in a new tab.",
+    "coverage": "pending",
+    "scope": "Surface and functional navigation checks"
   }
 ]
