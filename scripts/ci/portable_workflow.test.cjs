@@ -59,6 +59,18 @@ test('artifact-only and fix branch safeguards survive early publication', () => 
   assert.equal(condition('publish-release-assets', { github: { event_name: 'push', ref_name: 'fix/example' } }), false);
 });
 
+test('automatic jvm-sfx-native releases preserve existing tags and assets', () => {
+  const publish = job('publish-release-assets');
+  assert.match(publish, /if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "push" && "\$\{GITHUB_REF_NAME\}" == "jvm-sfx-native" \]\]; then\n +release_tag="jvm-sfx-native-\$\{version\}"\n +elif/);
+  const versioned = publish.match(/      - name: Publish versioned jvm-sfx-native prerelease\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.ok(versioned, 'Missing versioned branch publication');
+  assert.match(versioned, /steps\.collect-assets\.outputs\.rolling_release == 'false'/);
+  assert.match(versioned, /target_commitish: \$\{\{ github\.sha \}\}/);
+  assert.match(versioned, /overwrite_files: false/);
+  const prune = publish.match(/      - name: Verify rolling upload and prune obsolete build assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.match(prune, /steps\.collect-assets\.outputs\.rolling_release == 'true'/);
+});
+
 test('native cache source hashes exclude generated Python bytecode', () => {
   const sequence = fs.readFileSync('.github/workflows/sequence-tools.yml', 'utf8');
   assert.match(sequence, /'scripts\/sequence_analysis\/\*\*'/);

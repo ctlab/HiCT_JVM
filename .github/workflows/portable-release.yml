@@ -2170,7 +2170,9 @@ jobs:
           default_latest_tag="latest-${GITHUB_REF_NAME}"
           release_tag="${GITHUB_REF_NAME}"
           rolling_release="false"
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" == "jvm-sfx-native" ]]; then
+            release_tag="jvm-sfx-native-${version}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             release_tag="${default_latest_tag}"
             rolling_release="true"
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
@@ -2410,6 +2412,20 @@ jobs:
           files: release-dist/*
           fail_on_unmatched_files: true
           overwrite_files: true
+
+      - name: Publish versioned jvm-sfx-native prerelease
+        if: ${{ github.event_name == 'push' && github.ref_name == 'jvm-sfx-native' && steps.collect-assets.outputs.rolling_release == 'false' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.collect-assets.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: HiCT ${{ env.HICT_BUILD_VERSION }} (jvm-sfx-native)
+          body_path: release-body.md
+          prerelease: true
+          make_latest: false
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: false
 
       - name: Attach assets to selected release tag
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' }}
