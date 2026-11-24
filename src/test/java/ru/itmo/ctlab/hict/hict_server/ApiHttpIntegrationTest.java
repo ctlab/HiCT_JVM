@@ -38,6 +38,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHold
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
@@ -273,6 +274,7 @@ class ApiHttpIntegrationTest {
       "micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5"
     );
     for (final var input : inputs) assertTrue(Files.isRegularFile(dataRoot.resolve(input)), input);
+    HDF5LibraryInitializer.initializeHDF5Library();
     startServerWithInfoAndFileHandlers();
     final var map = vertx.sharedData().getLocalMap("hict_server");
     map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataRoot));
