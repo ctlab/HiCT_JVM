@@ -290,7 +290,13 @@ def main():
                     dialog.get_by_role("button", name="Close", exact=True).last.click()
                     expect(dialog).to_have_count(0)
                 page.get_by_role("link", name="File", exact=True).click()
-                page.get_by_role("link", name="Close map", exact=True).click()
+                with page.expect_response(
+                    lambda response: response.request.method == "POST"
+                    and response.url.endswith("/close")
+                ) as close_response:
+                    page.get_by_role("link", name="Close map", exact=True).click()
+                assert close_response.value.ok, close_response.value.text()
+                assert close_response.value.json().get("status") == "closed"
                 page.wait_for_function("!window.__hictBenchmark.manager()")
                 cdp.send("Runtime.discardConsoleEntries")
                 cdp.send("HeapProfiler.collectGarbage")
