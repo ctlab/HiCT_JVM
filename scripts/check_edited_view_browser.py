@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import sync_playwright
 from browser_review_helpers import link_fasta
+from sequence_browser_harness import install_download_picker
 
 
 def first_sequence(path):
@@ -42,6 +43,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        install_download_picker(page)
         page.set_default_timeout(60000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("request", lambda request: queries.append(request.post_data_json)

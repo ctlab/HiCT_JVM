@@ -171,6 +171,7 @@ def main():
                     "map": True,
                     "rulers": True,
                     "tracks": False,
+                    "secondary": True,
                 }
                 record(
                     "composition-changes-require-a-new-capture-and-can-remove-annotation-panels"
@@ -185,6 +186,7 @@ def main():
                     "map": True,
                     "rulers": False,
                     "tracks": False,
+                    "secondary": True,
                 }
                 record("map-only-composition-removes-ruler-and-track-margins")
                 view_before = page.evaluate(

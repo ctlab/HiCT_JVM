@@ -286,7 +286,7 @@ def main():
                     )
                     small_windows.append(window)
                     expected_count = (window[1] - window[0]) * (window[3] - window[2])
-                    assert f"{expected_count} finite" in histogram.locator(
+                    assert f"{expected_count} values" in histogram.locator(
                         "svg"
                     ).get_attribute("aria-label")
                 # This 17 bp map fits entirely at the allowed zoom; larger windows below prove cropping.
@@ -307,7 +307,7 @@ def main():
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
                 assert (
-                    "13 finite" in label
+                    "13 values" in label
                     and "7 zeros" in label
                     and "12 missing" in label
                 ), label
@@ -408,8 +408,8 @@ def main():
                 check.settle()
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
-                assert label.startswith("Sampled viewport"), label
-                assert "65,536 finite" in label, label
+                assert label.startswith("Visible area"), label
+                assert "65,536 values" in label, label
                 record("large-viewport-is-explicitly-sampled-with-bounded-cell-count")
                 page.evaluate(
                     """()=>{window.__histTimings=[];const h=document.querySelector('.viewport-histogram');new MutationObserver(()=>{if(h.getAttribute('aria-busy')==='false'&&window.__histPanStart){window.__histTimings.push(performance.now()-window.__histPanStart);window.__histPanStart=0;}}).observe(h,{attributes:true,attributeFilter:['aria-busy']});}"""

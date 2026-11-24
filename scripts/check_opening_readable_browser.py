@@ -169,7 +169,10 @@ def main():
                 check(f'{tag}: pipeline weights match the weights option',
                       uses_weights(pipeline) == bool(options.get('applyCoolerWeights')),
                       f"pipeline={uses_weights(pipeline)} option={options.get('applyCoolerWeights')}")
-            upper = page.get_by_label('Upper signal threshold').input_value()
+            field = page.get_by_label('Upper signal threshold')
+            field.focus()
+            upper = field.input_value()
+            field.blur()
             expected = (pipeline['upperExpression'].get('maxSignal') if pipeline.get('enabled') else options['colormap']['maxSignal'])
             check(f'{tag}: sidebar upper threshold equals the rendered one', abs(float(upper) - float(expected)) <= 1e-6 * max(1.0, abs(float(expected))),
                   f'sidebar={upper} server={expected}')

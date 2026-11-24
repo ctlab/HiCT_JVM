@@ -478,6 +478,8 @@ def main():
 
                     def editor_open():
                         check.menu("View", "Rendering pipeline…")
+                        dialog.wait_for()
+                        check.advanced()
                         expect(
                             dialog.get_by_role(
                                 "tab", name="Primary O/E colormap", exact=True
@@ -544,7 +546,7 @@ def main():
                                 and rect["y"] >= 0
                                 and rect["y"] + rect["height"] <= height + 1
                             ), rect
-                            for button in ["Apply", "Close", "Reset"]:
+                            for button in ["Apply", "Close", "Reset to default"]:
                                 control = dialog.locator(".modal-footer").get_by_role(
                                     "button", name=button, exact=True
                                 )
@@ -623,7 +625,9 @@ def main():
                             document["target"] == "PRIMARY_OE"
                             and document["palette"]["max"] == 7
                         )
-                        dialog.get_by_role("button", name="Reset", exact=True).click()
+                        dialog.get_by_role(
+                            "button", name="Reset to default", exact=True
+                        ).click()
                         await_upper(2)
                         assert tile().getpixel((1, 1)) == (33, 102, 172, 255)
                         with page.expect_file_chooser() as chooser:

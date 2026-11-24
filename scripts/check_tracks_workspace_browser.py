@@ -210,7 +210,8 @@ with h5py.File(sys.argv[1],'r+') as f:
                     check.step('three-panel-sizes-dark-edge-pixels-keyboard-and-blur-cleanup',resizes)
                     def weight_sources():
                         page.locator('#normalization-mode').select_option('sqrt')
-                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.normalizationWeightsMode==='SQRT_COVERAGE'")
+                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.getNormalizationWeightsMode('PRIMARY')==='SQRT_COVERAGE'")
+                        assert json.loads(api.http('/normalization/coverage/status', {'source': 'SECONDARY'}))['mode'] == 'FILE'
                         check.settle();manager();dialog.get_by_label('Add track',exact=True).select_option('weights')
                         expect(dialog.get_by_text('Square-root coverage weights from the selected map.',exact=False)).to_be_visible()
                         expect(dialog.get_by_text('Coverage weights · Primary',exact=True)).to_be_visible()
@@ -225,6 +226,11 @@ with h5py.File(sys.argv[1],'r+') as f:
                         actual_weights=[b['value'] for b in weight['bins']]
                         assert len(actual_weights)==len(expected_weights)==4,actual_weights
                         assert all(math.isclose(a,b,rel_tol=1e-12) for a,b in zip(actual_weights,expected_weights)),(actual_weights,expected_weights)
+                        close()
+                        requests = 'window.__hictBenchmark.manager().networkManager.requestManager'
+                        page.evaluate(f"{requests}.prepareCoverageNormalization('SECONDARY')")
+                        page.wait_for_function(f"async () => (await {requests}.coverageNormalizationStatus('SECONDARY')).state === 'READY'")
+                        page.evaluate(f"{requests}.selectNormalizationWeights('SQRT_COVERAGE', 'SECONDARY')")
                         for source in ['PRIMARY','SECONDARY']:
                             queries=page.evaluate("""async source=>{const q={bpResolution:4,startRowPx:0,endRowPx:5,startColPx:0,endColPx:5,source},api=window.__hictBenchmark.manager().networkManager.requestManager;
                                 return {raw:Array.from((await api.queryMatrixFloat32({...q,signalMode:'RAW_COUNTS'})).values),normalized:Array.from((await api.queryMatrixFloat32({...q,signalMode:'COOLER_WEIGHTED'})).values)};}""",source)
@@ -235,7 +241,6 @@ with h5py.File(sys.argv[1],'r+') as f:
                             assert math.isclose(sum(queries['normalized']),total,rel_tol=1e-6),queries
                             coverage_oracle[source]=queries
                         coverage_oracle.update(rowSums=row_sums,total=total,scale=scale,weights=actual_weights)
-                        close()
                         explanation=page.locator('.coverage-explanation');summary=explanation.locator('summary')
                         expect(page.locator('#normalization-help')).to_be_visible()
                         summary.focus();page.keyboard.press('Enter');expect(explanation).to_have_attribute('open','')
@@ -247,7 +252,8 @@ with h5py.File(sys.argv[1],'r+') as f:
                         page.set_viewport_size({'width':1440,'height':1000})
                         page.screenshot(path=str(out/'coverage-map.png'));page.locator('#normalization-mode').select_option('file')
                         expect(explanation).to_have_count(0)
-                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.normalizationWeightsMode==='FILE'")
+                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.getNormalizationWeightsMode('PRIMARY')==='FILE'")
+                        assert json.loads(api.http('/normalization/coverage/status', {'source': 'SECONDARY'}))['mode'] == 'SQRT_COVERAGE'
                         check.settle();manager();dialog.get_by_label('Add track',exact=True).select_option('weights')
                         expect(dialog.get_by_text('Stored Cooler weights from the selected map.',exact=False)).to_be_visible()
                         expect(dialog.get_by_text('File weights · Primary',exact=True)).to_be_visible();close()
@@ -280,7 +286,9 @@ with h5py.File(sys.argv[1],'r+') as f:
                         expect(dialog.get_by_text('Weight provenance is unknown for this file.',exact=False)).to_be_visible()
                         dialog.get_by_role('button',name='Add weights',exact=True).click()
                         expect(dialog.get_by_role('group',name='Track Map weights - Primary',exact=True)).to_be_visible()
-                        dialog.locator('summary').filter(has_text='Preparation').click()
+                        advanced = dialog.locator('details[data-advanced-id="tracks"]')
+                        if advanced.get_attribute('open') is None:
+                            advanced.locator(':scope > summary').click()
                         expect(dialog.get_by_text('Map weights are read directly and need no preparation.',exact=True)).to_be_visible()
                         expect(dialog.get_by_role('button',name='Precompute all',exact=True)).to_be_disabled()
                         close()
