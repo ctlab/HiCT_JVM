@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.
+- Dim Find and Go to along with the other disabled ribbon controls before a map opens.
 - Keep the replacement map open when a previous Close map request is slow.
 - Keep signal scales readable when the track background changes.
 - Keep the opening wizard controls in view, clarify menu guidance, and move optional gap and compatibility settings under Advanced.

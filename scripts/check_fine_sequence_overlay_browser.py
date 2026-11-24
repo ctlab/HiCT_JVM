@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image, ImageChops
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from sequence_browser_harness import BrowserCheck, install_download_picker
 
 
@@ -68,6 +68,62 @@ def main():
             }""",
                 [start, end, row_start or start, row_end or end],
             )
+
+        def open_region_analysis():
+            bounds = page.locator("#hic-contact-map").bounding_box()
+            page.mouse.click(
+                bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2,
+                button="right",
+            )
+            context = page.get_by_role("menu", name="Assembly actions", exact=True)
+            context.get_by_role("menuitem", name="Analyse", exact=True).press("ArrowRight")
+            page.get_by_role("menu", name="Analyse", exact=True).get_by_role(
+                "menuitem", name="ModDotPlot of region…", exact=True
+            ).click()
+
+        def check_default_moddotplot_scopes(dialog):
+            stored = page.evaluate(
+                "() => window.__hictBenchmark.manager().viewAndLayersManager.resolutions"
+            )
+            expected = sorted({21, 25, 50, 100, 250, 500} | {bp for bp in stored if bp >= 21})
+            observations = []
+            for span in (20000, 80000, 360000):
+                page.evaluate("""span => {
+                    const layers = window.__hictBenchmark.manager().viewAndLayersManager;
+                    const start = 210000, end = start + span;
+                    layers.setRegionBounds({rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});
+                    layers.zoomToRegion();
+                }""", span)
+                check.settle()
+                for entry in ("Tools", "context menu"):
+                    with page.expect_response("**/sequence/moddotplot/estimate") as estimated:
+                        if entry == "Tools":
+                            check.menu("Tools", "ModDotPlot…")
+                        else:
+                            open_region_analysis()
+                    expect(dialog.get_by_label("Analysis scope")).to_have_value("selection")
+                    expect(dialog.get_by_label("Show result as")).to_have_value("overlay")
+                    assert estimated.value.ok, estimated.value.text()
+                    estimate = estimated.value.json()
+                    assert (estimate["rowBp"], estimate["columnBp"]) == (span, span), estimate
+                    assert estimate["requestedLevels"] == expected, estimate
+                    generate = dialog.get_by_role("button", name="Generate", exact=True)
+                    if estimate.get("limitingLevel"):
+                        expect(generate).to_be_disabled()
+                        assert "Budget exceeded at" in generate.get_attribute("title")
+                        dialog.get_by_role("button", name="Use sizes that fit", exact=True).click()
+                        expect(generate).to_be_enabled()
+                        kept = dialog.locator(".resolution-options input:checked").evaluate_all(
+                            "boxes => boxes.map(box => Number(box.value))"
+                        )
+                        assert kept and len(kept) < len(expected) and kept == expected[-len(kept):], kept
+                    else:
+                        expect(generate).to_be_enabled()
+                        kept = expected
+                    observations.append({"spanBp": span, "entry": entry, "initialEstimate": estimate, "kept": kept})
+                    dialog.get_by_role("button", name="Close", exact=True).last.click()
+                    expect(dialog).to_be_hidden()
+            (out / "moddotplot-defaults.json").write_text(json.dumps(observations, indent=2) + "\n")
 
         def observe(kind, numeric_levels, sample, expected, position, mode, letters=False, whole=False, wide=False):
             state = request("/secondary/status", {})
@@ -188,10 +244,21 @@ def main():
             )
             if nan.is_visible():
                 nan.click()
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
+            expect(dialog.get_by_label("Analysis scope")).to_have_value("assembly")
+            dialog.get_by_role("button", name="Close", exact=True).last.click()
+            expect(dialog).to_be_hidden()
+            check_default_moddotplot_scopes(dialog)
             select(435400, 436376, 438700, 439700)
             check.menu("Tools", "ModDotPlot…")
             dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
+            assert dialog.get_by_label("Analysis scope").input_value() == "selection"
+            assert dialog.get_by_label("Show result as").input_value() == "overlay"
+            assert not dialog.get_by_text("Fine windows over a whole genome", exact=False).is_visible()
             sizes = dialog.get_by_label("ModDotPlot window sizes (bp)", exact=True)
+            assert not sizes.is_visible()
+            check.advanced()
             sizes.fill("37, 50, 250")
             sizes.press("Tab")
             dialog.locator('input[value="1000"]').check()
@@ -211,11 +278,18 @@ def main():
             assert dialog.get_by_role(
                 "button", name="Generate", exact=True
             ).is_disabled()
-            sizes.fill("37, 50")
+            sizes.fill("37, 10000")
             dialog.get_by_label("Analysis scope").select_option("assembly")
+            dialog.get_by_role("button", name="Use sizes that fit", exact=True).click()
+            expect(sizes).to_have_value("10000")
+            expect(dialog.get_by_role("button", name="Generate", exact=True)).to_be_enabled()
+            sizes.fill("37, 50")
             recovery = dialog.get_by_role("button", name="Use current rectangle", exact=True)
             recovery.wait_for()
             assert dialog.get_by_text("Budget exceeded at", exact=False).is_visible()
+            assert "Budget exceeded at" in dialog.get_by_role(
+                "button", name="Generate", exact=True
+            ).get_attribute("title")
             recovery.click()
             assert sizes.input_value() == "37, 50"
             dialog.get_by_text("Estimated storage", exact=False).wait_for()
@@ -261,10 +335,11 @@ def main():
                 "dialog", name="Dotplot from current assembly", exact=True
             )
             sizes = dialog.get_by_label("Dotplot resolutions (bp/bin)")
+            check.advanced()
             sizes.fill("1 50")
             dialog.locator('input[value="1000"]').check()
             assert sizes.input_value() == "1, 50, 1000"
-            dialog.get_by_label("Analysis scope").select_option("selection")
+            assert dialog.get_by_label("Analysis scope").input_value() == "selection"
             dialog.get_by_label("Show result as").select_option("above")
             check.advanced()
             dialog.get_by_label("Sample every (bp)", exact=True).fill("1")

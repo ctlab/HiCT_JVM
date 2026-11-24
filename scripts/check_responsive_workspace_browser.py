@@ -192,6 +192,23 @@ def main():
 
             try:
                 page.goto(url)
+
+                def empty_ribbon_search():
+                    ribbon = page.locator(".header-ribbon")
+                    selection = ribbon.get_by_role("button", name="Selection", exact=True)
+                    expect(selection).to_be_disabled()
+                    opacity = selection.evaluate("button => getComputedStyle(button).opacity")
+                    assert float(opacity) < 1, opacity
+                    search = ribbon.get_by_role(
+                        "textbox", name="Find a contig, scaffold or feature", exact=True
+                    )
+                    go_to = ribbon.get_by_role("button", name="Go to", exact=True)
+                    for control in (search, go_to):
+                        expect(control).to_be_disabled()
+                        expect(control).to_have_css("opacity", opacity)
+
+                page.set_viewport_size({"width": 1440, "height": 900})
+                check.step("empty-ribbon-search-matches-disabled-controls", empty_ribbon_search)
                 for height in (720, 900):
                     page.set_viewport_size({"width": 1440, "height": height})
                     notification_access()
