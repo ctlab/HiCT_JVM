@@ -71,7 +71,7 @@ def main():
             checkbox = dialog.locator('#export-approximate-rebin')
             assert not checkbox.is_checked()
             dialog.get_by_role('button',name='Export',exact=True).click()
-            dialog.get_by_text('Enable approximate rebinning to export this sequence-cut assembly, or turn off current assembly to export the saved matrix.',exact=True).wait_for()
+            dialog.get_by_text('Enable approximate rebinning under Advanced to export the edited assembly, or choose Original order in the file.',exact=True).wait_for()
             assert not json.loads(app.http('/convert/jobs/list', {}))
             checkbox.check()
             dialog.locator('.alert-danger').wait_for(state='hidden')
@@ -94,7 +94,7 @@ def main():
             job_id = submitted.value.json()['jobId']
             request = submitted.value.request.post_data_json
             assert request['approximateRebin'] is True and request['balanceExportedCoolers'] is False
-            dialog.get_by_role('button',name='Dismiss',exact=True).click()
+            dialog.get_by_role('button',name='Cancel',exact=True).click()
             page.locator('.jobs-button').click()
             job = page.locator('.job-row').filter(has=page.get_by_text('Download result',exact=True))
             deadline = time.monotonic()+60
@@ -206,7 +206,7 @@ def main():
             assert submitted.value.ok, submitted.value.text()
             ordinary_id = submitted.value.json()['jobId']
             assert submitted.value.request.post_data_json.get('approximateRebin',False) is False
-            dialog.get_by_role('button',name='Dismiss',exact=True).click()
+            dialog.get_by_role('button',name='Cancel',exact=True).click()
             page.locator('.jobs-button').click()
             deadline = time.monotonic()+60
             while time.monotonic()<deadline:

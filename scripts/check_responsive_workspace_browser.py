@@ -211,8 +211,17 @@ def main():
                 square_box = ribbon.get_by_text("Square selection", exact=True).bounding_box()
                 check.select_range()
                 expect(selection).to_have_attribute("title", re.compile(r"^Region:"))
-                assert ribbon.bounding_box()["height"] == ribbon_height
+                assert ribbon.bounding_box()["height"] == ribbon_height <= 56, (
+                    ribbon_height,
+                    ribbon.evaluate("""ribbon => Array.from(ribbon.querySelectorAll(
+                        '.header-block, #left-header-block > *, #right-header-block > *'
+                    ), element => [element.id || element.className,
+                        element.getBoundingClientRect().toJSON()])"""),
+                )
                 assert ribbon.get_by_text("Square selection", exact=True).bounding_box() == square_box
+                for _ in range(3):
+                    ribbon.locator("#ruler-mode-button").click()
+                    assert ribbon.bounding_box()["height"] == ribbon_height
                 page.keyboard.press("Escape")
                 page.set_viewport_size({"width": 1440, "height": 1000})
 
