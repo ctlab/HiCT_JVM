@@ -135,7 +135,9 @@ def main():
             assert digest(readback('after-cancel.fa'))==completed_hash
             reset('fail');begin();wait_for('aborted');check.settle();failed=state();assert not failed['closed']
             assert digest(readback('after-failure.fa'))==completed_hash
-            page.get_by_text('Injected disk write failure',exact=True).last.wait_for();page.screenshot(path=str(out/'failed-stream-export.png'))
+            page.get_by_role('button', name='Open notifications', exact=True).click()
+            page.get_by_text('Injected disk write failure', exact=True).last.wait_for()
+            page.screenshot(path=str(out/'failed-stream-export.png'))
             assert not check.errors,check.errors
             assert digest(native)==source_hash and digest(data/'sequence.fa')==fasta_hash
             (out/'results.json').write_text(json.dumps({'status':'ok','checks':['512 Mb ordered exact-sequence transfer through native OPFS writer','sampled persistent Chromium JS heap and Linux process RSS','frame/input acknowledgement during transfer','cancel aborts writer and preserves previous file','injected write failure aborts and preserves previous file','unchanged native/FASTA inputs'],'success':success,'cancelled':cancelled,'failed':failed,'sourceSha256':source_hash,'fastaSha256':fasta_hash,'outputSha256':completed_hash,'baselineMemoryBytes':baseline,'peakMemoryBytes':peak,'peakDeltaBytes':delta,'frameP95Ms':frame_p95,'inputAcknowledgementP95Ms':input_p95,'frameSamples':len(latency['frames']),'inputSamples':len(latency['inputs']),'pageErrors':[]},indent=2))

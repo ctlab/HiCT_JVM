@@ -95,6 +95,8 @@ def main():
         (check.output / 'failure.json').write_text(json.dumps({
             'status': 'failed', 'error': repr(error)}, indent=2) + '\n')
         raise
+    finally:
+        check.close_session()
 
 
 if __name__ == '__main__':

@@ -138,12 +138,17 @@ class NativeCheck:
         # WebDriver screenshots can omit WebKit composited images/icon fonts.
         self.docker('import', '-window', 'root', str(self.output / name))
 
-    def attach(self):
+    def close_session(self):
         if self.session:
             try:
                 self.wd('DELETE', '/session/' + self.session)
-            except RuntimeError:
+            except (RuntimeError, OSError):
                 pass
+            finally:
+                self.session = None
+
+    def attach(self):
+        self.close_session()
         value = self.wd('POST', '/session', {'capabilities': {'alwaysMatch': {
             'tauri:options': {'application': self.args.binary}}}})
         self.session = value['sessionId']
@@ -157,7 +162,7 @@ class NativeCheck:
         self.command('POST', '/element/' + element + '/value', {'text': api, 'value': list(api)})
         self.click('Connect')
         self.click('Join running session')
-        until(lambda: self.js('return document.body.innerText.includes("Assembly:");'))
+        until(lambda: self.js('return !!document.querySelector(".file-chips .file-chip--static[title]");'))
         assert self.js('return window.__HICT_TAURI_EXPORT_STREAM_VERSION__') == 1
 
     def dialog(self, menu, label, target=None, replace=False):
@@ -210,7 +215,7 @@ class NativeCheck:
         elif mode == 'quit':
             self.click('File')
             try:
-                self.click('Quit')
+                self.click('Quit HiCT')
             except RuntimeError:
                 # Native exit can beat WebDriver's click acknowledgement. The
                 # process-exit and filesystem checks below must still succeed.
@@ -277,7 +282,7 @@ class NativeCheck:
         original = b'original must survive until confirmed replacement\n'
         target.write_bytes(original)
         floor = self.floor()
-        self.dialog('Assembly', 'Export to AGP', target, replace=True)
+        self.dialog('Assembly', 'Export AGP…', target, replace=True)
         assert self.outcome(floor)['level'] == 'success'
         assert target.read_bytes() != original and b'\tW\t' in target.read_bytes()
         self.clean()
@@ -317,12 +322,12 @@ class NativeCheck:
             self.record('full destination preserves original', notification=notice)
         target = self.saved / 'session.json'
         floor = self.floor()
-        self.dialog('File', 'Save session', target)
+        self.dialog('File', 'Save session…', target)
         assert self.outcome(floor)['level'] == 'success'
         assert json.loads(target.read_text())['format'] == 'hict-session'
         floor = self.floor()
         self.click('File')
-        self.click('Open session')
+        self.click('Open session…')
         element = self.element('css selector', 'input[type="file"][accept="application/json"]')
         self.command('POST', '/element/' + element + '/value', {'text': str(target), 'value': list(str(target))})
         notice = self.outcome(floor)
@@ -355,6 +360,8 @@ def main():
     except BaseException as error:
         (check.output / 'failure.json').write_text(json.dumps({'status': 'failed', 'error': repr(error)}, indent=2) + '\n')
         raise
+    finally:
+        check.close_session()
 
 
 if __name__ == '__main__':
