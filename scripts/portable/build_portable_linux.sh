@@ -220,13 +220,30 @@ payload. It is used to keep the release inspectable, reduce bundled-browser
 release size, and avoid opaque native self-extracting packers.
 EOF
 
+runtime_options=()
+trim_native_heap_option="-XX:TrimNativeHeapInterval=30000"
+jdk_java="$(dirname "$(readlink -f "${JLINK}")")/java"
+if [[ -z "${ABI_SUFFIX}" ]] &&
+   env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
+     "${jdk_java}" "${trim_native_heap_option}" -version >/dev/null 2>&1; then
+  # Keep this default in the runtime for both direct and GUI-started servers.
+  runtime_options+=("--add-options=${trim_native_heap_option}")
+fi
+
 "${JLINK}" \
   --add-modules "${RUNTIME_MODULES}" \
   --strip-debug \
   --no-header-files \
   --no-man-pages \
   --compress=zip-6 \
+  "${runtime_options[@]}" \
   --output "${APP_DIR}/runtime"
+
+if (( ${#runtime_options[@]} > 0 )); then
+  env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
+    "${APP_DIR}/runtime/bin/java" -XX:+PrintFlagsFinal -version 2>&1 |
+    grep -E 'TrimNativeHeapInterval[[:space:]]*=[[:space:]]*30000[[:space:]]'
+fi
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
 #!/usr/bin/env bash
