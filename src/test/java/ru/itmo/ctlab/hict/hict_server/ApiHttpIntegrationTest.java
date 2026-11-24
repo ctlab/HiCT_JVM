@@ -489,6 +489,36 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp() throws Exception {
+    final var runtime = Files.createDirectories(tempDataDir.resolve("tmp"));
+    final var library = Files.createDirectories(runtime.resolve("hict-jhdf5-native-328"));
+    Files.writeString(library.resolve("jhdf5.dll"), "runtime library");
+    Files.writeString(library.resolve("private.mcool"), "intermediate data");
+    Files.writeString(runtime.resolve("sample.pairs.gz"), "user data");
+    Files.writeString(runtime.resolve("sample.mcool"), "user data");
+    final var outsideRuntime = Files.createDirectories(tempDataDir.resolve("project/hict-jhdf5-native-328"));
+    Files.writeString(outsideRuntime.resolve("another.mcool"), "user data");
+    startServerWithInfoAndFileHandlers();
+
+    final var savedTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", runtime.toString());
+      for (var route : List.of("/list_files", "/list_files_detailed", "/list_convertible_matrices", "/list_directory")) {
+        final var response = post(route, "{\"directory\":\"tmp\"}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("sample.pairs.gz"), response.body());
+        assertTrue(response.body().contains("sample.mcool"), response.body());
+        assertFalse(response.body().contains("private.mcool"), response.body());
+        assertFalse(response.body().contains("jhdf5.dll"), response.body());
+      }
+      assertTrue(post("/list_files", "{}").body().contains("another.mcool"));
+      assertEquals(400, post("/list_directory", "{\"directory\":\"tmp/hict-jhdf5-native-328\"}").statusCode());
+    } finally {
+      System.setProperty("java.io.tmpdir", savedTemp);
+    }
+  }
+
+  @Test
   void infoAndFileEndpointsRespondOverHttpWithScheduler() throws Exception {
     Files.createDirectories(tempDataDir.resolve("build/quad"));
     final var uploads = Files.createDirectories(tempDataDir.resolve(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME));

@@ -699,8 +699,11 @@ public class TileHandlersHolder extends HandlersHolder {
   }
 
   private static void requireSameStamp(RenderCaptureRegistry.Stamp before, RenderCaptureRegistry.Stamp after) {
-    if (!before.matches(after)) throw new io.vertx.ext.web.handler.HttpException(409,
-      "The assembly, normalization, tracks or rendering changed during figure capture. Capture the figure again.");
+    if (!before.matches(after)) {
+      before.logChanges("preparation", after);
+      throw new io.vertx.ext.web.handler.HttpException(409,
+        "The assembly, normalization, tracks or rendering changed during figure capture. Capture the figure again.");
+    }
   }
 
   private static JsonObject normalizationMetadata(ChunkedFile file, boolean applied) {

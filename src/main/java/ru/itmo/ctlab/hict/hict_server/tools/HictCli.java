@@ -22,6 +22,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkLoadOptions;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
+import ru.itmo.ctlab.hict.hict_server.util.BuildVersion;
 
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
@@ -44,7 +45,7 @@ import java.util.regex.Pattern;
 @Command(
   name = "hict",
   mixinStandardHelpOptions = true,
-  version = "HiCT JVM",
+  versionProvider = HictCli.VersionProvider.class,
   description = "HiCT server and conversion CLI.",
   subcommands = {
     HictCli.StartServer.class,
@@ -79,6 +80,17 @@ public class HictCli implements Runnable {
 
   @Option(names = {"-v", "--verbose"}, arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Enable verbose output.")
   boolean verbose;
+
+  public static final class VersionProvider implements CommandLine.IVersionProvider {
+    @Override
+    public String[] getVersion() {
+      return new String[]{
+        "HiCT " + BuildVersion.version(),
+        "JVM revision " + BuildVersion.backendRevision(),
+        "WebUI revision " + BuildVersion.webuiRevision()
+      };
+    }
+  }
 
   @Override
   public void run() {
@@ -388,8 +400,8 @@ public class HictCli implements Runnable {
           if (!quiet) {
             System.out.println("HDF5 native library: " + version[0] + "." + version[1] + "." + version[2]);
           }
-        } catch (final Throwable err) {
-          failures.add("HDF5 native library is unavailable: " + err.getClass().getSimpleName() + ": " + err.getMessage());
+        } catch (final LinkageError | RuntimeException err) {
+          failures.add("HDF5 native library is unavailable: " + describeNativeFailure(err));
         }
       }
       if (checkAvailableNatives) {
@@ -413,6 +425,19 @@ public class HictCli implements Runnable {
         return 1;
       }
       return 0;
+    }
+
+    private static String describeNativeFailure(Throwable failure) {
+      final var details = new ArrayList<String>();
+      for (var cause = failure; cause != null && details.size() < 8; cause = cause.getCause()) {
+        details.add(cause.toString());
+      }
+      return String.join(" caused by ", details)
+        + " [Java=" + System.getProperty("java.home")
+        + ", runtime files=" + System.getProperty("java.io.tmpdir")
+        + ", HDF5 archive=" + valueOrNone(System.getenv("HICT_JHDF5_NATIVES_ARCHIVE"))
+        + ", HDF5 library=" + valueOrNone(System.getProperty("native.libpath.hdf5"))
+        + ", JHDF5 library=" + valueOrNone(System.getProperty("native.libpath.jhdf5")) + "]";
     }
 
     private static String valueOrNone(final String value) {

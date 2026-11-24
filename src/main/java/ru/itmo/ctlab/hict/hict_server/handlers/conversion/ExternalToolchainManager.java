@@ -37,6 +37,16 @@ public final class ExternalToolchainManager {
   private static final @NotNull List<String> PYTHON_PATH_CANDIDATES = List.of("python3", "python", "python.exe");
   private static volatile @Nullable String dotplotAlignerPreferenceOverride = null;
 
+  private final java.util.function.Function<String, String> environment;
+
+  public ExternalToolchainManager() {
+    this(System::getenv);
+  }
+
+  ExternalToolchainManager(java.util.function.Function<String, String> environment) {
+    this.environment = java.util.Objects.requireNonNull(environment);
+  }
+
   public @NotNull ToolchainStatus inspect() {
     return ToolchainStatus.fromResolved(resolveAnyToolchain(), dotplotAlignerPreference());
   }
@@ -46,7 +56,7 @@ public final class ExternalToolchainManager {
     if (override != null && !override.isBlank()) {
       return override;
     }
-    final var configuredPreference = readSetting(DOTPLOT_ALIGNER_KEY);
+    final var configuredPreference = readSetting(DOTPLOT_ALIGNER_KEY, System::getenv);
     if (configuredPreference.isPresent()) {
       return normalizeDotplotAlignerPreference(configuredPreference.get());
     }
@@ -432,20 +442,25 @@ public final class ExternalToolchainManager {
     return isUsableCommand(resolved) ? resolved : null;
   }
 
-  private static @NotNull Optional<String> readSetting(final @NotNull String key) {
+  private @NotNull Optional<String> readSetting(final @NotNull String key) {
+    return readSetting(key, environment);
+  }
+
+  private static @NotNull Optional<String> readSetting(final @NotNull String key,
+    java.util.function.Function<String, String> environment) {
     final var systemProperty = System.getProperty(key);
     if (systemProperty != null && !systemProperty.isBlank()) {
       return Optional.of(systemProperty.trim());
     }
-    final var env = System.getenv(key);
+    final var env = environment.apply(key);
     if (env != null && !env.isBlank()) {
       return Optional.of(env.trim());
     }
     return Optional.empty();
   }
 
-  private static @Nullable Path findOnPath(final @NotNull List<String> candidates) {
-    final var pathValue = System.getenv("PATH");
+  private @Nullable Path findOnPath(final @NotNull List<String> candidates) {
+    final var pathValue = environment.apply("PATH");
     if (pathValue == null || pathValue.isBlank()) {
       return null;
     }

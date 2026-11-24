@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.handler.HttpException;
+import lombok.extern.slf4j.Slf4j;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 
 import java.nio.ByteBuffer;
@@ -15,6 +16,7 @@ import java.util.UUID;
 import java.util.function.LongSupplier;
 
 /** Short-lived immutable render inputs. Viewport profile changes do not alter a captured profile. */
+@Slf4j
 public final class RenderCaptureRegistry {
   public record Stamp(Object primary, Object secondary, Object visualization, Object pipeline,
                       long tileGeneration, long trackGeneration) {
@@ -22,6 +24,17 @@ public final class RenderCaptureRegistry {
       return next != null && primary == next.primary && secondary == next.secondary
         && visualization == next.visualization && pipeline == next.pipeline
         && tileGeneration == next.tileGeneration && trackGeneration == next.trackGeneration;
+    }
+
+    void logChanges(String stage, Stamp next) {
+      if (!log.isDebugEnabled()) return;
+      if (next == null) {
+        log.debug("Figure capture {} lost its render state", stage);
+        return;
+      }
+      log.debug("Figure capture {} changed: primary={}, secondary={}, visualization={}, pipeline={}, tile generation {} -> {}, track generation {} -> {}",
+        stage, primary != next.primary, secondary != next.secondary, visualization != next.visualization,
+        pipeline != next.pipeline, tileGeneration, next.tileGeneration, trackGeneration, next.trackGeneration);
     }
   }
 
@@ -77,7 +90,9 @@ public final class RenderCaptureRegistry {
   }
 
   public synchronized void validate(Capture capture, Stamp current) {
-    if (captures.get(capture.id) != capture || capture.invalid || now.getAsLong() >= capture.expiresAt || !capture.stamp.matches(current)) {
+    final var active = captures.get(capture.id) == capture && !capture.invalid && now.getAsLong() < capture.expiresAt;
+    if (!active || !capture.stamp.matches(current)) {
+      if (active) capture.stamp.logChanges("validation", current);
       capture.invalid = true;
       throw new HttpException(409, "The assembly, normalization, tracks or rendering changed during figure capture. Capture the figure again.");
     }

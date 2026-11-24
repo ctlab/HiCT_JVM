@@ -1244,6 +1244,34 @@ jobs:
       - name: Seal the Windows toolchain before packaging
         run: python scripts/toolchains/prepare_bundled_tools.py --seal
 
+      - name: Gate Windows process lifecycle and workspace discovery
+        shell: pwsh
+        run: |
+          .\gradlew.bat test -x copyWebUI --tests '*BackgroundJobsTest' --tests '*RemoteBlastRunnerTest' --tests '*ExternalToolchainManagerTest' --tests '*ApiHttpIntegrationTest.workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          function Assert-ProcessCases($class, $method, $count) {
+            $file = Get-ChildItem "build/test-results/test" -Filter "TEST-*.$class.xml"
+            if (-not $file) { throw "JUnit result for $class is missing." }
+            [xml]$result = Get-Content -Raw -LiteralPath $file.FullName
+            $cases = @($result.testsuite.testcase | Where-Object { $_.name -like "$method*" })
+            if ($cases.Count -ne $count -or @($cases | Where-Object { $_.SelectSingleNode('skipped|failure|error') }).Count -ne 0) {
+              throw "$class must pass all $count cases matching $method."
+            }
+          }
+          Assert-ProcessCases BackgroundJobsTest 'repetition ' 20
+          Assert-ProcessCases RemoteBlastRunnerTest controlledProcessProducesAReportAndUploadsOnlyGeneratedQueryIds 1
+          Assert-ProcessCases RemoteBlastRunnerTest timeoutStopsTheOwnedProcessAndDoesNotPublishAReport 1
+          Assert-ProcessCases RemoteBlastRunnerTest cancellationStopsTheOwnedProcessAndDoesNotPublishAReport 1
+          Assert-ProcessCases RemoteBlastRunnerTest propagatesTheExitCodeAndRemovesPartialOutput 1
+
+      - name: Upload Windows JVM qualification results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-jvm-qualification
+          path: build/test-results/test/TEST-*.xml
+          if-no-files-found: ignore
+
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
@@ -1253,6 +1281,65 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
+
+      - name: Exercise both Windows packages with a redirected runtime
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath "version.txt").Trim()
+          $basename = "HiCT-$version-windows-x86_64"
+          $downloads = Resolve-Path "build/distributions"
+          $workspace = Join-Path $env:RUNNER_TEMP ("HiCT version check " + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          try {
+            $env:DATA_DIR = Join-Path $workspace "data"
+            $env:PROCESSED_DIR = Join-Path $workspace "processed"
+            $env:HICT_PORTABLE_CACHE_ROOT = Join-Path $workspace "portable cache"
+            $jar = Resolve-Path "build/libs/hict_server-$version-fat.jar"
+            java --class-path $jar src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java $env:DATA_DIR
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $blockedTemp = Join-Path $workspace "Unavailable temp"
+            Set-Content -LiteralPath $blockedTemp -Value "This file cannot serve as a folder."
+            function Assert-BuildIdentity($launcher) {
+              $lines = & $launcher --version
+              if ($LASTEXITCODE -ne 0 -or "HiCT $version" -notin $lines -or
+                  "JVM revision $env:GITHUB_SHA" -notin $lines -or
+                  "WebUI revision $env:HICT_WEBUI_REF" -notin $lines) {
+                throw "Unexpected build identity from $launcher. Output: $lines"
+              }
+            }
+            function Assert-NativeConversion($launcher, $label) {
+              $oldTemp = $env:TEMP
+              $oldTmp = $env:TMP
+              try {
+                $env:TEMP = $env:TMP = $env:HICT_TEMP_DIR = $blockedTemp
+                & $launcher check-toolchains --require-hdf5-native --quiet
+                if ($LASTEXITCODE -ne 0) { throw "HDF5 failed through $label." }
+                $inputMap = Join-Path $env:DATA_DIR "tiny-primary.mcool"
+                $outputMap = Join-Path $workspace "$label converted.hict.hdf5"
+                & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --chunk-size 64 --parallelism 1
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap)) {
+                  throw "The $label launcher could not convert the fixture with redirected temp."
+                }
+              } finally {
+                $env:TEMP = $oldTemp
+                $env:TMP = $oldTmp
+                Remove-Item Env:HICT_TEMP_DIR -ErrorAction SilentlyContinue
+              }
+            }
+            $exe = Join-Path $downloads "$basename.exe"
+            if (Test-Path -LiteralPath $exe) {
+              Assert-BuildIdentity $exe
+              Assert-NativeConversion $exe "EXE"
+            }
+            $zip = Join-Path $downloads "$basename-portable.zip"
+            Expand-Archive -LiteralPath $zip -DestinationPath $workspace
+            $launcher = Get-ChildItem -LiteralPath $workspace -Recurse -Filter "HiCT.cmd" | Select-Object -First 1
+            if (-not $launcher) { throw "The Windows ZIP does not contain HiCT.cmd." }
+            Assert-BuildIdentity $launcher.FullName
+            Assert-NativeConversion $launcher.FullName "ZIP"
+          } finally {
+            Remove-Item -Recurse -Force -LiteralPath $workspace
+          }
 
       - name: Verify every bundled tool in the packaged JAR
         shell: bash

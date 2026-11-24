@@ -4,12 +4,14 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.io.TempDir;
+import ru.itmo.ctlab.hict.fixtures.ChildProcessFixture;
 import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -69,21 +71,21 @@ class BackgroundJobsTest {
   }
 
   @RepeatedTest(20) void stopsNativeChildProcessTree() throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
-    var process = new ProcessBuilder("/bin/sh", "-c", "sleep 120 & wait").start();
+    var process = new ProcessBuilder(ChildProcessFixture.command("spawn")).start();
     List<ProcessHandle> children = List.of();
     try {
-      for (int attempt = 0; attempt < 100 && children.isEmpty(); attempt++) {
+      final long startupDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (children.isEmpty() && process.isAlive() && System.nanoTime() < startupDeadline) {
         children = process.descendants().toList();
-        Thread.sleep(10);
+        if (children.isEmpty()) Thread.sleep(10);
       }
-      assertFalse(children.isEmpty());
+      assertFalse(children.isEmpty(), "The fixture did not start a descendant JVM");
       ProcessTree.stop(process);
-      assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
+      assertTrue(process.waitFor(5, TimeUnit.SECONDS));
       for (var child : children) {
         // destroyForcibly requests termination; waiting for the parent does not
         // imply every descendant has already exited on another CPU.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         boolean exited = hasExited(child);
         while (!exited && System.nanoTime() < deadline) {
           Thread.sleep(10);

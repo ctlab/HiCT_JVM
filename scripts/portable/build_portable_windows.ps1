@@ -502,12 +502,6 @@ for %%I in ("%SCRIPT_DIR%..") do set "APP_HOME=%%~fI"
 if not defined DATA_DIR (
   set "DATA_DIR=%APP_HOME%"
 )
-if not defined PROCESSED_DIR (
-  set "PROCESSED_DIR=%DATA_DIR%\processed"
-)
-if not defined HICT_TEMP_DIR (
-  set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
-)
 set "HICT_APP_HOME=%APP_HOME%"
 set "HICT_JAR_PATH=%APP_HOME%\lib\hict.jar"
 if not defined HICT_JHDF5_NATIVES_ARCHIVE (
@@ -526,20 +520,30 @@ if not defined HICT_BIND_HOST (
   set "HICT_BIND_HOST=127.0.0.1"
 )
 
+set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
+if "%~1"=="--version" goto :Version
 call :WarnWebView2IfNeeded
 call :SelectRuntimeTempDir
 if errorlevel 1 exit /b 1
+set "TMP=%HICT_TEMP_DIR%"
+set "TEMP=%HICT_TEMP_DIR%"
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
+if not defined PROCESSED_DIR (
+  call :CanWriteRuntimeDir "%DATA_DIR%\processed"
+  if errorlevel 1 (
+    set "PROCESSED_DIR=%HICT_TEMP_DIR%\processed"
+  ) else (
+    set "PROCESSED_DIR=%DATA_DIR%\processed"
+  )
+)
 if not exist "%PROCESSED_DIR%" mkdir "%PROCESSED_DIR%" >nul 2>nul
-if not exist "%HICT_TEMP_DIR%" mkdir "%HICT_TEMP_DIR%" >nul 2>nul
 pushd "%DATA_DIR%" >nul 2>nul
 if errorlevel 1 (
   echo Failed to enter DATA_DIR "%DATA_DIR%".
   exit /b 1
 )
 
-set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="" (
   if not defined HICT_LAUNCHER_MODE set "HICT_LAUNCHER_MODE=gui"
   "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
@@ -550,48 +554,61 @@ set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
 exit /b %HICT_EXIT_CODE%
 
+:Version
+"%JAVA_EXE%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+exit /b %ERRORLEVEL%
+
 :SelectRuntimeTempDir
-set "HICT_LOCAL_TEMP_DIR=%DATA_DIR%\tmp"
 if defined HICT_TEMP_DIR (
-  call :CanUseRuntimeTempDir "%HICT_TEMP_DIR%"
+  call :CanWriteRuntimeDir "%HICT_TEMP_DIR%"
   if not errorlevel 1 exit /b 0
-  echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_TEMP_DIR%"
 )
-call :CanUseRuntimeTempDir "%HICT_LOCAL_TEMP_DIR%"
-if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%HICT_LOCAL_TEMP_DIR%"
-  exit /b 0
-)
-echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_LOCAL_TEMP_DIR%"
-if defined TEMP (
-  call :CanUseRuntimeTempDir "%TEMP%\HiCT\runtime"
+if defined LOCALAPPDATA (
+  call :CanWriteRuntimeDir "%LOCALAPPDATA%\HiCT\runtime"
   if not errorlevel 1 (
-    set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
-    set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %TEMP%\HiCT\runtime."
+    set "HICT_TEMP_DIR=%LOCALAPPDATA%\HiCT\runtime"
     exit /b 0
   )
 )
-call :CanUseRuntimeTempDir "%APP_HOME%\tmp"
+if defined USERPROFILE (
+  call :CanWriteRuntimeDir "%USERPROFILE%\AppData\Local\HiCT\runtime"
+  if not errorlevel 1 (
+    set "HICT_TEMP_DIR=%USERPROFILE%\AppData\Local\HiCT\runtime"
+    exit /b 0
+  )
+)
+if defined TEMP (
+  call :CanWriteRuntimeDir "%TEMP%\HiCT\runtime"
+  if not errorlevel 1 (
+    set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
+    exit /b 0
+  )
+)
+call :CanWriteRuntimeDir "%DATA_DIR%\tmp"
 if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%APP_HOME%\tmp"
-  set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %APP_HOME%\tmp."
+  set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
   exit /b 0
 )
-echo No usable runtime temp directory is available. Check DATA_DIR\tmp, HICT_TEMP_DIR, and %%TEMP%%.
+call :CanWriteRuntimeDir "%APP_HOME%\tmp"
+if not errorlevel 1 (
+  set "HICT_TEMP_DIR=%APP_HOME%\tmp"
+  exit /b 0
+)
+echo No writable runtime folder was found. Check HiCT's working folder or set HICT_TEMP_DIR.
 exit /b 1
 
-:CanUseRuntimeTempDir
+:CanWriteRuntimeDir
 set "HICT_PROBE_DIR=%~1"
 if "%HICT_PROBE_DIR%"=="" exit /b 1
 if not exist "%HICT_PROBE_DIR%" mkdir "%HICT_PROBE_DIR%" >nul 2>nul
-if not exist "%HICT_PROBE_DIR%" exit /b 1
-set "HICT_PROBE=%HICT_PROBE_DIR%\.hict-exec-test-%RANDOM%-%RANDOM%.cmd"
-> "%HICT_PROBE%" echo @echo off
->> "%HICT_PROBE%" echo exit /b 0
-cmd.exe /d /c "%HICT_PROBE%" >nul 2>nul
-set "HICT_PROBE_STATUS=%ERRORLEVEL%"
-del /f /q "%HICT_PROBE%" >nul 2>nul
-exit /b %HICT_PROBE_STATUS%
+set "HICT_PROBE=%HICT_PROBE_DIR%\.hict-write-test-%RANDOM%-%RANDOM%"
+(echo HiCT) > "%HICT_PROBE%" 2>nul
+if errorlevel 1 (
+  echo Cannot write a runtime file in "%HICT_PROBE_DIR%".
+  exit /b 1
+)
+del /q "%HICT_PROBE%" >nul 2>nul
+exit /b %ERRORLEVEL%
 
 :WarnWebView2IfNeeded
 if not exist "%APP_HOME%\browsers\windows_x86_64" exit /b 0

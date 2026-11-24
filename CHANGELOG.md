@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retry failed figure previews with the keyboard, keep export settings in place, and announce when the preview is ready.
+- Keep the map wider in narrow windows, with expandable map tools and full filenames in Sources.
+- Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.
+- Prefer per-user working folders in the Windows portable launcher and recover when redirected temporary folders are unwritable.
 - Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
 - Make edited, original and AGP assembly order explicit when exporting a Cooler matrix.
 - Add section links to the bundled user guide and keep notifications behind active dialogs.

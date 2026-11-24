@@ -4,6 +4,7 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_library.assembly.SequenceSearchQueries;
+import ru.itmo.ctlab.hict.fixtures.ChildProcessFixture;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.List;
@@ -12,7 +13,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class RemoteBlastRunnerTest {
   @TempDir Path dir;
@@ -92,18 +92,19 @@ class RemoteBlastRunnerTest {
     assertEquals(1, hit.getInteger("gapOpenings"));
   }
 
-  private Path executable(String body) throws Exception {
-    assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "Controlled process test requires a POSIX shell");
-    var file = dir.resolve("controlled-blastn");
-    Files.writeString(file, "#!/bin/sh\n" + body);
-    assertTrue(file.toFile().setExecutable(true));
-    return file;
+  private RemoteBlastRunner controlledProcess(String... args) throws Exception {
+    var fixture = ChildProcessFixture.command(args);
+    return new RemoteBlastRunner(NcbiBlastResultRetriever::new, builder -> {
+      var command = new java.util.ArrayList<>(fixture);
+      command.addAll(builder.command().subList(1, builder.command().size()));
+      return builder.command(command).start();
+    });
   }
 
   @Test void controlledProcessProducesAReportAndUploadsOnlyGeneratedQueryIds() throws Exception {
-    var executable = executable("while [ \"$1\" != \"-out\" ]; do shift; done\nprintf '" + row().replace("\n", "\\n").replace("\t", "\\t") + "' > \"$2\"\n");
-    var result = new RemoteBlastRunner().run(executable, dir, queries, options(), ignored -> {}, ignored -> {}, () -> false,
-      Duration.ofSeconds(5), Duration.ZERO);
+    var fixture = Files.writeString(dir.resolve("fixture result.tsv"), row());
+    var result = controlledProcess("copy-output", fixture.toString()).run(Path.of("blastn"), dir, queries,
+      options(), ignored -> {}, ignored -> {}, () -> false, Duration.ofSeconds(10), Duration.ZERO);
     var report = new JsonObject(Files.readString(result.report()));
     assertEquals("hict-remote-blast", report.getString("format"));
     assertTrue(report.getBoolean("externalSubjects")); assertEquals("ONE_BASED_INCLUSIVE", report.getString("coordinateSystem"));
@@ -112,19 +113,26 @@ class RemoteBlastRunnerTest {
     assertFalse(Files.exists(dir.resolve("sequence-search.bed")));
   }
 
+  @Test void propagatesTheExitCodeAndRemovesPartialOutput() throws Exception {
+    var failure = assertThrows(java.io.IOException.class, () -> controlledProcess("fail").run(Path.of("blastn"),
+      dir, queries, options(), ignored -> {}, ignored -> {}, () -> false, Duration.ofSeconds(10), Duration.ZERO));
+    assertTrue(failure.getMessage().contains("exit 23"));
+    assertTrue(failure.getMessage().contains("Controlled child process failure"));
+    assertFalse(Files.exists(dir.resolve("remote-blast.json")));
+    assertFalse(Files.exists(dir.resolve("remote-blast.tsv")));
+  }
+
   @Test void timeoutStopsTheOwnedProcessAndDoesNotPublishAReport() throws Exception {
-    var executable = executable("sleep 30\n");
     var process = new AtomicReference<Process>();
-    assertThrows(TimeoutException.class, () -> new RemoteBlastRunner().run(executable, dir, queries, options(), ignored -> {},
+    assertThrows(TimeoutException.class, () -> controlledProcess("wait").run(Path.of("blastn"), dir, queries, options(), ignored -> {},
       p -> { if (p != null) process.set(p); }, () -> false, Duration.ofMillis(50), Duration.ZERO));
     assertNotNull(process.get()); assertFalse(process.get().isAlive());
     assertFalse(Files.exists(dir.resolve("remote-blast.json"))); assertFalse(Files.exists(dir.resolve("remote-blast.tsv")));
   }
 
   @Test void cancellationStopsTheOwnedProcessAndDoesNotPublishAReport() throws Exception {
-    var executable = executable("sleep 30\n");
     var cancel = new AtomicBoolean(); var process = new AtomicReference<Process>();
-    assertThrows(CancellationException.class, () -> new RemoteBlastRunner().run(executable, dir, queries, options(), ignored -> {},
+    assertThrows(CancellationException.class, () -> controlledProcess("wait").run(Path.of("blastn"), dir, queries, options(), ignored -> {},
       p -> { if (p != null) { process.set(p); cancel.set(true); } }, cancel::get, Duration.ofSeconds(5), Duration.ZERO));
     assertNotNull(process.get()); assertFalse(process.get().isAlive());
     assertFalse(Files.exists(dir.resolve("remote-blast.json")));

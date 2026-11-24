@@ -162,7 +162,7 @@ def main():
                 dialog.get_by_label("Include 1D tracks", exact=True).uncheck()
                 expect(dialog.locator("#export-png-button")).to_be_disabled()
                 expect(dialog).to_contain_text("Update the preview to apply the changed options.")
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -177,7 +177,7 @@ def main():
                     "composition-changes-require-a-new-capture-and-can-remove-annotation-panels"
                 )
                 dialog.get_by_label("Include rulers and FASTA", exact=True).uncheck()
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -195,7 +195,7 @@ def main():
                 dialog.get_by_label("Export area", exact=True).select_option(
                     "whole-map"
                 )
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -223,7 +223,7 @@ def main():
                 assert whole["wholeMapSizing"] == "FIT_WINDOW"
                 dialog.get_by_label("Expand small whole maps to fit window", exact=True).uncheck()
                 expect(dialog.locator("#export-png-button")).to_be_disabled()
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(timeout=90000)
                 compact = metadata(save("whole-map-native-grid", "png"))
                 assert compact["wholeMapSizing"] == "NATIVE_GRID"
@@ -241,7 +241,7 @@ def main():
                 dialog.get_by_label("Export area", exact=True).select_option(
                     "selection"
                 )
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
