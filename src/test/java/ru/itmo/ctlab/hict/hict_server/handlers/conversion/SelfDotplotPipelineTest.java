@@ -77,32 +77,15 @@ class SelfDotplotPipelineTest {
 
   @Test
   void pipelineCanUseMinimap2OutputAndHictkWithoutPythonCoolerWhenToolchainExists() throws Exception {
-    final var hictk = Path.of("toolchains-dist", "linux_x86_64", "bin", "hictk").toAbsolutePath().normalize();
-    assumeTrue(Files.isExecutable(hictk), "bundled test hictk is not available");
-    final var fasta = tempDir.resolve("tiny.fa");
-    Files.writeString(
-      fasta,
-      """
-        >chr1
-        ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT
-        ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT
-        >chr2
-        TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCA
-        TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCA
-        """
-    );
-    final var minimap2 = tempDir.resolve("minimap2");
-    Files.writeString(
-      minimap2,
-      """
-        #!/usr/bin/env bash
-        cat <<'PAF'
-        chr1\t128\t0\t100\t+\tchr1\t128\t0\t100\t100\t100\t60
-        chr1\t128\t0\t100\t+\tchr2\t128\t0\t100\t100\t100\t60
-        PAF
-        """
-    );
-    minimap2.toFile().setExecutable(true, true);
+    final var manager = new ExternalToolchainManager();
+    final var status = manager.inspect();
+    assumeTrue(status.hictkAvailable() && status.minimap2Command() != null,
+      "Set HICT_TOOLCHAIN_DIR to a sealed hictk and minimap2 bundle");
+    final var toolchain = manager.requireHictkToolchain();
+    final var random = new java.util.Random(11);
+    final var sequence = new StringBuilder(3000);
+    for (int i = 0; i < 3000; i++) sequence.append("ACGT".charAt(random.nextInt(4)));
+    final var fasta = Files.writeString(tempDir.resolve("tiny.fa"), ">chr1\n" + sequence + "\n>chr2\n" + sequence + "\n");
 
     final var output = new SelfDotplotPipeline().generate(
       new SelfDotplotPipeline.Options(
@@ -125,21 +108,9 @@ class SelfDotplotPipelineTest {
         25,
         10,
         "",
-        ""
+        "minimap2"
       ),
-      new ExternalToolchainManager.ResolvedToolchain(
-        "linux_x86_64",
-        "test",
-        hictk,
-        minimap2,
-        null,
-        null,
-        null,
-        null,
-        List.of(),
-        List.of(),
-        List.of()
-      ),
+      toolchain,
       ignored -> {
       },
       ignored -> {

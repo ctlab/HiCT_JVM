@@ -1246,8 +1246,29 @@ jobs:
 
       - name: Gate Windows process lifecycle and workspace discovery
         shell: pwsh
+        env:
+          HICT_REQUIRE_HICTK_TESTS: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
-          .\gradlew.bat test -x copyWebUI --tests '*BackgroundJobsTest' --tests '*RemoteBlastRunnerTest' --tests '*ExternalToolchainManagerTest' --tests '*ApiHttpIntegrationTest.workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp'
+          $env:HICT_TOOLCHAIN_DIR = (Resolve-Path "toolchains-dist/windows_x86_64").Path
+          $manifest = Get-Content -Raw (Join-Path $env:HICT_TOOLCHAIN_DIR "manifest.json") | ConvertFrom-Json
+          foreach ($command in @(
+            @{ Key = "blastn"; Variable = "HICT_BLASTN_BIN" },
+            @{ Key = "seqkit"; Variable = "HICT_SEQKIT_BIN" },
+            @{ Key = "hict-moddotplot"; Variable = "HICT_MODDOTPLOT_BIN" }
+          )) {
+            $binary = Join-Path $env:HICT_TOOLCHAIN_DIR ($manifest.commands.($command.Key))
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing packaged $($command.Key): $binary" }
+            Set-Item -Path "Env:$($command.Variable)" -Value $binary
+          }
+          $selection = @('test', '-x', 'copyWebUI', '--tests', '*BackgroundJobsTest', '--tests', '*RemoteBlastRunnerTest',
+            '--tests', '*ExternalToolchainManagerTest', '--tests', '*ApiHttpIntegrationTest.workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp',
+            '--tests', '*BlastSearchRunnerTest', '--tests', '*SequenceSearchRunnerTest',
+            '--tests', '*ScaffoldEditingInvariantTest.nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance',
+            '--tests', '*ScaffoldEditingInvariantTest.nativeModDotPlotAccumulatesSeparateVersionsReadableByExistingMatrixEngine')
+          if ($env:HICT_REQUIRE_HICTK_TESTS -eq "true") {
+            $selection += @('--tests', '*HictkConversionPipelineTest', '--tests', '*SelfDotplotPipelineTest')
+          }
+          .\gradlew.bat @selection
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           function Assert-ProcessCases($class, $method, $count) {
             $file = Get-ChildItem "build/test-results/test" -Filter "TEST-*.$class.xml"
@@ -1263,6 +1284,15 @@ jobs:
           Assert-ProcessCases RemoteBlastRunnerTest timeoutStopsTheOwnedProcessAndDoesNotPublishAReport 1
           Assert-ProcessCases RemoteBlastRunnerTest cancellationStopsTheOwnedProcessAndDoesNotPublishAReport 1
           Assert-ProcessCases RemoteBlastRunnerTest propagatesTheExitCodeAndRemovesPartialOutput 1
+          Assert-ProcessCases BlastSearchRunnerTest realBlastFindsGappedAlignmentAndKeepsRawScores 1
+          Assert-ProcessCases SequenceSearchRunnerTest realSeqkitBothStrandsAndSubstitutionSearchMatchExhaustiveOracle 1
+          Assert-ProcessCases ScaffoldEditingInvariantTest nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance 1
+          Assert-ProcessCases ScaffoldEditingInvariantTest nativeModDotPlotAccumulatesSeparateVersionsReadableByExistingMatrixEngine 1
+          if ($env:HICT_REQUIRE_HICTK_TESTS -eq "true") {
+            Assert-ProcessCases HictkConversionPipelineTest importsCompressed4dnPairsUsingDefaultAndExplicitBinSizes 1
+            Assert-ProcessCases HictkConversionPipelineTest importsMultiResolutionCoolerThroughItsSelectedGroup 1
+            Assert-ProcessCases SelfDotplotPipelineTest pipelineCanUseMinimap2OutputAndHictkWithoutPythonCoolerWhenToolchainExists 1
+          }
 
       - name: Upload Windows JVM qualification results
         if: ${{ always() }}
@@ -1371,6 +1401,9 @@ jobs:
             if (-not $launcher) { throw "The Windows ZIP does not contain HiCT.cmd." }
             Assert-BuildIdentity $launcher.FullName
             Assert-NativeConversion $launcher.FullName "ZIP"
+            if ((Test-Path -LiteralPath $exe) -and $env:HICT_WINDOWS_EXE_MODE -eq "custom") {
+              .\scripts\portable\check_windows_standard_user.ps1 -Workspace $workspace -ZipLauncher $launcher.FullName -Exe $exe -Version $version
+            }
           } finally {
             Remove-Item -Recurse -Force -LiteralPath $workspace
           }
