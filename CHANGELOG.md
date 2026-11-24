@@ -7,6 +7,7 @@
 - Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.
 - Prefer per-user working folders in the Windows portable launcher and recover when redirected temporary folders are unwritable.
 - Preserve Unicode command-line filenames in the Windows EXE and portable ZIP.
+- Reduce browser memory use when saving large FASTA and AGP exports.
 - Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
 - Make edited, original and AGP assembly order explicit when exporting a Cooler matrix.
 - Add section links to the bundled user guide and keep notifications behind active dialogs.
