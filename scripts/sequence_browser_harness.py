@@ -111,7 +111,11 @@ def install_download_picker(page):
         let content;
         return {name:options.suggestedName,
           getFile:async()=>new File([content],options.suggestedName,{type:content.type}),
-          createWritable:async()=>{const chunks=[];return {write:async chunk=>{chunks.push(chunk);},close:async()=>{
+          createWritable:async()=>{const chunks=[];return {write:async chunk=>{
+            // Snapshot the bytes before resolving, as a completed file write does.
+            // The exporter can reuse or transfer a stream buffer on its next read.
+            chunks.push(chunk instanceof Blob ? chunk : new Blob([chunk]));
+          },close:async()=>{
             content=new Blob(chunks,{type:chunks[0]?.type||'text/plain'});
             const a=document.createElement('a'),url=URL.createObjectURL(content);
             a.href=url;a.download=options.suggestedName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -142,9 +146,13 @@ class BrowserCheck:
         )
 
     def menu(self, menu, action):
-        trigger = self.page.get_by_role("link", name=menu, exact=True).or_(
-            self.page.get_by_role("button", name=menu, exact=True)
-        )
+        if menu == "Selection":
+            # The ribbon button also displays the active entity or region summary.
+            trigger = self.page.locator(".header-ribbon button.selection-label")
+        else:
+            trigger = self.page.get_by_role("link", name=menu, exact=True).or_(
+                self.page.get_by_role("button", name=menu, exact=True)
+            )
         trigger.click()
         options = trigger.locator("..")
         target = options.get_by_role("link", name=action, exact=True)
