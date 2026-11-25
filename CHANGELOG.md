@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Put the ModDotPlot storage estimate and its budget recovery action in one warning row.
 - Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
 - Zoom around the center with +, =, and − while the map has keyboard focus.
 - Show the packaged version and WebUI revision in About.
