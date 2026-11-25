@@ -3040,6 +3040,13 @@ components:
         neutral-at-1 ratio palette. Legacy payloads keep their appearance.
       additionalProperties: true
       properties:
+        diagonalMask:
+          type: object
+          description: Display-only mask and exclusion from viewport and exact signal statistics.
+          required: [enabled, distanceBp]
+          properties:
+            enabled: { type: boolean, default: false }
+            distanceBp: { type: integer, format: int64, minimum: 1, maximum: 1000000000, default: 100000 }
         preserveRenderPipeline:
           type: boolean
           default: false
@@ -3114,6 +3121,10 @@ components:
     MatrixQueryRequest:
       type: object
       properties:
+        respectDiagonalMask:
+          type: boolean
+          default: false
+          description: Return masked cells as null in JSON or NaN in floating-point data. Tile statistics always exclude masked cells. Default extraction preserves the values.
         expression:
           type: object
           additionalProperties: true

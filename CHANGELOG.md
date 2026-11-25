@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hide contacts near the current assembly diagonal and exclude them from displayed statistics on request. Save the mask with presets, sessions and figures.
 - Drag or use the keyboard on the square histogram endpoints to set colors at and beyond the Lower and Upper limits.
 - Render BED coding blocks, UTRs and directional intron chevrons on both axes and in figures, with file colors taking precedence over strand colors.
 - Put Slider scale beside Fit levels below the histogram and label the map's value transform Displayed signal.

@@ -299,6 +299,7 @@ public class TileHandlersHolder extends HandlersHolder {
           requireSameStamp(stamp, captureStamp(map, scheduler));
           final var secondary = stamp.secondary() instanceof ShareableWrappers.ChunkedFileWrapper wrapper ? wrapper.getChunkedFile() : null;
           final var metadata = new JsonObject().put("schemaVersion", 1).put("signalDisplayMode", options.getSignalDisplayMode().name())
+            .put("diagonalMask", JsonObject.mapFrom(options.getDiagonalMask()))
             .put("expectedProfile", expected ? RenderCaptureRegistry.profileMetadata(fit.profile(), request.getLong("bpResolution"),
               request.getString("unit", "PIXELS").equals("PIXELS")) : null)
             .put("primaryNormalization", normalizationMetadata(primary.getChunkedFile(), options.isApplyCoolerWeights()))
@@ -873,8 +874,10 @@ public class TileHandlersHolder extends HandlersHolder {
         );
       }
       final var raw = selectedMatrixWithWeights.matrix();
+      final var mask = diagonalGrid(options.getDiagonalMask(), gridFile, selectedMatrixWithWeights,
+        QueryLengthUnit.PIXELS, sampleFactor);
       for (int r = 0; r < raw.rows(); r++) for (int c = 0; c < raw.cols(); c++)
-        tileSignals.raw.accept(raw.getAsDouble(r, c));
+        if (mask == null || !mask.contains(r, c)) tileSignals.raw.accept(raw.getAsDouble(r, c));
       final BufferedImage sourceImage;
       // Expected views bypass only the PRIMARY graph. Identity percentages and
       // custom secondary processing remain unchanged, and OBSERVED reuses the graph.
@@ -888,7 +891,10 @@ public class TileHandlersHolder extends HandlersHolder {
           requestedSource,
           track1DManager,
           tileSignals,
-          sampleFactor
+          sampleFactor,
+          QueryLengthUnit.PIXELS,
+          null,
+          mask
         );
       } else {
         final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
@@ -898,8 +904,9 @@ public class TileHandlersHolder extends HandlersHolder {
           selectedMatrixWithWeights,
           options,
           selectedExpectedProfile,
-          tileSignals::traditional
+          values -> tileSignals.traditional(values, mask == null ? null : mask::contains)
         );
+        if (mask != null) mask.clear(sourceImage);
       }
       return encodeTileImage(
         padTileImage(sourceImage, selectedMatrixWithWeights, startRowPx, startColPx, tileHeight, tileWidth),
@@ -956,6 +963,8 @@ public class TileHandlersHolder extends HandlersHolder {
     } else {
       image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options, expectedProfile);
     }
+    final var mask = diagonalGrid(options.getDiagonalMask(), chunkedFile, matrixWithWeights, QueryLengthUnit.PIXELS, 1);
+    if (mask != null) mask.clear(image);
     return encodeTileImage(
       padTileImage(image, matrixWithWeights, startRowPx, startColPx, tileHeight, tileWidth),
       format,
@@ -980,13 +989,18 @@ public class TileHandlersHolder extends HandlersHolder {
         file, resolution, rowStartBp, rowEndBp, colStartBp, colEndBp, () -> Thread.currentThread().isInterrupted());
       if (pipeline.enabled() && (!"PRIMARY".equals(source) || options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED)) {
         image = projection.renderTriangles((matrix, upper) -> renderPipelineSingleSourceTile(
-          file, matrix, options, pipeline, source, tracks, null, 1, QueryLengthUnit.BINS, upper));
+          file, matrix, options, pipeline, source, tracks, null, 1, QueryLengthUnit.BINS, upper, null));
       } else {
         image = projection.render(matrix -> {
           final var expected = "PRIMARY".equals(source) ? capturedExpectedProfile(capture, map, file, matrix, options, false) : null;
           return file.tileVisualizationProcessor().visualizeTile(matrix, options, expected);
         });
       }
+    }
+    if (options.getDiagonalMask().enabled()) {
+      final var rowBp = contiguousAxis(rowStartBp, image.getHeight());
+      final var colBp = contiguousAxis(colStartBp, image.getWidth());
+      new DiagonalGrid(rowBp, colBp, options.getDiagonalMask().maskedOffsetBins(1)).clear(image);
     }
     // Native-cell histogram counts would misdescribe the expanded display. Keep
     // source contrast limits, but do not publish native sample counts as base samples.
@@ -999,6 +1013,65 @@ public class TileHandlersHolder extends HandlersHolder {
     return new TileResponsePayload(encoded.contentType(), encoded.jsonBody() == null ? null
       : new JsonObject(encoded.jsonBody()).put("displayGrid", grid).encode(), encoded.binaryBody(),
       Map.of("x-hict-display-grid", "SEQUENCE_BP", "x-hict-source-bp-resolution", Long.toString(nativeBp)));
+  }
+
+  record DiagonalGrid(long[] rows, long[] columns, long maxOffset) {
+    boolean contains(int row, int column) {
+      return Math.abs(rows[row] - columns[column]) <= maxOffset;
+    }
+
+    void clear(BufferedImage image) {
+      final int width = Math.min(columns.length, image.getWidth());
+      final int height = Math.min(rows.length, image.getHeight());
+      for (int row = 0; row < height; row++) {
+        for (int col = 0; col < width; col++) {
+          if (contains(row, col)) image.setRGB(col, row, 0);
+        }
+      }
+    }
+  }
+
+  private static long[] contiguousAxis(long start, int length) {
+    final var axis = new long[length];
+    for (int i = 0; i < length; i++) axis[i] = start + i;
+    return axis;
+  }
+
+  private static @Nullable DiagonalGrid diagonalGrid(
+    ru.itmo.ctlab.hict.hict_library.visualization.DiagonalMask mask,
+    ChunkedFile file,
+    ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights window,
+    QueryLengthUnit unit,
+    int sampleFactor
+  ) {
+    if (!mask.enabled()) return null;
+    final var resolution = window.resolutionDescriptor();
+    final long bp = file.getResolutions()[resolution.getResolutionOrderInArray()];
+    final long maxOffset = (mask.distanceBp() * sampleFactor - 1) / bp;
+    final long axisLength = file.getContigTree().getLengthInUnits(unit, resolution);
+    return new DiagonalGrid(
+      diagonalAxis(file, resolution, unit, window.startRowIncl(), window.matrix().rows(), sampleFactor, axisLength),
+      diagonalAxis(file, resolution, unit, window.startColIncl(), window.matrix().cols(), sampleFactor, axisLength),
+      maxOffset
+    );
+  }
+
+  private static long[] diagonalAxis(ChunkedFile file, ResolutionDescriptor resolution, QueryLengthUnit unit,
+    long start, int size, int factor, long axisLength) {
+    if (unit == QueryLengthUnit.BINS) return contiguousAxis(start, size);
+    final var axis = new long[size];
+    long lastPixel = -1L;
+    long bin = 0;
+    for (int i = 0; i < size; i++) {
+      final long pixel = Math.floorDiv(start + i, factor);
+      if (pixel != lastPixel || i == 0) {
+        bin = file.convertUnits(Math.max(0, Math.min(pixel, axisLength)), resolution,
+          QueryLengthUnit.PIXELS, resolution, QueryLengthUnit.BINS);
+        lastPixel = pixel;
+      }
+      axis[i] = bin * factor + Math.floorMod(start + i, factor);
+    }
+    return axis;
   }
 
   private static int tileEdge(String raw, String name) {
@@ -1242,6 +1315,12 @@ public class TileHandlersHolder extends HandlersHolder {
     final var rawMatrix = matrixWithWeights.matrix();
     final var rowCount = rawMatrix.rows();
     final var columnCount = rawMatrix.cols();
+    final boolean maskedValues = request.getBoolean("respectDiagonalMask", false);
+    final boolean tileStatistics = request.getBoolean("includeTileStatistics", false);
+    final var mask = statisticsOnly || tileStatistics || maskedValues
+      ? diagonalGrid(options.getDiagonalMask(), requestedChunkedFile, matrixWithWeights,
+        visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, 1)
+      : null;
     final long elementCount = (long) rowCount * (long) columnCount;
     if (elementCount > MAX_MATRIX_QUERY_ELEMENTS) {
       throw new IllegalArgumentException(
@@ -1306,6 +1385,7 @@ public class TileHandlersHolder extends HandlersHolder {
       for (int row = 0; row < rowCount; row++) {
         if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
         for (int col = 0; col < columnCount; col++) {
+          if (mask != null && mask.contains(row, col)) continue;
           final double value = signalMatrix == null ? rawMatrix.getAsDouble(row, col) : signalMatrix[row][col];
           if (Double.isFinite(value)) {
             min = Math.min(min, value);
@@ -1323,10 +1403,11 @@ public class TileHandlersHolder extends HandlersHolder {
     final String headerCoordinateSuffix = visibleOnly ? "px" : "bin";
     final String jsonCoordinateSuffix = visibleOnly ? "Px" : "Bin";
     final var headers = new HashMap<String, String>();
-    if (request.getBoolean("includeTileStatistics", false)) {
+    if (tileStatistics) {
       final var tileSignals = new TileSignalStatistics();
       final var processed = tileSignals.signal("");
       for (int r = 0; r < rowCount; r++) for (int c = 0; c < columnCount; c++) {
+        if (mask != null && mask.contains(r, c)) continue;
         final double raw = rawMatrix.getAsDouble(r, c);
         tileSignals.raw.accept(raw);
         processed.accept(signalMatrix == null ? raw : signalMatrix[r][c]);
@@ -1346,6 +1427,7 @@ public class TileHandlersHolder extends HandlersHolder {
     headers.put("x-hict-end-row-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startRowIncl() + rowCount));
     headers.put("x-hict-start-col-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startColIncl()));
     headers.put("x-hict-end-col-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startColIncl() + columnCount));
+    final var valueMask = maskedValues ? mask : null;
 
     if (format == MatrixResponseFormat.JSON) {
       final var payload = new JsonObject()
@@ -1361,16 +1443,16 @@ public class TileHandlersHolder extends HandlersHolder {
       if (signalMode == MatrixSignalMode.RAW_COUNTS) {
         if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.DoubleMatrix doubleMatrix) {
           payload.put("dtype", "float64");
-          payload.put("values", flattenDoubleMatrix(doubleMatrix.values(), rowCount, columnCount));
+          payload.put("values", flattenDoubleMatrix(doubleMatrix.values(), rowCount, columnCount, valueMask));
         } else if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix longMatrix) {
           payload.put("dtype", "int64");
-          payload.put("values", flattenLongMatrix(longMatrix.values(), rowCount, columnCount));
+          payload.put("values", flattenLongMatrix(longMatrix.values(), rowCount, columnCount, valueMask));
         } else {
           throw new IllegalStateException("Unsupported raw matrix type: " + rawMatrix.getClass().getName());
         }
       } else {
         payload.put("dtype", "float64");
-        payload.put("values", flattenDoubleMatrix(signalMatrix, rowCount, columnCount));
+        payload.put("values", flattenDoubleMatrix(signalMatrix, rowCount, columnCount, valueMask));
       }
       if (includeWeights) {
         payload.put("rowWeights", toJsonArray(matrixWithWeights.rowWeights(), rowCount));
@@ -1391,6 +1473,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
     switch (format) {
       case BINARY_INT64 -> {
+        if (valueMask != null) throw new IllegalArgumentException("Masked values require JSON or floating-point output");
         final byte[] binary;
         if (signalMode == MatrixSignalMode.RAW_COUNTS) {
           if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix longMatrix) {
@@ -1408,13 +1491,13 @@ public class TileHandlersHolder extends HandlersHolder {
       case BINARY_FLOAT64 -> {
         headers.put("x-hict-dtype", "float64");
         final var source = signalMode == MatrixSignalMode.RAW_COUNTS ? toDoubleMatrix(rawMatrix) : signalMatrix;
-        final var binary = encodeDoubleMatrixLittleEndian(source, rowCount, columnCount);
+        final var binary = encodeDoubleMatrixLittleEndian(source, rowCount, columnCount, valueMask);
         return new MatrixResponsePayload("application/octet-stream", null, Buffer.buffer(binary), headers);
       }
       case BINARY_FLOAT32 -> {
         headers.put("x-hict-dtype", "float32");
         final var source = signalMode == MatrixSignalMode.RAW_COUNTS ? toDoubleMatrix(rawMatrix) : signalMatrix;
-        final var binary = encodeFloatMatrixLittleEndian(source, rowCount, columnCount);
+        final var binary = encodeFloatMatrixLittleEndian(source, rowCount, columnCount, valueMask);
         return new MatrixResponsePayload("application/octet-stream", null, Buffer.buffer(binary), headers);
       }
       default -> throw new IllegalStateException("Unsupported matrix response format: " + format);
@@ -1838,23 +1921,25 @@ public class TileHandlersHolder extends HandlersHolder {
     return result;
   }
 
-  private static byte[] encodeFloatMatrixLittleEndian(final double[][] matrix, final int rows, final int cols) {
+  private static byte[] encodeFloatMatrixLittleEndian(final double[][] matrix, final int rows, final int cols,
+    @Nullable DiagonalGrid mask) {
     final var bb = ByteBuffer.allocate(rows * cols * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
     for (int row = 0; row < rows; row++) {
       final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        bb.putFloat((float) sourceRow[col]);
+        bb.putFloat(mask != null && mask.contains(row, col) ? Float.NaN : (float) sourceRow[col]);
       }
     }
     return bb.array();
   }
 
-  private static byte[] encodeDoubleMatrixLittleEndian(final double[][] matrix, final int rows, final int cols) {
+  private static byte[] encodeDoubleMatrixLittleEndian(final double[][] matrix, final int rows, final int cols,
+    @Nullable DiagonalGrid mask) {
     final var bb = ByteBuffer.allocate(rows * cols * Double.BYTES).order(ByteOrder.LITTLE_ENDIAN);
     for (int row = 0; row < rows; row++) {
       final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        bb.putDouble(sourceRow[col]);
+        bb.putDouble(mask != null && mask.contains(row, col) ? Double.NaN : sourceRow[col]);
       }
     }
     return bb.array();
@@ -1891,23 +1976,25 @@ public class TileHandlersHolder extends HandlersHolder {
     return result;
   }
 
-  private static ArrayList<Double> flattenDoubleMatrix(final double[][] matrix, final int rows, final int cols) {
+  private static ArrayList<Double> flattenDoubleMatrix(final double[][] matrix, final int rows, final int cols,
+    @Nullable DiagonalGrid mask) {
     final var result = new ArrayList<Double>(rows * cols);
     for (int row = 0; row < rows; row++) {
       final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        result.add(Double.isFinite(sourceRow[col]) ? sourceRow[col] : null);
+        result.add((mask == null || !mask.contains(row, col)) && Double.isFinite(sourceRow[col]) ? sourceRow[col] : null);
       }
     }
     return result;
   }
 
-  private static ArrayList<Long> flattenLongMatrix(final long[][] matrix, final int rows, final int cols) {
+  private static ArrayList<Long> flattenLongMatrix(final long[][] matrix, final int rows, final int cols,
+    @Nullable DiagonalGrid mask) {
     final var result = new ArrayList<Long>(rows * cols);
     for (int row = 0; row < rows; row++) {
       final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        result.add(sourceRow[col]);
+        result.add(mask != null && mask.contains(row, col) ? null : sourceRow[col]);
       }
     }
     return result;
@@ -2369,24 +2456,13 @@ public class TileHandlersHolder extends HandlersHolder {
     return image;
   }
 
-  private @NotNull BufferedImage renderPipelineSingleSourceTile(final @NotNull ChunkedFile sourceChunkedFile,
-                                                                final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrixWithWeights,
-                                                                final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
-                                                                final @NotNull RenderPipelineConfig pipelineConfig,
-                                                                final @NotNull String sourceName,
-                                                                final Track1DManager track1DManager,
-                                                                final TileSignalStatistics tileSignals,
-                                                                final int sampleFactor) {
-    return renderPipelineSingleSourceTile(sourceChunkedFile, matrixWithWeights, options, pipelineConfig,
-      sourceName, track1DManager, tileSignals, sampleFactor, QueryLengthUnit.PIXELS, null);
-  }
-
   private @NotNull BufferedImage renderPipelineSingleSourceTile(
     ChunkedFile sourceChunkedFile,
     ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrixWithWeights,
     ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
     RenderPipelineConfig pipelineConfig, String sourceName, Track1DManager track1DManager,
-    @Nullable TileSignalStatistics tileSignals, int sampleFactor, QueryLengthUnit coordinateUnit, @Nullable Boolean upperTriangle
+    @Nullable TileSignalStatistics tileSignals, int sampleFactor, QueryLengthUnit coordinateUnit,
+    @Nullable Boolean upperTriangle, @Nullable DiagonalGrid mask
   ) {
     final var values = matrixWithWeights.matrix();
     final var rowCount = values.rows();
@@ -2503,7 +2579,7 @@ public class TileHandlersHolder extends HandlersHolder {
           rowPx < 0L || rowPx / sampleFactor >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
         final var colOutside =
           colPx < 0L || colPx / sampleFactor >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
-        if (rowOutside || colOutside) {
+        if (rowOutside || colOutside || (mask != null && mask.contains(row, col))) {
           rgba[pixelIndex++] = 0x00000000;
           continue;
         }

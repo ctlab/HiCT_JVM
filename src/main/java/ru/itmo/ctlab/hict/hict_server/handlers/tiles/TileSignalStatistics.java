@@ -60,11 +60,22 @@ public final class TileSignalStatistics {
   public record Snapshot(String source, long bpResolution, String revision, Range raw, List<Signal> processed,
                          String countSemantics) {}
   public final Accumulator raw = new Accumulator();
+  @FunctionalInterface
+  public interface PixelMask {
+    boolean contains(int row, int column);
+  }
   private final LinkedHashMap<String, Accumulator> processed = new LinkedHashMap<>();
   public Accumulator signal(String expression) { return processed.computeIfAbsent(expression, key -> new Accumulator()); }
   public void traditional(double[][] values) {
+    traditional(values, null);
+  }
+  public void traditional(double[][] values, PixelMask mask) {
     final var accumulator = signal("");
-    for (final var row : values) for (final var value : row) accumulator.accept(value);
+    for (int row = 0; row < values.length; row++) {
+      for (int col = 0; col < values[row].length; col++) {
+        if (mask == null || !mask.contains(row, col)) accumulator.accept(values[row][col]);
+      }
+    }
   }
   public Snapshot snapshot(String source, long bpResolution, String revision) {
     return new Snapshot(source, bpResolution, revision, raw.snapshot(), processed.entrySet().stream()

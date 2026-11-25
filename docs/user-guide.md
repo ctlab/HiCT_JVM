@@ -107,6 +107,10 @@ of the slider and histogram. Displayed signal changes the values used to color
 the map. Drag the square curve handles up or down to change the color at and
 beyond the Lower and Upper limits. Square-root coverage uses a single
 whole-map domain at each resolution. Bins without contacts remain empty.
+In Advanced, use **Ignore values near the diagonal** to hide nearby contacts
+and exclude them from displayed signal statistics. Enter the distance in bp,
+kb or Mb. Figures preserve the mask and record its distance in their metadata.
+Data exports retain the original contacts.
 When two sources are open, choose **Primary** or **Secondary** in Visualization
 before setting Normalization. For example, use square-root coverage for the
 Hi-C contacts while a ModDotPlot keeps its sequence scores. Sessions remember

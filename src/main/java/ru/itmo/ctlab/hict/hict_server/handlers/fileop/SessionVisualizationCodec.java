@@ -5,8 +5,10 @@ import io.vertx.core.json.JsonObject;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
+import ru.itmo.ctlab.hict.hict_library.visualization.DiagonalMask;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.SimpleLinearGradientDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
 import java.awt.Color;
 
 /** Lossless session representation, separate from the legacy UI color-string DTO. */
@@ -21,12 +23,15 @@ public final class SessionVisualizationCodec {
       .put("minSignal", gradient.getMinSignal()).put("maxSignal", gradient.getMaxSignal());
     if (gradient.getCurve() != null) palette.put("curve",new JsonArray(gradient.getCurve()));
     if (gradient.getGamma() != 1.0d) palette.put("gamma", gradient.getGamma());
-    return new JsonObject().put("preLogBase", options.getPreLogBase()).put("postLogBase", options.getPostLogBase())
+    final var encoded = new JsonObject().put("preLogBase", options.getPreLogBase()).put("postLogBase", options.getPostLogBase())
       .put("applyCoolerWeights", options.isApplyCoolerWeights()).put("resolutionScaling", options.isResolutionScaling())
       .put("resolutionLinearScaling", options.isResolutionLinearScaling()).put("autoThresholdEnabled", options.isAutoThresholdEnabled())
       .put("autoThresholdQuantile", options.getAutoThresholdQuantile()).put("signalDisplayMode", options.getSignalDisplayMode().name())
       .put("coolerWeightsNaNPolicy", options.getCoolerWeightsNaNPolicy().name())
       .put("colormap", palette);
+    if (!DiagonalMask.DEFAULT.equals(options.getDiagonalMask()))
+      encoded.put("diagonalMask", JsonObject.mapFrom(options.getDiagonalMask()));
+    return encoded;
   }
 
   public static SimpleVisualizationOptions decode(JsonObject json) {
@@ -47,7 +52,8 @@ public final class SessionVisualizationCodec {
     return new SimpleVisualizationOptions(pre, post, bool(json, "applyCoolerWeights"), bool(json, "resolutionScaling"),
       bool(json, "resolutionLinearScaling"), bool(json, "autoThresholdEnabled"), quantile, mode, policy,
       new SimpleLinearGradient((int)bits, color(gradient, "startColor"), color(gradient, "endColor"), min, max,
-        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d, SimpleLinearGradientDTO.readCurve(gradient)));
+        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d, SimpleLinearGradientDTO.readCurve(gradient)),
+      VisualizationOptionsDTO.readDiagonalMask(json));
   }
 
   private static JsonArray color(Color color) {
