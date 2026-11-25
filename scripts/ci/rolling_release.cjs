@@ -45,12 +45,28 @@ async function verifyVersionedTarget({ github, context, tag, allowMissing = fals
   try {
     ({ data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` }));
   } catch (error) {
-    if (allowMissing && error.status === 404) return;
+    if (allowMissing && error.status === 404) return false;
     throw error;
   }
   if (ref.object.type !== 'commit' || ref.object.sha !== context.sha) {
     throw new Error(`Release tag ${tag} does not point to ${context.sha}`);
   }
+  return true;
+}
+
+async function ensureVersionedTarget({ github, context, tag }) {
+  const target = { github, context, tag };
+  if (await verifyVersionedTarget({ ...target, allowMissing: true })) return;
+  try {
+    await github.rest.git.createRef({ ...context.repo, ref: `refs/tags/${tag}`, sha: context.sha });
+  } catch (error) {
+    if (error.status === 403) {
+      throw new Error(`GitHub cannot create ${tag} at ${context.sha} with the workflow token. Create that exact tag with an authorized Git push and retry the failed publication job.`, { cause: error });
+    }
+    if (error.status !== 409 && error.status !== 422) throw error;
+  }
+  // Check the result even when a concurrent publisher created the ref first.
+  await verifyVersionedTarget(target);
 }
 
 async function verifyAssets({ github, context, tag, releaseId, directory, exact = false }) {
@@ -99,4 +115,4 @@ async function prune({ github, context, tag, releaseId, previousAssets, director
   }
 }
 
-module.exports = { prepare, prune, verifyAssets, verifyVersionedTarget };
+module.exports = { ensureVersionedTarget, prepare, prune, verifyAssets, verifyVersionedTarget };

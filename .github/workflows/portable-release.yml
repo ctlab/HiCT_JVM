@@ -2434,14 +2434,14 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
 
-      - name: Inspect versioned jvm-sfx-native target
+      - name: Ensure the versioned jvm-sfx-native tag points to the build
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         uses: actions/github-script@v8
         with:
           script: |
-            const { verifyVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
-            await verifyVersionedTarget({
-              github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG, allowMissing: true,
+            const { ensureVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
+            await ensureVersionedTarget({
+              github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
             });
 
       - name: Publish versioned jvm-sfx-native prerelease
@@ -2449,7 +2449,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.collect-assets.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
           name: HiCT ${{ env.HICT_BUILD_VERSION }} (jvm-sfx-native)
           body_path: release-body.md
           prerelease: true
