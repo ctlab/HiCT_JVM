@@ -103,6 +103,35 @@ def main():
                 selected = page.evaluate(read_scopes)
                 assert all(selected[axis]['kind'] == 'selection' and len(selected[axis]['contigIds']) == 2
                            for axis in ('row','column')), selected
+                read_detail = """() => {
+                    const manager = window.__hictBenchmark.manager();
+                    const view = manager.getView();
+                    const display = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
+                    return {resolution: view.getResolution(), finest: view.getMinResolution(),
+                            bp: display.bpResolution, grid: display.displayGrid};
+                }"""
+                for control in (
+                    page.get_by_role('button', name='Zoom in', exact=True),
+                    page.locator('.ol-zoom-in'),
+                ):
+                    detail = page.evaluate(read_detail)
+                    for _ in range(12):
+                        if detail['resolution'] <= detail['finest'] * (1 + 1e-9):
+                            break
+                        control.click()
+                        check.settle()
+                        next_detail = page.evaluate(read_detail)
+                        assert next_detail['resolution'] < detail['resolution'], (detail, next_detail)
+                        assert next_detail['bp'] <= detail['bp'], (detail, next_detail)
+                        assert page.evaluate(read_scopes) == selected
+                        detail = next_detail
+                    assert detail['grid'] == 'SEQUENCE_BP' and detail['bp'] == 1, detail
+                    assert detail['resolution'] <= detail['finest'] * (1 + 1e-9), detail
+                    control.click()
+                    check.settle()
+                    assert page.evaluate(read_detail) == detail
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
+                    check.settle()
                 scope('row','All rows')
                 scope('column','All columns')
                 restored = page.evaluate(read_scopes)
