@@ -19,6 +19,26 @@ def cpu_ticks(pid):
     return int(fields[11]) + int(fields[12])
 
 
+def measure_window(page, requests, seconds, server_pid):
+    baseline = requests.copy()
+    cpu_before = cpu_ticks(server_pid) if server_pid else None
+    started = time.monotonic()
+    page.wait_for_timeout(seconds * 1000)
+    elapsed = time.monotonic() - started
+    status_requests = requests["coverage"] - baseline["coverage"]
+    server_cpu_pct = None
+    if cpu_before is not None:
+        ticks = cpu_ticks(server_pid) - cpu_before
+        server_cpu_pct = 100 * ticks / os.sysconf("SC_CLK_TCK") / elapsed
+    return {
+        "idle_seconds": elapsed,
+        "status_requests": status_requests,
+        "status_per_s": status_requests / elapsed,
+        "all_per_s": (requests["all"] - baseline["all"]) / elapsed,
+        "server_cpu_pct": server_cpu_pct,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("api", "url", "file", "output"):
@@ -58,29 +78,24 @@ def main():
             if prompt.is_visible():
                 prompt.click()
                 check.settle()
-            baseline = requests.copy()
-            cpu_before = cpu_ticks(args.server_pid) if args.server_pid else None
-            started = time.monotonic()
-            page.wait_for_timeout(args.seconds * 1000)
-            elapsed = time.monotonic() - started
-            status_requests = requests["coverage"] - baseline["coverage"]
+            # The JVM can finish compiling map-opening code after the first
+            # paint. Measure that window too, and gate CPU on steady-state idle.
+            startup = None
+            if args.server_pid is not None:
+                startup = measure_window(page, requests, args.seconds, args.server_pid)
             result = {
                 "file": args.file,
-                "idle_seconds": elapsed,
-                "status_requests": status_requests,
-                "status_per_s": status_requests / elapsed,
-                "all_per_s": (requests["all"] - baseline["all"]) / elapsed,
-                "server_cpu_pct": None,
+                **measure_window(page, requests, args.seconds, args.server_pid),
                 "page_errors": check.errors,
             }
-            if cpu_before is not None:
-                ticks = cpu_ticks(args.server_pid) - cpu_before
-                result["server_cpu_pct"] = 100 * ticks / os.sysconf("SC_CLK_TCK") / elapsed
+            if startup is not None:
+                result["post_open_window"] = startup
             receipt = json.dumps(result, indent=2) + "\n"
             (output / "result.json").write_text(receipt)
             print(receipt, end="")
             assert result["status_per_s"] <= 0.1, result
-            if cpu_before is not None:
+            if startup is not None:
+                assert startup["status_per_s"] <= 0.1, result
                 assert result["server_cpu_pct"] < 2, result
             assert not check.errors, check.errors
         finally:

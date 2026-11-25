@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Record map startup and sustained idle CPU separately in the Linux browser check.
 - Provide stable Main and Development download links alongside versioned releases.
 - Save and restore isolated coordinate regions and contig selections in sessions.
 - Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
