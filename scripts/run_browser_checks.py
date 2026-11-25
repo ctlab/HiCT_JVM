@@ -50,6 +50,7 @@ def main():
         "check_figure_print_size_browser.py": False,
         "check_visualization_transactions_browser.py": True,
         "check_tracks_workspace_browser.py": True,
+        "check_bed_strand_arrows_browser.py": True,
         "check_responsive_workspace_browser.py": True,
         "check_selection_modes_browser.py": True,
         "check_expected_figure_browser.py": False,

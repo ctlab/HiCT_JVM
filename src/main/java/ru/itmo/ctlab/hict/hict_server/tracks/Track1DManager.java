@@ -75,6 +75,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 @Slf4j
@@ -3736,6 +3737,10 @@ public class Track1DManager implements AutoCloseable {
       return lo;
     }
 
+    private static final Pattern BED_TRACK_SETTING = Pattern.compile(
+      "([a-zA-Z][a-zA-Z0-9_]*)=(?:\"([^\"]*)\"|(\\S+))"
+    );
+
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
@@ -3745,10 +3750,21 @@ public class Track1DManager implements AutoCloseable {
       final var report = new ParseReport();
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
+        String trackRgb = null;
         long lineNo = 0L;
         while ((line = reader.readLine()) != null) {
           lineNo++;
-          if (line.isBlank() || line.startsWith("#") || line.startsWith("track ") || line.startsWith("browser ")) {
+          if (line.startsWith("track ")) {
+            trackRgb = null;
+            final var settings = BED_TRACK_SETTING.matcher(line);
+            while (settings.find()) {
+              if (settings.group(1).equals("color")) {
+                trackRgb = settings.group(2) != null ? settings.group(2) : settings.group(3);
+              }
+            }
+            continue;
+          }
+          if (line.isBlank() || line.startsWith("#") || line.startsWith("browser ")) {
             continue;
           }
           final var fields = line.split("\t");
@@ -3831,6 +3847,9 @@ public class Track1DManager implements AutoCloseable {
           }
           if (fields.length >= 9 && !fields[8].isBlank()) {
             attributes.put("itemRgb", fields[8]);
+          }
+          if (trackRgb != null) {
+            attributes.put("trackRgb", trackRgb);
           }
           if (fields.length >= 12) {
             attributes.put("blockCount", fields[9]);

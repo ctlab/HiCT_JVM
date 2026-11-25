@@ -91,6 +91,27 @@ class Track1DManagerValidationTest {
   }
 
   @Test
+  void bedTrackColorAndExplicitItemRgbRemainSeparate() throws Exception {
+    final var map = ReinforcementHdf5Fixture.create(tempDir, "color", List.of(4L));
+    final String content = """
+      track name=blue color="10, 20, 30"
+      tiny	0	4	file-color	0	+
+      tiny	4	8	item-color	0	-	4	8	200,50,0
+      track description="no color=200,200,200"
+      tiny	8	12	strand-color	0	-
+      """;
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(map, 1, 2)); var tracks = manager()) {
+      tracks.openTrack(write("colors.bed", content), null, null);
+      final var bins = tracks.querySequenceTracks(file, null, 0, 17, 100, 4).getTracks().getFirst().getBins();
+      assertEquals(3, bins.size());
+      assertEquals("10, 20, 30", bins.getFirst().getAttributes().get("trackRgb"));
+      assertEquals("10, 20, 30", bins.get(1).getAttributes().get("trackRgb"));
+      assertEquals("200,50,0", bins.get(1).getAttributes().get("itemRgb"));
+      assertTrue(!bins.getLast().getAttributes().containsKey("trackRgb"));
+    }
+  }
+
+  @Test
   void unplaceableRecordsAreSkippedAndListedWithLineNumbers() throws IOException {
     final var content = String.join("\n",
       "# header",

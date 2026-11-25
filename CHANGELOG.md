@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Render BED coding blocks, UTRs and directional intron chevrons on both axes and in figures, with file colors taking precedence over strand colors.
 - Put Slider scale beside Fit levels below the histogram and label the map's value transform Displayed signal.
 - Keep 1D tracks within their query limits when jumping to FASTA zoom with a dotplot open.
 - Show the custom rendering toggle only on the Observed tab, where it takes effect.
