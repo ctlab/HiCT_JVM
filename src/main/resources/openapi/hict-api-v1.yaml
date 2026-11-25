@@ -606,7 +606,10 @@ paths:
                   assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
                   renderPipeline: { type: object, additionalProperties: true }
                   tracks: { type: array, items: { type: object, additionalProperties: true } }
-                  workspace: { type: object, additionalProperties: true }
+                  workspace:
+                    type: object
+                    additionalProperties: true
+                    description: Saved workspace state can independently isolate rows and columns. A selection scope uses a nonempty half-open base-pair interval within the active assembly, or a list of unique contiguous contig IDs. Any supplied bounds for a contig selection must match its interval.
         '404': { description: No open map }
         '409': { description: Displayed assembly revision is stale }
   /session/restore:

@@ -751,7 +751,12 @@ class ApiHttpIntegrationTest {
     map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(visualization));
     var attach = new JsonObject(post("/attach", "{}").body());
     var workspaceVersion = attach.getJsonObject("workspaceVersion");
-    var view = new JsonObject().put("version", 1).put("center", new io.vertx.core.json.JsonArray().add(3).add(4));
+    var selection = new JsonObject().put("kind", "selection").put("label", "Selection");
+    var view = new JsonObject().put("version", 1).put("center", new io.vertx.core.json.JsonArray().add(3).add(4))
+      .put("axisScopes", new JsonObject()
+        .put("row", selection.copy().put("startBp", 2).put("endBp", 13))
+        .put("column", selection.copy().put("startBp", 0).put("endBp", 17)
+          .put("contigIds", new io.vertx.core.json.JsonArray().add(0))));
     assertEquals(200, post("/workspace/state", new JsonObject().put("filename", "primary.hict.hdf5")
       .put("expectedVersion", workspaceVersion).put("state", view).encode()).statusCode());
 

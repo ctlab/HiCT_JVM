@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Save and restore isolated coordinate regions and contig selections in sessions.
 - Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
 - Show Print width and Label size together. Offer larger labels when the smallest text may be unreadable in print.
 - Confirm expensive selection exports and clipboard copies with the sampled bin count and figure dimensions.

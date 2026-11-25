@@ -115,9 +115,13 @@ public final class SessionSnapshotDecoder {
       for (String axis : new String[]{"row", "column"}) {
         String field = path + ".axisScopes." + axis;
         var scope = object(scopes, axis, path + ".axisScopes");
-        String kind = choice(scope, "kind", field, "all", "contig", "scaffold");
+        String kind = choice(scope, "kind", field, "all", "contig", "scaffold", "selection");
         string(scope, "label", field, false);
         if (kind.equals("all")) continue;
+        if (kind.equals("selection")) {
+          selectionScope(scope, field, assembly.getJsonArray("contigDescriptors"));
+          continue;
+        }
         long id = integer(scope, "id", field, 0, MAX_INTEGER);
         var descriptors = assembly.getJsonArray(kind.equals("contig") ? "contigDescriptors" : "scaffoldDescriptors");
         boolean found = false;
@@ -143,6 +147,41 @@ public final class SessionSnapshotDecoder {
         if (!found) fail(field + ".id", "references a missing component");
       }
     }
+  }
+
+  private static void selectionScope(JsonObject scope, String path, JsonArray contigs) {
+    var selected = new HashSet<Long>();
+    if (scope.containsKey("contigIds")) {
+      var ids = array(scope, "contigIds", path);
+      for (int i = 0; i < ids.size(); i++) {
+        String field = path + ".contigIds[" + i + "]";
+        if (!selected.add(integer(ids.getValue(i), field, 0, Integer.MAX_VALUE)))
+          fail(field, "duplicate contig ID");
+      }
+    }
+    long length = 0;
+    long selectionStart = -1;
+    long selectionEnd = -1;
+    int matches = 0;
+    for (int i = 0; i < contigs.size(); i++) {
+      var contig = contigs.getJsonObject(i);
+      long end = length + contig.getLong("contigLengthBp");
+      if (selected.contains(contig.getLong("contigId"))) {
+        if (matches == 0) selectionStart = length;
+        else if (selectionEnd != length) fail(path + ".contigIds", "contigs must be contiguous");
+        selectionEnd = end;
+        matches++;
+      }
+      length = end;
+    }
+    if (selected.isEmpty()) {
+      long start = integer(scope, "startBp", path, 0, length);
+      integer(scope, "endBp", path, start + 1, length);
+      return;
+    }
+    if (matches != selected.size()) fail(path + ".contigIds", "references a missing contig");
+    if (scope.containsKey("startBp")) integer(scope, "startBp", path, selectionStart, selectionStart);
+    if (scope.containsKey("endBp")) integer(scope, "endBp", path, selectionEnd, selectionEnd);
   }
 
   private static void source(JsonObject source, String path, int snapshotVersion) {
@@ -317,12 +356,15 @@ public final class SessionSnapshotDecoder {
     return ((Number)parent.getValue(key)).doubleValue();
   }
   private static long integer(JsonObject parent, String key, String path, long min, long max) {
-    number(parent, key, path);
+    return integer(parent.getValue(key), path + "." + key, min, max);
+  }
+  private static long integer(Object raw, String path, long min, long max) {
+    if (!(raw instanceof Number n) || !Double.isFinite(n.doubleValue())) fail(path, "expected a finite number");
     try {
-      long value = new BigDecimal(parent.getValue(key).toString()).longValueExact();
-      if (value < min || value > max) fail(path + "." + key, "integer is out of range");
+      long value = new BigDecimal(raw.toString()).longValueExact();
+      if (value < min || value > max) fail(path, "integer is out of range");
       return value;
-    } catch (ArithmeticException | NumberFormatException invalid) { fail(path + "." + key, "expected an exact integer"); return 0; }
+    } catch (ArithmeticException | NumberFormatException invalid) { fail(path, "expected an exact integer"); return 0; }
   }
   private static String choice(JsonObject parent, String key, String path, String... choices) {
     String value = string(parent, key, path, false);
