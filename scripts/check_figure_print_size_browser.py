@@ -178,7 +178,8 @@ def main():
                     larger_labels.focus()
                     larger_labels.press("Enter")
                     expect(label_size).to_have_value("auto")
-                    readable = dialog.get_by_role("status").filter(has_text="Smallest export text: 6.0 pt")
+                    readable = dialog.get_by_role("status").filter(has_text="Smallest export text:")
+                    expect(readable).to_contain_text("6.0 pt")
                     expect(readable).to_be_focused()
                     enlarged = save("readable-22", "svg")
                     assert 5.95 <= smallest_svg_label_points(enlarged) <= 6.05
