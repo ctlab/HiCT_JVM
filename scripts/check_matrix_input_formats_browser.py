@@ -84,13 +84,15 @@ def main():
                             "checkbox", name="Select " + filename, exact=True
                         )
                     ).to_be_checked()
-                    converter.get_by_role("button", name="Continue", exact=True).click()
-                    converter.locator(
+                    threads = converter.locator(
                         'input[title="-1: automatic server CPU allocation"]'
-                    ).fill("1")
+                    )
+                    if not threads.is_visible():
+                        converter.locator("details.hict-advanced:not([open]) > summary").click()
+                    threads.fill("1")
                     with page.expect_response("**/convert/jobs/batch") as started:
                         converter.get_by_role(
-                            "button", name="Start", exact=True
+                            "button", name="Convert 1 file", exact=True
                         ).click()
                     assert started.value.ok, started.value.text()
                     job_ids = started.value.json()["jobIds"]
@@ -111,7 +113,7 @@ def main():
                     expect(
                         converter.locator(".overall-status .status-pill")
                     ).to_have_text("Finished")
-                    converter.get_by_role("button", name="Dismiss", exact=True).click()
+                    converter.get_by_role("button", name="Close", exact=True).last.click()
                     pick(converted)
                     page.wait_for_function(
                         "name=>window.__hictBenchmark.manager()?.getOptions().filename===name",

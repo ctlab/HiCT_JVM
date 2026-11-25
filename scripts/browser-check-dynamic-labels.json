@@ -21,7 +21,8 @@
     "check_batch_conversion_browser.py": "The conversion button inserts the current number of selected files."
   },
   "Convert 1 file": {
-    "check_batch_conversion_browser.py": "The conversion button inserts the current number of selected files."
+    "check_batch_conversion_browser.py": "The conversion button inserts the current number of selected files.",
+    "check_matrix_input_formats_browser.py": "The conversion button inserts the current number of selected files."
   },
   "Curve point 1": {
     "check_color_midpoint_browser.py": "Curve slider label uses the one-based point index."
@@ -31,6 +32,9 @@
   },
   "Genes": {
     "check_sequence_tracks_browser.py": "The test assigns this track display name."
+  },
+  "UX overlapping features feature rows": {
+    "check_sequence_result_feature_ux_browser.py": "The scroll region label includes the fixture track name."
   },
   "Move Renamed annotations down": {
     "check_tracks_workspace_browser.py": "Reorder label includes the renamed track."
