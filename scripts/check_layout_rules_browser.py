@@ -44,6 +44,22 @@ def check_layout(page, check, args):
 
     check.step("toolbar-buttons-can-be-reached", toolbar_hit_test)
 
+    def normalization_field():
+        select = page.get_by_role("combobox", name="Normalization", exact=True)
+        expect(select).to_be_in_viewport(ratio=1)
+        assert select.evaluate("""select => {
+            const label = select.labels[0].getBoundingClientRect();
+            const field = select.parentElement.getBoundingClientRect();
+            const control = select.getBoundingClientRect();
+            return control.top >= label.bottom
+                && control.top - label.bottom <= 4
+                && Math.abs(control.left - label.left) <= 1
+                && Math.abs(control.width - field.width) <= 1;
+        }""")
+        expect(page.locator("#gradient-apply-button")).to_be_in_viewport(ratio=1)
+
+    check.step("normalization-label-above-full-width-field", normalization_field)
+
     def set_region(row, column, length):
         page.evaluate("""([row, column, length]) => {
             const manager = window.__hictBenchmark.manager();
