@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
 - Zoom around the center with +, =, and − while the map has keyboard focus.
 - Show the packaged version and WebUI revision in About.
 - Hide contacts near the current assembly diagonal and exclude them from displayed statistics on request. Save the mask with presets, sessions and figures.

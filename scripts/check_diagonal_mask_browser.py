@@ -127,7 +127,7 @@ def main():
 
         distance.fill("0")
         distance.press("Tab")
-        expect(page.get_by_text("Enter a distance from 1 bp to 1,000 Mb.", exact=True)).to_be_visible()
+        expect(page.get_by_text("Enter a distance between 1 bp and 1 Gb.", exact=True)).to_be_visible()
         distance.fill("0.05 Mb")
         with page.expect_response("**/set_visualization_options") as changed:
             distance.press("Tab")

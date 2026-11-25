@@ -228,6 +228,19 @@ def check_layout(page, check, args):
             try:
                 expect(dialog).to_be_visible()
                 assert_dialog_fits(dialog)
+                if action in {
+                    "Open with options…", "Convert matrices…",
+                    "Export matrix…", "Dotplot from FASTA files…",
+                }:
+                    footer = dialog.locator(".hict-modal-footer")
+                    cancel = footer.get_by_role("button", name="Cancel", exact=True)
+                    expect(cancel).to_have_class("btn btn-outline-secondary")
+                    primary = footer.locator(".btn-primary").last.bounding_box()
+                    cancellation = cancel.bounding_box()
+                    assert primary["x"] > cancellation["x"]
+                    link = footer.locator(".btn-link")
+                    if link.count():
+                        assert link.bounding_box()["x"] < cancellation["x"]
                 page.keyboard.press("Escape")
                 expect(dialog).to_be_hidden()
             except AssertionError as failure:
