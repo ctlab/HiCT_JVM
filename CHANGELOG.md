@@ -9,7 +9,7 @@
 - Publish each branch preview once all platform files and checksums are verified.
 - Keep the opening wizard compact, label the current step, and put the primary and optional maps in reading order.
 - Put both visible bin sizes in the main Info overlay and figure notes, including the outgoing level while a finer overlay loads. Keep Apply accessible with both sources open.
-- Put the ModDotPlot storage estimate and its budget recovery action in one warning row.
+- Show the ModDotPlot storage estimate below the resolution controls. Keep the budget warning and its recovery action together on desktop.
 - Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
 - Zoom around the center with +, =, and − while the map has keyboard focus.
 - Show the packaged version and WebUI revision in About.
