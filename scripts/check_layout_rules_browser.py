@@ -45,19 +45,24 @@ def check_layout(page, check, args):
     check.step("toolbar-buttons-can-be-reached", toolbar_hit_test)
 
     def set_region(row, column, length):
-        return page.evaluate("""([row, column, length]) => {
+        page.evaluate("""([row, column, length]) => {
             const manager = window.__hictBenchmark.manager();
-            const layers = manager.viewAndLayersManager;
             const bounds = {rowStart:row, rowEnd:row+length, columnStart:column, columnEnd:column+length};
-            layers.setRegionBounds(bounds);
-            const grid = layers.currentViewState.resolutionDesciptor;
+            manager.viewAndLayersManager.setRegionBounds(bounds);
+        }""", [row, column, length])
+        return map_point(row + length/2, column + length/2)
+
+    def map_point(row, column):
+        return page.evaluate("""([row, column]) => {
+            const manager = window.__hictBenchmark.manager();
+            const grid = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
             const project = bp => manager.contigDimensionHolder.getFractionalPxOfBp(bp, grid.bpResolution)
                 * grid.pixelResolution;
             const map = manager.getMap();
-            const middle = map.getPixelFromCoordinate([project(column + length/2), -project(row + length/2)]);
+            const middle = map.getPixelFromCoordinate([project(column), -project(row)]);
             const viewport = map.getViewport().getBoundingClientRect();
             return [viewport.left+middle[0], viewport.top+middle[1]];
-        }""", [row, column, length])
+        }""", [row, column])
 
     def complete_region_label():
         set_region(0, 0, 364000)
@@ -69,26 +74,35 @@ def check_layout(page, check, args):
 
     check.step("complete-region-label-on-one-line", complete_region_label)
 
+    def menu_geometry(menu):
+        geometry = menu.evaluate("""menu => {
+            const bounds = menu.getBoundingClientRect();
+            const rows = menu.querySelectorAll(':scope > section:not(.child-menu) > [role=menuitem]');
+            return {
+                fits: bounds.left >= 7 && bounds.right <= innerWidth-7 && bounds.top >= 7
+                    && bounds.bottom <= innerHeight-7 && menu.scrollHeight <= menu.clientHeight+1,
+                width: bounds.width,
+                rows: rows.length,
+                rowHeights: [...rows].map(row => row.getBoundingClientRect().height),
+                labels: [...rows].map(row => row.getAttribute('aria-label') ??
+                    row.innerText.trim().replace(/\\s*›$/, "")),
+            };
+        }""")
+        assert geometry["fits"] and geometry["rows"] <= 9, geometry
+        return geometry
+
     def selection_analysis():
         position = set_region(100000, 100000, 80000)
         page.mouse.click(*position, button="right")
         menu = page.get_by_role("menu", name="Assembly actions")
         analyse = menu.get_by_role("menuitem", name="Analyse", exact=True)
         expect(analyse).to_be_visible()
-        geometry = menu.evaluate("""menu => {
-            const bounds = menu.getBoundingClientRect();
-            const groups = [...menu.querySelectorAll(':scope > section')];
-            const rows = group => group.querySelectorAll(':scope > [role=menuitem]').length;
-            return {
-                fits: bounds.left >= 0 && bounds.right <= innerWidth+1 && bounds.top >= 0
-                    && bounds.bottom <= innerHeight+1 && menu.scrollHeight <= menu.clientHeight+1,
-                rows: groups.reduce((count, group) => count+rows(group), 0),
-                regionRows: rows(menu.querySelector('[data-submenu=analyse]').parentElement),
-            };
-        }""")
+        geometry = menu_geometry(menu)
         (check.output / "context-menu.json").write_text(json.dumps(geometry, indent=2))
-        assert geometry["fits"] and geometry["rows"] <= 11 and geometry["regionRows"] <= 6, geometry
-        assert not menu.get_by_role("menuitem", name="Zoom to scaffold").count()
+        assert geometry["labels"][:6] == [
+            "Zoom to region", "Isolate view", "Edit", "Copy", "Export", "Analyse",
+        ], geometry
+        assert not menu.locator('[data-submenu="scaffold"]').count()
         expect(menu.get_by_role("menuitem").last).to_have_text("Move to unplaced (debris)…")
         copy = menu.get_by_role("menuitem", name="Copy", exact=True)
         copy.hover()
@@ -121,6 +135,69 @@ def check_layout(page, check, args):
 
     check.step("bounded-region-menu-and-moddotplot-defaults", selection_analysis)
 
+    def multi_entity_context():
+        manager = "window.__hictBenchmark.manager()"
+        for start, end in ((0, 800000), (800000, 1600000)):
+            page.evaluate(
+                f"([start,end]) => {manager}.viewAndLayersManager.selectEntityRangeByBp(start,end,'contig')",
+                [start, end],
+            )
+            with page.expect_response("**/group_contigs_into_scaffold") as grouped:
+                page.get_by_role("button", name="Group selection into scaffold", exact=True).click()
+            assert grouped.value.ok
+            check.settle()
+        page.mouse.click(*set_region(100000, 100000, 80000), button="right")
+        menu = page.get_by_role("menu", name="Assembly actions")
+        diagonal = menu_geometry(menu)
+        assert diagonal["rows"] == 9
+        assert abs(diagonal["width"] - 300) <= 4, diagonal
+        assert all(abs(height - 34.25) <= 4 for height in diagonal["rowHeights"]), diagonal
+        assert diagonal["labels"][6] == "Contig · one", diagonal
+        assert diagonal["labels"][7].startswith("Scaffold · "), diagonal
+        page.screenshot(path=str(check.output / "single-entity-region-menu.png"))
+        page.keyboard.press("Escape")
+        point = set_region(100000, 900000, 80000)
+        page.mouse.click(*point, button="right")
+        geometry = menu_geometry(menu)
+        assert geometry["rows"] == 9
+        assert geometry["labels"][-3:] == ["Contigs", "Scaffolds", "Move to unplaced (debris)…"], geometry
+        for group, selector in (("Contigs", "contig"), ("Scaffolds", "scaffold")):
+            trigger = menu.locator(f'[data-submenu="{selector}"]')
+            trigger.focus()
+            page.keyboard.press("ArrowRight")
+            child = menu.get_by_role("menu", name=group, exact=True)
+            expect(child).to_be_visible()
+            assert child.locator(".entity-title").count() == 2
+            expect(child.get_by_role("menuitem").first).to_be_focused()
+            assert_dialog_fits(child)
+            page.screenshot(path=str(check.output / f"{selector}-submenu.png"))
+            page.keyboard.press("ArrowLeft")
+            expect(child).to_be_hidden()
+            expect(trigger).to_be_focused()
+        danger = menu.get_by_role("menuitem", name="Move to unplaced (debris)…", exact=True)
+        danger.hover()
+        expect(menu.get_by_role("menu", name="Move to unplaced (debris)…", exact=True)
+               .get_by_role("menuitem")).to_have_count(2)
+        menu.get_by_role("menuitem", name="Isolate view", exact=True).click()
+        check.settle()
+        page.mouse.click(*map_point(140000, 940000), button="right")
+        menu.get_by_role("menuitem", name="Show whole map", exact=True).click()
+        check.settle()
+        assert page.evaluate(f"""() => Object.values({manager}.viewAndLayersManager.getAxisScopes())
+            .every(scope => scope.kind === 'all')""")
+        page.mouse.click(*map_point(140000, 140000), button="right")
+        without_region = menu_geometry(menu)
+        expect(menu.get_by_role("menuitem", name="Zoom to contig", exact=True)).to_be_visible()
+        menu.locator('[data-submenu="scaffold"]').hover()
+        expect(menu.locator(".child-menu").get_by_role(
+            "menuitem", name="Ungroup into singletons", exact=True
+        )).to_be_visible()
+        page.keyboard.press("Escape")
+        assert without_region["rows"] < geometry["rows"]
+        (check.output / "multi-entity-context-menu.json").write_text(json.dumps(geometry, indent=2))
+
+    check.step("multi-entity-submenus-and-restore-whole-map", multi_entity_context)
+
     def dialogs_fit():
         for menu, action in (
             ("File", "Open with options…"), ("File", "Convert matrices…"),
@@ -132,10 +209,13 @@ def check_layout(page, check, args):
         ):
             check.menu(menu, action)
             dialog = page.get_by_role("dialog").last
-            expect(dialog).to_be_visible()
-            assert_dialog_fits(dialog)
-            page.keyboard.press("Escape")
-            expect(dialog).to_be_hidden()
+            try:
+                expect(dialog).to_be_visible()
+                assert_dialog_fits(dialog)
+                page.keyboard.press("Escape")
+                expect(dialog).to_be_hidden()
+            except AssertionError as failure:
+                raise AssertionError(f"{menu} → {action}: {failure}") from failure
 
     check.step("dialogs-and-footers-fit", dialogs_fit)
 
@@ -158,7 +238,7 @@ def main():
     args = parser.parse_args()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        for width, height in ((1280, 720), (1440, 900)):
+        for width, height in ((1280, 720), (1366, 768), (1440, 900), (1920, 1080)):
             output = Path(args.output) / f"{width}x{height}"
             output.mkdir(parents=True)
             page = browser.new_page(viewport={"width": width, "height": height})
