@@ -89,6 +89,36 @@ def main():
             page.locator("#normalization-mode").select_option("none")
             page.locator("#signal-transform-linear").click()
             advanced = page.locator("#signal-advanced")
+            expect(advanced).not_to_have_attribute("open", "")
+            histogram = page.get_by_role("group", name="Viewport signal histogram")
+            scale = histogram.get_by_role("group", name="Slider scale", exact=True)
+            fit = histogram.get_by_role("button", name="Fit levels", exact=True)
+            displayed_signal = page.get_by_role(
+                "group", name="Displayed signal", exact=True
+            )
+            expect(scale).to_be_visible()
+            expect(fit).to_be_enabled()
+            expect(displayed_signal).to_be_visible()
+            plot_box = histogram.get_by_role("img").bounding_box()
+            scale_box = scale.bounding_box()
+            fit_box = fit.bounding_box()
+            assert plot_box["y"] + plot_box["height"] <= scale_box["y"]
+            assert scale_box["x"] + scale_box["width"] <= fit_box["x"]
+            assert abs(
+                (scale_box["y"] + scale_box["height"] / 2)
+                - (fit_box["y"] + fit_box["height"] / 2)
+            ) <= 1, (scale_box, fit_box)
+            caption_box = histogram.get_by_role("status").bounding_box()
+            processing_box = page.get_by_role(
+                "region", name="Signal processing", exact=True
+            ).bounding_box()
+            assert caption_box["y"] + caption_box["height"] <= processing_box["y"]
+            page.screenshot(path=str(output / "sidebar-controls-advanced-closed.png"))
+            results.append(
+                {
+                    "test": "Slider scale and Fit levels share a row beneath the histogram with Advanced closed"
+                }
+            )
             advanced.locator(":scope > summary").click()
             page.locator("#scaling-across-zoom").select_option("none")
             lower = page.get_by_label("Lower signal threshold", exact=True
@@ -163,7 +193,6 @@ def main():
             )
             graph = pipeline()
             thresholds = [lower.input_value(), upper.input_value()]
-            scale = page.get_by_role("group", name="Slider scale", exact=True)
             for mode in ("Log", "Linear"):
                 scale.get_by_role("button", name=mode, exact=True).click()
                 assert [lower.input_value(), upper.input_value()] == thresholds
