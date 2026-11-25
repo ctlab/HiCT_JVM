@@ -37,6 +37,8 @@ def main():
         "check_layout_rules_browser.py": [
             "--file", "structural.hict.hdf5", "--fasta", "structural.fa",
         ],
+        "check_isolation_zoom_browser.py": ["--file", "structural.hict.hdf5"],
+        "check_mixed_pyramids_browser.py": [],
         "check_workspace_controls_browser.py": [],
         "check_failed_primary_open_browser.py": [],
         "check_export_guidance_browser.py": ["--file", "structural.hict.hdf5"],
@@ -61,9 +63,10 @@ def main():
         scratch = Path(scratch)
         fixtures = scratch / "fixtures"
         fixtures.mkdir()
-        subprocess.run(["java", "--class-path", str(args.jar.resolve()),
-            str(ROOT / "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java"),
-            str(fixtures)], check=True)
+        fixture_source = ROOT / "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java"
+        fixture_command = ["java", "--class-path", str(args.jar.resolve()), str(fixture_source)]
+        subprocess.run([*fixture_command, str(fixtures)], check=True)
+        subprocess.run([*fixture_command, "mixed-pyramids", str(fixtures)], check=True)
         prepare_fixture(fixtures, args.jar)
         subprocess.run([
             sys.executable, str(SCRIPTS / "prepare_reinforcement_sources.py"),

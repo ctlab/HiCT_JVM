@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output"):
@@ -119,6 +119,23 @@ with sync_playwright() as pw:
             assert any(q.get("gridBpResolution") == [str(primary)] for q in requests), requests
             blue = landmark(f"{label}-{primary}-{iteration}", 960, 1001)
             results.append({"fixture": label, "view": primary, "state": state, "landmarkPixels": blue})
+            if label == "fine" and iteration == 1:
+                info_toggle = page.get_by_role("button", name="Map Info", exact=True)
+                was_visible = info_toggle.get_attribute("aria-pressed") == "true"
+                if not was_visible:
+                    info_toggle.click()
+                viewport = page.locator("#hic-contact-map .ol-viewport").bounding_box()
+                page.mouse.move(viewport["x"] + viewport["width"] * 0.4,
+                                viewport["y"] + viewport["height"] * 0.45)
+                info = page.locator(".ol-mouse-position")
+                more = info.get_by_role("button", name="More…", exact=True)
+                if more.is_visible():
+                    more.click()
+                expect(info).to_contain_text("Available resolutions: Primary 4 bp; Secondary 1 bp")
+                page.screenshot(path=str(output / "info-two-source-resolutions.png"))
+                results.append({"fixture": label, "infoResolutions": {"primary": 4, "secondary": 1}})
+                if not was_visible:
+                    info_toggle.click()
         if label == "disjoint":
             with page.expect_response(lambda r: r.url.endswith("/reverse_selection_range") and r.ok):
                 page.evaluate("""() => {

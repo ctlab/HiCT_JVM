@@ -9,6 +9,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import time
 from urllib.request import Request, urlopen
 
@@ -144,6 +145,15 @@ class BrowserCheck:
                 self.errors.append(message.text) if message.type == "error" else None
             ),
         )
+        page.on("requestfailed", lambda request: self.report_request_failure(request, request.failure))
+        page.on("response", lambda response: (
+            self.report_request_failure(response.request, f"HTTP {response.status}")
+            if response.status >= 400 else None
+        ))
+
+    @staticmethod
+    def report_request_failure(request, detail):
+        print(f"Browser request failed: {request.method} {request.url} ({detail})", file=sys.stderr, flush=True)
 
     def menu(self, menu, action):
         if menu == "Selection":
