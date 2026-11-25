@@ -288,12 +288,12 @@
     "id": "menu-20",
     "menu": "Help",
     "action": "User guide and shortcuts…",
-    "heading": "User guide and shortcuts",
+    "heading": "HiCT user guide",
     "source": "src/app/ui/components/upper_ribbon/UserGuideModal.vue",
     "prerequisites": [
       "Bundled user guide"
     ],
-    "surfaceExpected": "Visible heading: User guide and shortcuts",
+    "surfaceExpected": "Visible heading: HiCT user guide",
     "functionalExpected": "Navigate to a section and open the rendered guide in a new tab.",
     "coverage": "pending",
     "scope": "Surface and functional navigation checks"
