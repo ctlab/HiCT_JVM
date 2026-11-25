@@ -59,14 +59,30 @@ test('artifact-only and fix branch safeguards survive early publication', () => 
   assert.equal(condition('publish-release-assets', { github: { event_name: 'push', ref_name: 'fix/example' } }), false);
 });
 
-test('automatic jvm-sfx-native releases preserve existing tags and assets', () => {
+test('push and manual jvm-sfx-native releases preserve existing tags and assets', () => {
   const publish = job('publish-release-assets');
-  assert.match(publish, /if \[\[ "\$\{GITHUB_EVENT_NAME\}" == "push" && "\$\{GITHUB_REF_NAME\}" == "jvm-sfx-native" \]\]; then\n +release_tag="jvm-sfx-native-\$\{version\}"\n +elif/);
+  const branch = publish.match(/if \[\[ "\$\{GITHUB_REF_NAME\}" == "jvm-sfx-native" &&([\s\S]+?)\n +elif/)?.[1];
+  assert.ok(branch, 'Missing run-specific branch tag selection');
+  assert.match(branch, /"\$\{GITHUB_EVENT_NAME\}" == "push" \|\| "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch"/);
+  assert.match(branch, /^ +release_tag="jvm-sfx-native-\$\{version\}"\n +versioned_branch_release="true"$/m);
+  assert.match(branch, /"\$\{PUBLISH_TARGET\}" != "release-tag"/);
+  assert.match(branch, /-n "\$\{SELECTED_RELEASE_TAG\}" && "\$\{SELECTED_RELEASE_TAG\}" != "\$\{release_tag\}"/);
+  assert.match(branch, /exit 1/);
+  assert.match(publish, /if \[\[ "\$\{versioned_branch_release\}" != "true" &&\s+\( "\$\{release_tag\}" == "latest-jvm-sfx-native" \|\| "\$\{release_tag\}" == jvm-sfx-native-\* \) \]\]; then/);
+  const ensure = publish.match(/      - name: Ensure the versioned jvm-sfx-native tag points to the build\n([\s\S]+?)(?=\n      - name: Publish versioned jvm-sfx-native prerelease)/)?.[1];
+  assert.ok(ensure, 'Verify the exact tag before handing publication to the release action');
+  assert.match(ensure, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
+  assert.match(ensure, /await ensureVersionedTarget\(/);
   const versioned = publish.match(/      - name: Publish versioned jvm-sfx-native prerelease\n([\s\S]+?)(?=\n      - name:)/)?.[1];
   assert.ok(versioned, 'Missing versioned branch publication');
-  assert.match(versioned, /steps\.collect-assets\.outputs\.rolling_release == 'false'/);
-  assert.match(versioned, /target_commitish: \$\{\{ github\.sha \}\}/);
-  assert.match(versioned, /overwrite_files: false/);
+  assert.match(versioned, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
+  assert.match(versioned, /tag_name: \$\{\{ steps\.collect-assets\.outputs\.release_tag \}\}/);
+  assert.doesNotMatch(versioned, /target_commitish:/);
+  assert.match(versioned, /^          overwrite_files: false$/m);
+  const verify = publish.match(/      - name: Verify versioned jvm-sfx-native assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.ok(verify, 'Missing verification of published tag and assets');
+  assert.match(verify, /await verifyVersionedTarget\(/);
+  assert.match(verify, /await verifyAssets\(.*exact: true/);
   const prune = publish.match(/      - name: Verify rolling upload and prune obsolete build assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
   assert.match(prune, /steps\.collect-assets\.outputs\.rolling_release == 'true'/);
 });
