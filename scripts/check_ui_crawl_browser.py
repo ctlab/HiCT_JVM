@@ -46,10 +46,24 @@ def main():
             page.keyboard.press("Control+o")
             expect(page.get_by_role("heading", name="Open Hi-C dataset")).to_be_visible()
             check.choose_file(args.file)
+            coverage_requests = []
+
+            def observe_coverage_status(request):
+                if request.url.endswith("/normalization/coverage/status"):
+                    coverage_requests.append(request.url)
+
+            page.on("request", observe_coverage_status)
             page.get_by_role("button", name="Load", exact=True).click()
             page.wait_for_function("window.__hictBenchmark?.manager()")
             check.settle()
             expect(page.get_by_role("button", name="Undo", exact=True)).to_be_disabled()
+
+            def idle_coverage_status():
+                page.wait_for_timeout(10_000)
+                page.remove_listener("request", observe_coverage_status)
+                assert 1 <= len(coverage_requests) <= 3, len(coverage_requests)
+
+            check.step("idle-coverage-status-is-bounded", idle_coverage_status)
 
             def agp():
                 response = page.request.post(args.api + "/get_agp_for_assembly", data={})

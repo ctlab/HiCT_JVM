@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep the viewport steady at the finest zoom and leave visualization settings intact when the server rejects a preset.
+- Stop repeated coverage-status requests on idle maps while keeping progress updates during normalization.
+- Shorten the selected region's context menu, show the region and contig sizes, and keep Analyse and export within reach in projector-sized windows.
 - Put map and session commands first in File, add Open and Save shortcuts, and name the next undo action. Make Advanced visualization settings easier to scan and show the map resolution in base-pair units.
 - Show the full region dimensions in the desktop ribbon while keeping it on one row. Align the empty workspace card and its opening actions.
 - Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
