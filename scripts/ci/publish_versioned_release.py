@@ -109,8 +109,15 @@ def publish(repo, tag, version, source, directory, notes):
     if release is None:
         gh("release", "create", tag, "--repo", repo, "--verify-tag", "--draft", "--prerelease",
            "--latest=false", "--title", f"HiCT {version} (jvm-sfx-native)", "--notes-file", str(notes))
-        release = current_release(repo, tag)
-    if release is None or not release["prerelease"] or f"from `{source}`" not in release["body"]:
+        # The authenticated release listing can lag behind draft creation.
+        for delay in (1, 2, 4, 8, 16, 30):
+            time.sleep(delay)
+            release = current_release(repo, tag)
+            if release is not None:
+                break
+        if release is None:
+            raise RuntimeError(f"Created draft for {tag} but it did not become visible")
+    if not release["prerelease"] or f"from `{source}`" not in (release["body"] or ""):
         raise RuntimeError(f"Unexpected release metadata for {tag}")
 
     assets = uploaded_assets(repo, release["id"])

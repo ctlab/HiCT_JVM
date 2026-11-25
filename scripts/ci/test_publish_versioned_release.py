@@ -34,6 +34,7 @@ class DraftPublicationTest(unittest.TestCase):
         self.contents = {}
         self.writes = []
         self.upload_failures = 0
+        self.draft_reads_to_delay = 0
 
     def write_manifest(self):
         self.manifest.write_text("".join(
@@ -85,6 +86,9 @@ class DraftPublicationTest(unittest.TestCase):
 
     def fake_pages(self, endpoint):
         if endpoint == f"repos/{self.repo}/releases?per_page=100":
+            if self.release and self.draft_reads_to_delay:
+                self.draft_reads_to_delay -= 1
+                return []
             return [self.release] if self.release else []
         self.assertEqual(endpoint, f"repos/{self.repo}/releases/8/assets?per_page=100")
         return list(self.assets.values())
@@ -103,6 +107,28 @@ class DraftPublicationTest(unittest.TestCase):
         self.publish()
         self.assertEqual(self.writes, ["create", self.origin.name, self.origin.name,
                                        self.package.name, self.manifest.name, "publish"])
+
+    def test_waits_for_new_draft_to_appear_in_release_listing(self):
+        self.draft_reads_to_delay = 2
+        self.publish()
+        self.assertEqual(self.draft_reads_to_delay, 0)
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_unlisted_draft_stays_unpublished_when_lookup_expires(self):
+        self.draft_reads_to_delay = 50
+        with self.assertRaisesRegex(RuntimeError, "draft.*did not become visible"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create"])
+
+    def test_existing_release_for_wrong_commit_is_untouched(self):
+        self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
+        self.release["body"] = "Automated build from `different-commit`."
+        with self.assertRaisesRegex(RuntimeError, "Unexpected release metadata"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create"])
 
     def test_checksum_spans_multiple_read_blocks(self):
         contents = b"HiCT installer\n" * 100_000
