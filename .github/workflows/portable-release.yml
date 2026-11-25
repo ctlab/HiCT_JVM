@@ -102,7 +102,7 @@ on:
           - "latest-master"
           - "release-tag"
       release_tag:
-        description: "Release tag to create/update when publish_target=release-tag. Leave empty to use latest-{selected branch}."
+        description: "Release tag when publish_target=release-tag. Leave empty for the branch default, which is versioned on jvm-sfx-native."
         required: false
         default: ""
         type: string
@@ -2175,8 +2175,17 @@ jobs:
           default_latest_tag="latest-${GITHUB_REF_NAME}"
           release_tag="${GITHUB_REF_NAME}"
           rolling_release="false"
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" == "jvm-sfx-native" ]]; then
+          versioned_branch_release="false"
+          if [[ "${GITHUB_REF_NAME}" == "jvm-sfx-native" &&
+                ( "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ) ]]; then
             release_tag="jvm-sfx-native-${version}"
+            versioned_branch_release="true"
+            if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" &&
+                  ( "${PUBLISH_TARGET}" != "release-tag" ||
+                    ( -n "${SELECTED_RELEASE_TAG}" && "${SELECTED_RELEASE_TAG}" != "${release_tag}" ) ) ]]; then
+              echo "::error::Publish jvm-sfx-native with publish_target=release-tag and leave release_tag empty for the run-specific tag." >&2
+              exit 1
+            fi
           elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             release_tag="${default_latest_tag}"
             rolling_release="true"
@@ -2195,6 +2204,12 @@ jobs:
               fi
             fi
           fi
+          if [[ "${versioned_branch_release}" != "true" &&
+                ( "${release_tag}" == "latest-jvm-sfx-native" || "${release_tag}" == jvm-sfx-native-* ) ]]; then
+            echo "::error::This tag belongs to jvm-sfx-native branch publication. Run the workflow on jvm-sfx-native to publish a new version." >&2
+            exit 1
+          fi
+          git check-ref-format "refs/tags/${release_tag}"
           {
             echo "HICT_PORTABLE_RELEASE_TAG=${release_tag}"
             echo "HICT_PORTABLE_ROLLING_RELEASE=${rolling_release}"
@@ -2202,6 +2217,7 @@ jobs:
           {
             echo "release_tag=${release_tag}"
             echo "rolling_release=${rolling_release}"
+            echo "versioned_branch_release=${versioned_branch_release}"
           } >> "${GITHUB_OUTPUT}"
 
           rm -rf release-dist
@@ -2418,8 +2434,18 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
 
+      - name: Inspect versioned jvm-sfx-native target
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { verifyVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
+            await verifyVersionedTarget({
+              github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG, allowMissing: true,
+            });
+
       - name: Publish versioned jvm-sfx-native prerelease
-        if: ${{ github.event_name == 'push' && github.ref_name == 'jvm-sfx-native' && steps.collect-assets.outputs.rolling_release == 'false' }}
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.collect-assets.outputs.release_tag }}
@@ -2433,20 +2459,17 @@ jobs:
           overwrite_files: false
 
       - name: Verify versioned jvm-sfx-native assets
-        if: ${{ github.event_name == 'push' && github.ref_name == 'jvm-sfx-native' && steps.collect-assets.outputs.rolling_release == 'false' }}
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         uses: actions/github-script@v8
         with:
           script: |
-            const { verifyAssets } = require('./scripts/ci/rolling_release.cjs');
+            const { verifyAssets, verifyVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
             const tag = process.env.HICT_PORTABLE_RELEASE_TAG;
-            const { data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` });
-            if (ref.object.type !== 'commit' || ref.object.sha !== context.sha) {
-              throw new Error(`Release tag ${tag} does not point to ${context.sha}`);
-            }
-            await verifyAssets({ github, context, tag, directory: 'release-dist' });
+            await verifyVersionedTarget({ github, context, tag });
+            await verifyAssets({ github, context, tag, directory: 'release-dist', exact: true });
 
       - name: Attach assets to selected release tag
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' && steps.collect-assets.outputs.versioned_branch_release == 'false' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}

@@ -3,24 +3,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 
-const branchAssetName = /^(HiCT|hict_server)-\d+\.\d+\.\d+-ci\d+-[a-f0-9]{7}-(.+)$/;
-const branchPackageSuffixes = new Set([
-  ...['linux-x86_64', 'musl-linux-x86_64', 'darwin-arm64', 'darwin-x86_64']
-    .flatMap(platform => ['run', 'tar.gz', 'sha256'].map(ext => `${platform}.${ext}`)),
-  'windows-x86_64-portable.zip', 'windows-x86_64.exe', 'windows-x86_64.sha256',
-  'x86_64.AppImage', 'x86_64.AppImage.sha256', 'build-origin.txt', 'release-assets.sha256',
-]);
+function isManagedAsset(asset) {
+  return asset.uploader?.login === 'github-actions[bot]'
+    && /^(HiCT-|hict_server-)\d/.test(asset.name);
+}
 
-function isManagedAsset(asset, tag) {
-  if (asset.uploader?.login !== 'github-actions[bot]') return false;
-  if (tag !== 'latest-jvm-sfx-native') return /^(HiCT-|hict_server-)\d/.test(asset.name);
-  const match = branchAssetName.exec(asset.name);
-  if (!match) return false;
-  const [, product, suffix] = match;
-  return product === 'hict_server' ? suffix === 'fat.jar' : branchPackageSuffixes.has(suffix);
+function requireRollingTag(tag) {
+  if (tag === 'latest-jvm-sfx-native' || tag.startsWith('jvm-sfx-native-')) {
+    throw new Error(`Rolling publication is disabled for ${tag}`);
+  }
 }
 
 async function prepare({ github, context, core, tag }) {
+  requireRollingTag(tag);
   let release;
   try {
     release = (await github.rest.repos.getReleaseByTag({ ...context.repo, tag })).data;
@@ -41,11 +36,24 @@ async function prepare({ github, context, core, tag }) {
   core.setOutput('target_commitish', release ? branch : context.sha);
   core.setOutput('release_id', release?.id || '');
   core.setOutput('previous_assets', JSON.stringify(assets
-    .filter(asset => isManagedAsset(asset, tag))
+    .filter(isManagedAsset)
     .map(({ id, name }) => ({ id, name }))));
 }
 
-async function verifyAssets({ github, context, tag, releaseId, directory }) {
+async function verifyVersionedTarget({ github, context, tag, allowMissing = false }) {
+  let ref;
+  try {
+    ({ data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` }));
+  } catch (error) {
+    if (allowMissing && error.status === 404) return;
+    throw error;
+  }
+  if (ref.object.type !== 'commit' || ref.object.sha !== context.sha) {
+    throw new Error(`Release tag ${tag} does not point to ${context.sha}`);
+  }
+}
+
+async function verifyAssets({ github, context, tag, releaseId, directory, exact = false }) {
   const expected = fs.readdirSync(directory, { withFileTypes: true })
     .filter(entry => entry.isFile())
     .map(entry => ({ name: entry.name, size: fs.statSync(path.join(directory, entry.name)).size }));
@@ -57,6 +65,13 @@ async function verifyAssets({ github, context, tag, releaseId, directory }) {
   const current = await github.paginate(github.rest.repos.listReleaseAssets, {
     ...context.repo, release_id: release.id, per_page: 100,
   });
+  const names = new Set(expected.map(file => file.name));
+  if (exact) {
+    const unexpected = current.filter(asset => !names.has(asset.name));
+    if (unexpected.length) {
+      throw new Error(`Unexpected versioned release assets: ${unexpected.map(asset => asset.name).join(', ')}`);
+    }
+  }
   for (const file of expected) {
     const uploaded = current.find(asset => asset.name === file.name
       && asset.state === 'uploaded' && asset.size === file.size);
@@ -69,18 +84,19 @@ async function verifyAssets({ github, context, tag, releaseId, directory }) {
       throw new Error(`Uploaded asset digest differs: ${file.name}`);
     }
   }
-  return { current, names: new Set(expected.map(file => file.name)) };
+  return { current, names };
 }
 
 async function prune({ github, context, tag, releaseId, previousAssets, directory }) {
+  requireRollingTag(tag);
   // Validate the entire upload before deleting any obsolete assets.
   const { current, names } = await verifyAssets({ github, context, tag, releaseId, directory });
   for (const old of previousAssets) {
     if (!names.has(old.name) && current.some(asset =>
-      asset.id === old.id && asset.name === old.name && isManagedAsset(asset, tag))) {
+      asset.id === old.id && asset.name === old.name && isManagedAsset(asset))) {
       await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: old.id });
     }
   }
 }
 
-module.exports = { prepare, prune, verifyAssets };
+module.exports = { prepare, prune, verifyAssets, verifyVersionedTarget };
