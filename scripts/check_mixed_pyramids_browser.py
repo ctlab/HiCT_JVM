@@ -14,6 +14,7 @@ from playwright.sync_api import expect, sync_playwright
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output"):
     parser.add_argument("--" + name, required=True)
+parser.add_argument("--inline-source-info", action="store_true")
 args = parser.parse_args()
 output = Path(args.output)
 output.mkdir(parents=True, exist_ok=True)
@@ -128,10 +129,23 @@ with sync_playwright() as pw:
                 page.mouse.move(viewport["x"] + viewport["width"] * 0.4,
                                 viewport["y"] + viewport["height"] * 0.45)
                 info = page.locator(".ol-mouse-position")
+                if args.inline_source_info:
+                    rows = info.locator(".hict-source-resolutions")
+                    expect(rows.locator(".source-placement")).to_have_text(["upper", "lower"])
+                    expect(rows.locator(".source-resolution")).to_have_text(["1:4", "1:1"])
                 more = info.get_by_role("button", name="More…", exact=True)
                 if more.is_visible():
                     more.click()
-                expect(info).to_contain_text("Available resolutions: Primary 4 bp; Secondary 1 bp")
+                if args.inline_source_info:
+                    expect(info).to_contain_text("Showing data from: upper")
+                    expect(info).to_contain_text("1:4; lower")
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.setSecondaryCaptureVisible(false)")
+                    expect(rows).to_have_count(0)
+                    expect(info).to_contain_text("Resolution: 4 bp")
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.setSecondaryCaptureVisible(true)")
+                    expect(rows.locator(".source-resolution")).to_have_text(["1:4", "1:1"])
+                else:
+                    expect(info).to_contain_text("Available resolutions: Primary 4 bp; Secondary 1 bp")
                 page.screenshot(path=str(output / "info-two-source-resolutions.png"))
                 results.append({"fixture": label, "infoResolutions": {"primary": 4, "secondary": 1}})
                 if not was_visible:

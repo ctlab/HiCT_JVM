@@ -38,7 +38,7 @@ def main():
             "--file", "structural.hict.hdf5", "--fasta", "structural.fa",
         ],
         "check_isolation_zoom_browser.py": ["--file", "structural.hict.hdf5"],
-        "check_mixed_pyramids_browser.py": [],
+        "check_mixed_pyramids_browser.py": ["--inline-source-info"],
         "check_workspace_controls_browser.py": [],
         "check_failed_primary_open_browser.py": [],
         "check_export_guidance_browser.py": ["--file", "structural.hict.hdf5"],
