@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the opening wizard compact, label the current step, and put the primary and optional maps in reading order.
 - Put both visible bin sizes in the main Info overlay and figure notes, including the outgoing level while a finer overlay loads. Keep Apply accessible with both sources open.
 - Put the ModDotPlot storage estimate and its budget recovery action in one warning row.
 - Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
