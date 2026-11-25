@@ -2446,16 +2446,12 @@ jobs:
 
       - name: Publish versioned jvm-sfx-native prerelease
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.collect-assets.outputs.release_tag }}
-          name: HiCT ${{ env.HICT_BUILD_VERSION }} (jvm-sfx-native)
-          body_path: release-body.md
-          prerelease: true
-          make_latest: false
-          files: release-dist/*
-          fail_on_unmatched_files: true
-          overwrite_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          python scripts/ci/test_publish_versioned_release.py
+          python scripts/ci/publish_versioned_release.py --directory release-dist --notes release-body.md
 
       - name: Verify versioned jvm-sfx-native assets
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}

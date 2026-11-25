@@ -76,9 +76,9 @@ test('push and manual jvm-sfx-native releases preserve existing tags and assets'
   const versioned = publish.match(/      - name: Publish versioned jvm-sfx-native prerelease\n([\s\S]+?)(?=\n      - name:)/)?.[1];
   assert.ok(versioned, 'Missing versioned branch publication');
   assert.match(versioned, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
-  assert.match(versioned, /tag_name: \$\{\{ steps\.collect-assets\.outputs\.release_tag \}\}/);
+  assert.match(versioned, /python scripts\/ci\/test_publish_versioned_release\.py/);
+  assert.match(versioned, /python scripts\/ci\/publish_versioned_release\.py --directory release-dist --notes release-body\.md/);
   assert.doesNotMatch(versioned, /target_commitish:/);
-  assert.match(versioned, /^          overwrite_files: false$/m);
   const verify = publish.match(/      - name: Verify versioned jvm-sfx-native assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
   assert.ok(verify, 'Missing verification of published tag and assets');
   assert.match(verify, /await verifyVersionedTarget\(/);
