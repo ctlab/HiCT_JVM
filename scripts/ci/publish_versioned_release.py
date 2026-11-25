@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add verified assets to an exact branch prerelease, then publish its draft."""
+"""Add verified assets to an exact branch release, then publish its draft."""
 
 import argparse
 import hashlib
@@ -82,13 +82,15 @@ def upload_missing_asset(repo, tag, release_id, file, digest):
         raise RuntimeError(f"Could not verify uploaded asset: {file.name}")
 
 
-def publish(repo, tag, version, source, directory, notes):
+def publish(repo, tag, version, source, directory, notes, *, channel="jvm-sfx-native"):
     if (
         not re.fullmatch(r"\d+\.\d+\.\d+-ci1-[0-9a-f]{7}", version)
         or not version.endswith(f"-{source[:7]}")
-        or tag != f"jvm-sfx-native-{version}"
+        or channel not in ("main", "jvm-sfx-native")
+        or tag != f"{channel}-{version}"
     ):
-        raise RuntimeError("Expected a run-specific jvm-sfx-native release tag")
+        raise RuntimeError("Expected an exact versioned branch release tag")
+    prerelease = channel == "jvm-sfx-native"
     ref = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))["object"]
     if ref["type"] != "commit" or ref["sha"] != source:
         raise RuntimeError(f"Release tag {tag} does not point to {source}")
@@ -107,8 +109,9 @@ def publish(repo, tag, version, source, directory, notes):
 
     release = current_release(repo, tag)
     if release is None:
-        gh("release", "create", tag, "--repo", repo, "--verify-tag", "--draft", "--prerelease",
-           "--latest=false", "--title", f"HiCT {version} (jvm-sfx-native)", "--notes-file", str(notes))
+        gh("release", "create", tag, "--repo", repo, "--verify-tag", "--draft",
+           f"--prerelease={str(prerelease).lower()}", "--latest=false",
+           "--title", f"HiCT {version} ({'Development' if prerelease else 'Main'})", "--notes-file", str(notes))
         # The authenticated release listing can lag behind draft creation.
         for delay in (1, 2, 4, 8, 16, 30):
             time.sleep(delay)
@@ -117,7 +120,7 @@ def publish(repo, tag, version, source, directory, notes):
                 break
         if release is None:
             raise RuntimeError(f"Created draft for {tag} but it did not become visible")
-    if not release["prerelease"] or f"from `{source}`" not in (release["body"] or ""):
+    if release["prerelease"] != prerelease or f"from `{source}`" not in (release["body"] or ""):
         raise RuntimeError(f"Unexpected release metadata for {tag}")
 
     assets = uploaded_assets(repo, release["id"])
@@ -149,4 +152,5 @@ if __name__ == "__main__":
     parser.add_argument("--notes", type=Path, required=True)
     args = parser.parse_args()
     publish(os.environ["GITHUB_REPOSITORY"], os.environ["HICT_PORTABLE_RELEASE_TAG"],
-            os.environ["HICT_BUILD_VERSION"], os.environ["GITHUB_SHA"], args.directory, args.notes)
+            os.environ["HICT_BUILD_VERSION"], os.environ["GITHUB_SHA"], args.directory, args.notes,
+            channel=os.environ.get("HICT_RELEASE_CHANNEL", "jvm-sfx-native"))

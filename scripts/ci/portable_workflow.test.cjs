@@ -59,32 +59,32 @@ test('artifact-only and fix branch safeguards survive early publication', () => 
   assert.equal(condition('publish-release-assets', { github: { event_name: 'push', ref_name: 'fix/example' } }), false);
 });
 
-test('push and manual jvm-sfx-native releases preserve existing tags and assets', () => {
+test('both channels publish versioned assets before refreshing stable links', () => {
   const publish = job('publish-release-assets');
-  const branch = publish.match(/if \[\[ "\$\{GITHUB_REF_NAME\}" == "jvm-sfx-native" &&([\s\S]+?)\n +elif/)?.[1];
+  const branch = publish.match(/if \[\[ \( "\$\{release_channel\}" == "jvm-sfx-native" \|\| "\$\{release_channel\}" == "main" \) &&([\s\S]+?)\n +elif/)?.[1];
   assert.ok(branch, 'Missing run-specific branch tag selection');
   assert.match(branch, /"\$\{GITHUB_EVENT_NAME\}" == "push" \|\| "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch"/);
-  assert.match(branch, /^ +release_tag="jvm-sfx-native-\$\{version\}"\n +versioned_branch_release="true"$/m);
+  assert.match(branch, /^ +release_tag="\$\{release_channel\}-\$\{version\}"\n +versioned_branch_release="true"$/m);
   assert.match(branch, /"\$\{PUBLISH_TARGET\}" != "release-tag"/);
   assert.match(branch, /-n "\$\{SELECTED_RELEASE_TAG\}" && "\$\{SELECTED_RELEASE_TAG\}" != "\$\{release_tag\}"/);
   assert.match(branch, /exit 1/);
-  assert.match(publish, /if \[\[ "\$\{versioned_branch_release\}" != "true" &&\s+\( "\$\{release_tag\}" == "latest-jvm-sfx-native" \|\| "\$\{release_tag\}" == jvm-sfx-native-\* \) \]\]; then/);
-  const ensure = publish.match(/      - name: Ensure the versioned jvm-sfx-native tag points to the build\n([\s\S]+?)(?=\n      - name: Publish versioned jvm-sfx-native prerelease)/)?.[1];
+  assert.match(publish, /"\$\{release_tag\}" == "latest-jvm-sfx-native" \|\| "\$\{release_tag\}" == jvm-sfx-native-\* \|\|\s+"\$\{release_tag\}" == "latest-master" \|\| "\$\{release_tag\}" == main-\*/);
+  const ensure = publish.match(/      - name: Ensure the versioned channel tag points to the build\n([\s\S]+?)(?=\n      - name: Publish versioned channel release)/)?.[1];
   assert.ok(ensure, 'Verify the exact tag before handing publication to the release action');
   assert.match(ensure, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
   assert.match(ensure, /await ensureVersionedTarget\(/);
-  const versioned = publish.match(/      - name: Publish versioned jvm-sfx-native prerelease\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  const versioned = publish.match(/      - name: Publish versioned channel release\n([\s\S]+?)(?=\n      - name:)/)?.[1];
   assert.ok(versioned, 'Missing versioned branch publication');
   assert.match(versioned, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
   assert.match(versioned, /python scripts\/ci\/test_publish_versioned_release\.py/);
   assert.match(versioned, /python scripts\/ci\/publish_versioned_release\.py --directory release-dist --notes release-body\.md/);
   assert.doesNotMatch(versioned, /target_commitish:/);
-  const verify = publish.match(/      - name: Verify versioned jvm-sfx-native assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  const verify = publish.match(/      - name: Verify versioned channel assets\n([\s\S]+?)(?=\n      - name: Refresh the channel download links)/)?.[1];
   assert.ok(verify, 'Missing verification of published tag and assets');
   assert.match(verify, /await verifyVersionedTarget\(/);
   assert.match(verify, /await verifyAssets\(.*exact: true/);
-  const prune = publish.match(/      - name: Verify rolling upload and prune obsolete build assets\n([\s\S]+?)(?=\n      - name:)/)?.[1];
-  assert.match(prune, /steps\.collect-assets\.outputs\.rolling_release == 'true'/);
+  assert.match(publish, /update_branch_release_index\.py/);
+  assert.doesNotMatch(publish, /await prune\(|overwrite_files: true/);
 });
 
 test('Windows qualification loads native DLLs from each installed package', () => {

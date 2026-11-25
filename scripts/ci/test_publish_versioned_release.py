@@ -58,7 +58,7 @@ class DraftPublicationTest(unittest.TestCase):
             self.assertIn("--latest=false", args)
             self.writes.append("create")
             self.release = {"id": 8, "tag_name": self.tag, "draft": True,
-                            "prerelease": True, "body": self.notes.read_text()}
+                            "prerelease": "--prerelease=false" not in args, "body": self.notes.read_text()}
             return ""
         if command == ("release", "download"):
             path = Path(args[args.index("--output") + 1])
@@ -93,14 +93,20 @@ class DraftPublicationTest(unittest.TestCase):
         self.assertEqual(endpoint, f"repos/{self.repo}/releases/8/assets?per_page=100")
         return list(self.assets.values())
 
-    def publish(self):
+    def publish(self, channel="jvm-sfx-native"):
         with (
             patch("publish_versioned_release.gh", self.fake_gh),
             patch("publish_versioned_release.github_pages", self.fake_pages),
             patch("publish_versioned_release.subprocess.run", self.fake_upload),
             patch("publish_versioned_release.time.sleep"),
         ):
-            publish(self.repo, self.tag, self.version, self.source, self.dist, self.notes)
+            publish(self.repo, self.tag, self.version, self.source, self.dist, self.notes, channel=channel)
+
+    def test_main_publishes_a_versioned_release_without_reassigning_latest(self):
+        self.tag = f"main-{self.version}"
+        self.publish(channel="main")
+        self.assertFalse(self.release["prerelease"])
+        self.assertFalse(self.release["draft"])
 
     def test_uploads_serially_and_retries_before_publishing(self):
         self.upload_failures = 1

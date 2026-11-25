@@ -2176,14 +2176,17 @@ jobs:
           release_tag="${GITHUB_REF_NAME}"
           rolling_release="false"
           versioned_branch_release="false"
-          if [[ "${GITHUB_REF_NAME}" == "jvm-sfx-native" &&
+          release_channel="${GITHUB_REF_NAME}"
+          if [[ "${release_channel}" == "master" ]]; then release_channel="main"; fi
+          if [[ ( "${release_channel}" == "jvm-sfx-native" || "${release_channel}" == "main" ) &&
                 ( "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ) ]]; then
-            release_tag="jvm-sfx-native-${version}"
+            release_tag="${release_channel}-${version}"
             versioned_branch_release="true"
             if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" &&
-                  ( "${PUBLISH_TARGET}" != "release-tag" ||
+                  ( ( "${PUBLISH_TARGET}" != "release-tag" &&
+                      ! ( "${PUBLISH_TARGET}" == "latest-master" && "${release_channel}" == "main" ) ) ||
                     ( -n "${SELECTED_RELEASE_TAG}" && "${SELECTED_RELEASE_TAG}" != "${release_tag}" ) ) ]]; then
-              echo "::error::Publish jvm-sfx-native with publish_target=release-tag and leave release_tag empty for the run-specific tag." >&2
+              echo "::error::Publish a channel build with release_tag empty for the run-specific tag." >&2
               exit 1
             fi
           elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
@@ -2205,14 +2208,16 @@ jobs:
             fi
           fi
           if [[ "${versioned_branch_release}" != "true" &&
-                ( "${release_tag}" == "latest-jvm-sfx-native" || "${release_tag}" == jvm-sfx-native-* ) ]]; then
-            echo "::error::This tag belongs to jvm-sfx-native branch publication. Run the workflow on jvm-sfx-native to publish a new version." >&2
+                ( "${release_tag}" == "latest-jvm-sfx-native" || "${release_tag}" == jvm-sfx-native-* ||
+                  "${release_tag}" == "latest-master" || "${release_tag}" == main-* ) ]]; then
+            echo "::error::This tag belongs to a managed channel. Run the workflow on the matching branch." >&2
             exit 1
           fi
           git check-ref-format "refs/tags/${release_tag}"
           {
             echo "HICT_PORTABLE_RELEASE_TAG=${release_tag}"
             echo "HICT_PORTABLE_ROLLING_RELEASE=${rolling_release}"
+            echo "HICT_RELEASE_CHANNEL=${release_channel}"
           } >> "${GITHUB_ENV}"
           {
             echo "release_tag=${release_tag}"
@@ -2338,6 +2343,8 @@ jobs:
           release_body_lines=(
             "Automated HiCT portable build from \`${GITHUB_SHA}\`."
             ""
+            "[Latest Main build](https://github.com/${GITHUB_REPOSITORY}/releases/tag/latest-master) · [Latest Development build](https://github.com/${GITHUB_REPOSITORY}/releases/tag/latest-jvm-sfx-native)"
+            ""
             "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
             "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             ""
@@ -2412,18 +2419,16 @@ jobs:
           # uploads. The following step verifies skipped files by SHA-256 too.
           overwrite_files: false
 
-      - name: Verify rolling upload and prune obsolete build assets
+      - name: Verify rolling upload
         if: ${{ success() && steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: actions/github-script@v8
         env:
-          HICT_PREVIOUS_RELEASE_ASSETS: ${{ steps.rolling-release.outputs.previous_assets }}
           HICT_PREVIOUS_RELEASE_ID: ${{ steps.rolling-release.outputs.release_id }}
         with:
           script: |
-            const { prune } = require('./scripts/ci/rolling_release.cjs');
-            await prune({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
+            const { verifyAssets } = require('./scripts/ci/rolling_release.cjs');
+            await verifyAssets({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
               releaseId: process.env.HICT_PREVIOUS_RELEASE_ID,
-              previousAssets: JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
               directory: 'release-dist' });
 
       - name: Attach assets to release event
@@ -2432,9 +2437,9 @@ jobs:
         with:
           files: release-dist/*
           fail_on_unmatched_files: true
-          overwrite_files: true
+          overwrite_files: false
 
-      - name: Ensure the versioned jvm-sfx-native tag points to the build
+      - name: Ensure the versioned channel tag points to the build
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         uses: actions/github-script@v8
         with:
@@ -2444,7 +2449,7 @@ jobs:
               github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
             });
 
-      - name: Publish versioned jvm-sfx-native prerelease
+      - name: Publish versioned channel release
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -2453,7 +2458,7 @@ jobs:
           python scripts/ci/test_publish_versioned_release.py
           python scripts/ci/publish_versioned_release.py --directory release-dist --notes release-body.md
 
-      - name: Verify versioned jvm-sfx-native assets
+      - name: Verify versioned channel assets
         if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
         uses: actions/github-script@v8
         with:
@@ -2463,6 +2468,15 @@ jobs:
             await verifyVersionedTarget({ github, context, tag });
             await verifyAssets({ github, context, tag, directory: 'release-dist', exact: true });
 
+      - name: Refresh the channel download links
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' && (github.event_name != 'workflow_dispatch' || (inputs.build_linux_appimage && inputs.create_windows_exe)) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          python scripts/ci/update_branch_release_index.py --repo "$GITHUB_REPOSITORY" \
+            --channel "$HICT_RELEASE_CHANNEL" --tag "$HICT_PORTABLE_RELEASE_TAG" --version "$HICT_BUILD_VERSION"
+
       - name: Attach assets to selected release tag
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' && steps.collect-assets.outputs.versioned_branch_release == 'false' }}
         uses: softprops/action-gh-release@v2
@@ -2470,4 +2484,4 @@ jobs:
           tag_name: ${{ inputs.release_tag }}
           files: release-dist/*
           fail_on_unmatched_files: true
-          overwrite_files: true
+          overwrite_files: false

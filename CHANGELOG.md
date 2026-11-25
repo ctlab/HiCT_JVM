@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Provide stable Main and Development download links alongside versioned releases.
 - Save and restore isolated coordinate regions and contig selections in sessions.
 - Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
 - Show Print width and Label size together. Offer larger labels when the smallest text may be unreadable in print.
