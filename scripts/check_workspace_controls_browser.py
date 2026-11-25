@@ -617,11 +617,16 @@ def main():
             assert select.locator("option").count() == len(labels_before) + 3
 
         def osd():
-            check.menu("View", "Info settings…")
             dialog = page.get_by_role(
-                "dialog", name="On-screen display settings", exact=True
+                "dialog", name="Info settings", exact=True
             )
-            dialog.get_by_label("Show overlay", exact=True).check()
+
+            def open_settings():
+                check.menu("View", "Info settings…")
+                check.advanced()
+
+            open_settings()
+            dialog.get_by_label("Show Info overlay", exact=True).check()
             fields = dialog.locator('input[id^="osd-field-"]').evaluate_all(
                 "(inputs) => inputs.map(input=>input.id)"
             )
@@ -641,31 +646,40 @@ def main():
 
             hover()
             overlay = page.locator(".ol-mouse-position")
-            baseline = overlay.inner_text().splitlines()
+            overlay.get_by_role("button", name="More…", exact=True).click()
+
+            def read_fields():
+                return overlay.evaluate("""overlay => Array.from(overlay.firstElementChild.childNodes)
+                    .filter(node => node.nodeType === Node.TEXT_NODE)
+                    .map(node => node.textContent.trim()).filter(Boolean)""")
+
+            baseline = read_fields()
             assert len(baseline) == len(fields), (baseline, fields)
             for index, field in enumerate(fields):
-                check.menu("View", "Info settings…")
+                open_settings()
                 dialog.locator("#" + field).uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
-                actual = overlay.inner_text().splitlines()
+                actual = read_fields()
                 assert actual == baseline[:index] + baseline[index + 1 :], (
                     field,
                     baseline,
                     actual,
                 )
-                check.menu("View", "Info settings…")
+                open_settings()
                 dialog.locator("#" + field).check()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
-            check.menu("View", "Info settings…")
+            open_settings()
             dialog.locator(".osd-field-row").first.get_by_role(
                 "button", name="Down", exact=True
             ).click()
-            dialog.get_by_label("Position", exact=True).select_option("bottom-left")
+            dialog.get_by_role("combobox", name="Position", exact=True).select_option(
+                "bottom-left"
+            )
             dialog.get_by_role("button", name="Done", exact=True).click()
             hover()
-            assert overlay.inner_text().splitlines() == [
+            assert read_fields() == [
                 baseline[1],
                 baseline[0],
                 *baseline[2:],
@@ -683,7 +697,7 @@ def main():
             assert overlay.inner_text() == ""
             page.locator("#toggle-osd-button").click()
             hover()
-            assert len(overlay.inner_text().splitlines()) == len(fields)
+            assert len(read_fields()) == len(fields)
             page.wait_for_timeout(300)
             assert (
                 json.loads(

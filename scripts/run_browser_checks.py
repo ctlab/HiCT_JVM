@@ -26,6 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("jar", "webui", "output"):
         parser.add_argument("--" + key, required=True, type=Path)
+    parser.add_argument("--webui-source", type=Path, default=ROOT.parent / "HiCT_WebUI")
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -33,9 +34,16 @@ def main():
         "check_menu_surfaces_browser.py": ["--file", "structural.hict.hdf5"],
         "check_structural_edits_browser.py": [],
         "check_ui_crawl_browser.py": ["--file", "structural.hict.hdf5", "--track", "dense.bed"],
+        "check_layout_rules_browser.py": [
+            "--file", "structural.hict.hdf5", "--fasta", "structural.fa",
+        ],
+        "check_workspace_controls_browser.py": [],
+        "check_failed_primary_open_browser.py": [],
         "check_export_guidance_browser.py": ["--file", "structural.hict.hdf5"],
         "check_error_feedback_browser.py": ["--file", "structural.hict.hdf5"],
         "check_sqrt_zoom_fit_browser.py": ["--files", "structural.hict.hdf5"],
+        "check_batch_conversion_browser.py": [],
+        "check_builtin_presets_browser.py": ["--webui-source", str(args.webui_source.resolve())],
     }
     attached = {
         "check_color_midpoint_browser.py": True,
@@ -43,6 +51,7 @@ def main():
         "check_visualization_transactions_browser.py": True,
         "check_tracks_workspace_browser.py": True,
         "check_responsive_workspace_browser.py": True,
+        "check_selection_modes_browser.py": True,
         "check_expected_figure_browser.py": False,
     }
     failures = []
@@ -54,9 +63,18 @@ def main():
             str(ROOT / "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java"),
             str(fixtures)], check=True)
         prepare_fixture(fixtures, args.jar)
+        subprocess.run([
+            sys.executable, str(SCRIPTS / "prepare_reinforcement_sources.py"),
+            "--data-dir", str(fixtures),
+        ], check=True)
         (fixtures / "dense.bed").write_text("".join(
             f"one\t0\t400000\tFeature-{i}\t42\t+\n" for i in range(90)))
+        (fixtures / "structural.fa").write_text("".join(
+            f">{name}\n" + ("ACGT" * 20 + "\n") * 5000
+            for name in ("one", "two", "three", "four")
+        ))
         (fixtures / "invalid.agp").write_text("# malformed\none\t1\twrong\n")
+        (fixtures / "broken.hict.hdf5").write_text("This is not an HDF5 file.\n")
         handler = functools.partial(QuietHandler, directory=args.webui.resolve())
         with ThreadingHTTPServer(("127.0.0.1", 0), handler) as web:
             thread = threading.Thread(target=web.serve_forever, daemon=True)
@@ -73,6 +91,8 @@ def main():
                                 command = [sys.executable, str(SCRIPTS / name),
                                     "--url", f"http://127.0.0.1:{web.server_port}",
                                     "--api", server.url, "--output", str(out / "screens"), *options]
+                                if name == "check_batch_conversion_browser.py":
+                                    command += ["--data-dir", str(data)]
                                 if not run_check(command, out):
                                     failures.append(f"{run}: {name}")
                         finally:

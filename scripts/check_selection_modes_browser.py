@@ -93,6 +93,23 @@ def main():
                 assert page.locator('.hict-entity-drag').count()==0
                 assert page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.entityHighlightLayer.getStyle().every(s=>!s.getFill())')
             check.step('shift-entities',entity_drag)
+
+            def isolate_entities():
+                page.mouse.click(*point(500,500),button='right')
+                menu=page.get_by_role('menu',name='Assembly actions',exact=True)
+                menu.get_by_role('menuitem',name='Isolate view to selection',exact=True).click()
+                check.settle()
+                read_scopes = 'window.__hictBenchmark.manager().viewAndLayersManager.getAxisScopes()'
+                selected = page.evaluate(read_scopes)
+                assert all(selected[axis]['kind'] == 'selection' and len(selected[axis]['contigIds']) == 2
+                           for axis in ('row','column')), selected
+                scope('row','All rows')
+                scope('column','All columns')
+                restored = page.evaluate(read_scopes)
+                assert all(restored[axis]['kind'] == 'all' for axis in ('row','column')), restored
+
+            check.step('shift-selection-isolates-both-axes',isolate_entities)
+            entity_drag()
             with page.expect_response('**/group_contigs_into_scaffold') as response:
                 page.get_by_role('button',name='Group selection into scaffold',exact=True).click()
             assert response.value.ok;check.settle()

@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 
 
 def main():
@@ -32,6 +33,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        install_download_picker(page)
         page.set_default_timeout(120000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")

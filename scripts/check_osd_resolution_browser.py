@@ -218,7 +218,7 @@ try:
                 expect_current()
                 record("hiding-and-reshowing-info-keeps-the-stationary-pointer")
                 check.menu("View", "Info settings…")
-                dialog = page.get_by_role("dialog", name="On-screen display settings")
+                dialog = page.get_by_role("dialog", name="Info settings")
                 dialog.locator("#osd-position-select").select_option("bottom-left")
                 dialog.locator("#osd-field-resolution").uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
@@ -228,7 +228,7 @@ try:
                 expect(overlay.locator("div")).to_have_css("bottom", "12px")
                 record("info-position-and-field-settings-retain-the-existing-layout")
                 check.menu("View", "Info settings…")
-                dialog = page.get_by_role("dialog", name="On-screen display settings")
+                dialog = page.get_by_role("dialog", name="Info settings")
                 dialog.locator("#osd-field-resolution").check()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 move()
@@ -272,7 +272,8 @@ try:
                 check.settle()
                 move()
                 expect_current()
-                expect(overlay).to_contain_text("Secondary 1:")
+                overlay.get_by_role("button", name="More…", exact=True).click()
+                expect(overlay).to_contain_text("Secondary ")
                 record("mixed-native-resolutions-retain-correct-source-guidance")
                 assert page.evaluate("window.__osdProbe.reads") == 0
                 assert not check.errors, check.errors

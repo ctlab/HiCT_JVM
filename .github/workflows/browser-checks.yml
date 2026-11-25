@@ -38,12 +38,15 @@ jobs:
           sudo apt-get install -y poppler-utils minimap2
       - name: Build the JAR and pinned browser assets
         run: ./gradlew shadowJar -PwebuiRef="$(tr -d '\r\n' < webui-revision.txt)"
+      - name: Check browser labels against the pinned WebUI
+        run: python scripts/check_browser_check_labels.py --webui build/webui/HiCT_WebUI
       - name: Run browser checks
         run: |
           mapfile -t artifacts < <(find build/libs -name '*-fat.jar' -type f)
           test "${#artifacts[@]}" = 1
           python scripts/run_browser_checks.py --jar "${artifacts[0]}" \
-            --webui src/main/resources/webui --output browser-results
+            --webui src/main/resources/webui --webui-source build/webui/HiCT_WebUI \
+            --output browser-results
       - name: Upload browser logs and screenshots
         uses: actions/upload-artifact@v4
         if: always()

@@ -14,6 +14,8 @@ echo "[smoke] Running JVM tests"
 ./gradlew test
 
 if [[ -d "${WEBUI_DIR}" ]]; then
+  echo "[smoke] Checking browser labels against the WebUI"
+  python3 "${SCRIPT_DIR}/check_browser_check_labels.py" --webui "${WEBUI_DIR}"
   echo "[smoke] Type-checking and building WebUI"
   cd "${WEBUI_DIR}"
   npm run type-check

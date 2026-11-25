@@ -73,7 +73,7 @@ def main():
             for attempt in range(2):
                 page.get_by_role('link', name='File', exact=True).click()
                 page.get_by_role('link', name='Open map…', exact=True).click()
-                dialog = page.locator('.modal.show').filter(has_text='Open Hi-C dataset')
+                dialog = page.get_by_role('dialog', name='Open Hi-C dataset', exact=True)
                 dialog.locator('span[title]').filter(has_text='broken.hict.hdf5').click()
                 with page.expect_response(lambda response: response.url.endswith('/open')) as failed:
                     dialog.get_by_role('button', name='Load', exact=True).click()

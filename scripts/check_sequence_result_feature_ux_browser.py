@@ -144,7 +144,7 @@ def main():
             dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
             assert dialog.locator("#dotplot-display").input_value() == "overlay"
             if not dialog.get_by_label("Worker threads", exact=True).is_visible():
-                dialog.get_by_text("Advanced", exact=True).click()
+                dialog.locator("details.hict-advanced:not([open]) > summary").click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
             with page.expect_response(
                 lambda response: response.url.endswith("/sequence/moddotplot/jobs")
@@ -268,7 +268,7 @@ def main():
             check.menu("Tools", "Dotplot from FASTA files…")
             legacy = page.get_by_role("dialog").filter(
                 has=page.get_by_role(
-                    "heading", name="Generate self-alignment dotplots", exact=True
+                    "heading", name="Dotplots from FASTA files", exact=True
                 )
             )
             legacy.get_by_text("quad_combined_ind2.fasta", exact=True).first.wait_for(

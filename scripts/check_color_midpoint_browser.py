@@ -255,6 +255,7 @@ def main():
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Linear", exact=True
                 ).click()
+                page.get_by_role("button", name="Edit slider limits", exact=True).click()
                 maximum = page.get_by_label("Slider maximum signal", exact=True
                 )
                 maximum.fill("10000")

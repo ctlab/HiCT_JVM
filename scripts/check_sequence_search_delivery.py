@@ -59,7 +59,8 @@ def main():
                     '>acceptance query\n' + (absent_query if scenario == 'no-match' else match.group()))
                 dialog.get_by_label('Search scope', exact=True).select_option('assembly' if scenario == 'whole' else 'selection')
                 if reusable:
-                    dialog.get_by_label('Save reusable BED under DATA_DIR').check()
+                    dialog.locator('details.hict-advanced:not([open]) > summary').click()
+                    dialog.get_by_label('Save a reusable BED file in the data folder').check()
                     dialog.get_by_label('BED output path').fill('acceptance/exact.bed')
                     dialog.get_by_label('Overwrite', exact=True).check()
                 if scenario == 'retry':
@@ -79,7 +80,7 @@ def main():
                     dialog.get_by_role('button', name='Search', exact=True).click()
                 job_id = submitted.value.json()['jobId']
                 if scenario == 'no-match':
-                    dialog.get_by_text('No matching sequence found. No track was added.', exact=True).wait_for()
+                    dialog.get_by_text('No matching sequence found.', exact=True).wait_for()
                     assert page.evaluate('window.__hictBenchmark.manager().linearTrackManager.getTracksSnapshot().length') == before
                     jobs = page.request.post(args.api + '/sequence/jobs/list', data={}).json()
                     job = next(j for j in jobs if j['jobId'] == job_id)

@@ -4,7 +4,7 @@ import argparse, functools, http.server, json, os, random, shutil, sys, threadin
 from pathlib import Path
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, install_download_picker
 
 
 def main():
@@ -55,6 +55,7 @@ class OverlayFixture { public static void main(String[] a) {
     with HictTestServer(args.jar, data, out / 'server.log') as app, sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, env={**os.environ, 'FONTCONFIG_FILE': str(font)})
         page = browser.new_page(viewport=dict(width=1440, height=1000)); page.set_default_timeout(60000)
+        install_download_picker(page)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
         page.route('http://localhost:5000/**', lambda route: route.continue_(url=app.url + route.request.url.removeprefix('http://localhost:5000')))
         check = BrowserCheck(page, out); success = False
@@ -116,7 +117,7 @@ class OverlayFixture { public static void main(String[] a) {
             assert page.get_by_label('Reverse strand color').input_value() == '#2563eb'
             page.get_by_label('Forward strand color').fill('#12ab34')
             page.get_by_label('Reverse strand color').fill('#3456ef')
-            page.get_by_label('Save reusable BED under DATA_DIR').check()
+            page.get_by_label('Save a reusable BED file in the data folder').check()
             page.get_by_label('BED output path').fill('published/search-results.bed')
             page.get_by_label('Default gap length (Ns)', exact=True).fill('0')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
@@ -157,7 +158,7 @@ class OverlayFixture { public static void main(String[] a) {
             versions = []
             for iteration in range(2):
                 page.get_by_role('link', name='Tools', exact=True).click()
-                page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
+                page.get_by_role('button', name='ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 check.advanced()
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
@@ -177,7 +178,7 @@ class OverlayFixture { public static void main(String[] a) {
                 delta.fill('0.2')
                 assert delta.evaluate('element=>element.checkValidity()')
                 if iteration == 0:
-                    page.get_by_label('Save a reusable copy under DATA_DIR').check()
+                    page.get_by_label('Save a reusable copy in the data folder').check()
                     page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
                 page.get_by_label('Show result as').select_option('overlay' if iteration else 'below')
                 assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
@@ -461,7 +462,9 @@ class OverlayFixture { public static void main(String[] a) {
                 assert comparison['mean_channel_error']<3 and comparison['pixels_over_10']<0.06,comparison
                 text=subprocess.check_output(['pdftotext',str(out/'selection.pdf'),'-'],text=True)
                 assert len(text.strip())>15, 'PDF labels must remain editable text'
-            menu().get_by_role('menuitem', name='Generate ModDotPlot for selection…', exact=True).click()
+            analysis_menu = menu()
+            analysis_menu.get_by_role('menuitem', name='Analyse', exact=True).click()
+            analysis_menu.get_by_role('menuitem', name='ModDotPlot of region…', exact=True).click()
             assert page.get_by_label('Analysis scope').input_value() == 'selection'
             page.get_by_label('Show result as').select_option('none')
             previous_pipeline = json.loads(app.http('/render_pipeline/get', {}))
@@ -478,7 +481,9 @@ class OverlayFixture { public static void main(String[] a) {
             check.select_range()
             box=page.locator('#hic-contact-map').bounding_box()
             page.mouse.click(x=box['x']+min(box['width']*.17,150)+40,y=box['y']+min(box['height']*.17,150)+40,button='right')
-            page.get_by_role('menu',name='Assembly actions').get_by_role('menuitem',name='Generate dotplot for selection…',exact=True).click()
+            analysis_menu = page.get_by_role('menu', name='Assembly actions')
+            analysis_menu.get_by_role('menuitem', name='Analyse', exact=True).click()
+            analysis_menu.get_by_role('menuitem', name='Dotplot of region…', exact=True).click()
             dialog=page.get_by_role('dialog',name='Dotplot from current assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
             [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
@@ -487,7 +492,7 @@ class OverlayFixture { public static void main(String[] a) {
             check.advanced()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20'),('Sample every (bp)','50'),('Alignment threads','2')]:
                 page.get_by_label(name,exact=True).fill(value)
-            page.get_by_label('Save a reusable copy under DATA_DIR').check()
+            page.get_by_label('Save a reusable copy in the data folder').check()
             page.get_by_label('Output path').fill('published/selection-dotplot.hict.hdf5')
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
                 dialog.get_by_role('button',name='Generate',exact=True).click()
@@ -659,7 +664,7 @@ class OverlayFixture { public static void main(String[] a) {
                         str(mismatches)
                     )
                 check.advanced()
-                dialog.get_by_label("Save reusable BED under DATA_DIR").check()
+                dialog.get_by_label("Save a reusable BED file in the data folder").check()
                 filename = "published/control-" + label + ".bed"
                 dialog.get_by_label("BED output path").fill(filename)
                 with page.expect_response(

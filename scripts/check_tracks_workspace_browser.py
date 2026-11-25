@@ -174,7 +174,7 @@ with h5py.File(sys.argv[1],'r+') as f:
                     check.step('manager-fits-three-window-sizes-without-horizontal-clipping',fitting)
                     def layers():
                         tab('Sources and layers');dialog.get_by_role('button',name='Borders and labels…',exact=True).click();dialog.wait_for(state='hidden')
-                        control=page.get_by_role('button',name='Borders and labels',exact=True)
+                        control=page.get_by_role('button',name='Borders & labels',exact=True)
                         expect(control).to_have_attribute('aria-expanded','true');expect(control).to_be_focused()
                         control.click();page.get_by_role('button',name='Hide side panel',exact=True).click()
                         manager();tab('Sources and layers');dialog.get_by_role('button',name='Borders and labels…',exact=True).click();dialog.wait_for(state='hidden')

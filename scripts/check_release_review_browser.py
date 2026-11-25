@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 from browser_review_helpers import link_fasta
 
 
@@ -33,6 +34,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+        install_download_picker(page)
         page.set_default_timeout(90000)
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('requestfailed', lambda request: network_errors.append({'url': request.url, 'error': request.failure}))
@@ -168,19 +170,20 @@ def main():
                 page.evaluate('''i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
                     s.leftBP=[i*40000,i*40000];s.rightBP=[(i+1)*40000,(i+1)*40000];}''', iteration)
                 page.get_by_role('link', name='Tools', exact=True).click()
-                page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
+                page.get_by_role('button', name='ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 page.get_by_label('Analysis scope').select_option('selection')
                 for checkbox in dialog.locator('.resolution-options input').all(): checkbox.uncheck()
                 dialog.locator('.resolution-options input[value="5000"]').check()
                 if not dialog.get_by_label("Worker threads", exact=True).is_visible():
-                    dialog.get_by_text("Advanced", exact=True).click()
+                    dialog.locator('details.hict-advanced:not([open]) > summary').click()
                 page.get_by_label('Worker threads').fill('4')
                 dialog.get_by_role('button', name='Generate', exact=True).click()
                 dialog.wait_for(state='hidden', timeout=180000)
                 page.wait_for_timeout(1500)
-                primary_after = page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig().then(p=>p.upperExpression)')
-                assert primary_before == primary_after, (primary_before, primary_after)
+                overlay_after = page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig().then(p=>p.upperExpression)')
+                assert overlay_after['type'] == 'pixel_blend', overlay_after
+                assert overlay_after['bottom'] == primary_before, (primary_before, overlay_after)
                 results.append({'test':f'ModDotPlot selection {iteration+1} retains primary graph'})
             page.screenshot(path=str(out/'moddotplot-repeated.png'))
             for width in (900, 390):

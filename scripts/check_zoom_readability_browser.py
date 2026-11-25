@@ -10,6 +10,7 @@ import argparse
 import io
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 from PIL import Image
@@ -65,11 +66,36 @@ def main(default_normalizations=("file", "sqrt")):
                 report["consoleErrors"].append(m.text) if m.type == "error" else None
             ),
         )
+        tile_responses = {}
+
+        def track_tile(response):
+            url = urlsplit(response.url)
+            if url.path != "/get_tile":
+                return
+            parameters = parse_qs(url.query)
+            key = tuple(parameters.get(field, [""])[0] for field in
+                        ("version", "level", "bpResolution", "row", "col"))
+            tile_responses[key] = {
+                **dict(zip(("version", "level", "bpResolution", "row", "col"), key)),
+                "status": response.status,
+                "cancelled": response.headers.get("x-hict-cancelled") == "true",
+            }
+
+        page.on("response", track_tile)
 
         def settle():
             page.wait_for_timeout(2200)
             page.wait_for_function(
-                "()=>!window.__hictBenchmark.manager().visualizationManager.openingRangeRefreshInFlight"
+                """() => {
+                    const manager = window.__hictBenchmark.manager();
+                    const map = manager.getMap();
+                    if (manager.visualizationManager.openingRangeRefreshInFlight ||
+                        map.getView().getAnimating() || map.tileQueue_.getTilesLoading() ||
+                        map.tileQueue_.getCount()) return false;
+                    map.renderSync();
+                    return map.renderComplete_ && !map.tileQueue_.getTilesLoading()
+                        && !map.tileQueue_.getCount();
+                }"""
             )
             page.wait_for_timeout(700)
 
@@ -116,6 +142,7 @@ def main(default_normalizations=("file", "sqrt")):
                 share=share,
                 samples=total,
                 resolution=state()["resolution"],
+                tiles=list(tile_responses.values())[-120:] if share < args.floor else None,
             )
 
         def wheel(delta=-300):
@@ -150,7 +177,12 @@ def main(default_normalizations=("file", "sqrt")):
                     if normalization == "sqrt":
                         page.locator("#normalization-mode").select_option("sqrt")
                         page.wait_for_function(
-                            '()=>!document.querySelector("#normalization-progress")',
+                            """() => {
+                                const manager = window.__hictBenchmark.manager();
+                                return manager.networkManager.requestManager
+                                    .getNormalizationWeightsMode("PRIMARY") === "SQRT_COVERAGE"
+                                    && !document.querySelector("#normalization-progress");
+                            }""",
                             timeout=240000,
                         )
                         page.get_by_role("button", name="Apply", exact=True).click()

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show each visible source's bin size in expanded Info and name the Shift-selection isolation action in the map menu.
 - Keep the viewport steady at the finest zoom and leave visualization settings intact when the server rejects a preset.
 - Stop repeated coverage-status requests on idle maps while keeping progress updates during normalization.
 - Shorten the selected region's context menu, show the region and contig sizes, and keep Analyse and export within reach in projector-sized windows.

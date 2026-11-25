@@ -502,7 +502,7 @@ def main():
                     def active_editor():
                         editor_open()
                         expect(
-                            dialog.get_by_label("Enable custom pipeline", exact=True)
+                            dialog.get_by_label("Enable custom rendering", exact=True)
                         ).not_to_be_visible()
                         tab = dialog.get_by_role(
                             "tab", name="Primary O/E colormap", exact=True

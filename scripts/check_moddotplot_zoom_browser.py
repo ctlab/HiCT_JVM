@@ -101,7 +101,7 @@ def main():
                 page.evaluate("""i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
                     s.leftBP=[1000000+i*40000,1000000+i*40000];s.rightBP=[1040000+i*40000,1040000+i*40000];}""", iteration)
                 page.get_by_role("link", name="Tools", exact=True).click()
-                page.get_by_role("button", name="Generate ModDotPlot…", exact=True).click()
+                page.get_by_role("button", name="ModDotPlot…", exact=True).click()
                 dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
                 page.get_by_label("Analysis scope").select_option("selection")
                 # This check isolates the primary triangle; selection analyses
@@ -111,7 +111,7 @@ def main():
                     checkbox.uncheck()
                 dialog.locator('.resolution-options input[value="5000"]').check()
                 if not dialog.get_by_label("Worker threads", exact=True).is_visible():
-                    dialog.get_by_text("Advanced", exact=True).click()
+                    dialog.locator("details.hict-advanced:not([open]) > summary").click()
                 page.get_by_label("Worker threads").fill("4")
                 start = time.monotonic()
                 dialog.get_by_role("button", name="Generate", exact=True).click()
