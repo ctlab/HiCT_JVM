@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -102,6 +103,11 @@ class DraftPublicationTest(unittest.TestCase):
         self.publish()
         self.assertEqual(self.writes, ["create", self.origin.name, self.origin.name,
                                        self.package.name, self.manifest.name, "publish"])
+
+    def test_checksum_spans_multiple_read_blocks(self):
+        contents = b"HiCT installer\n" * 100_000
+        self.package.write_bytes(contents)
+        self.assertEqual(file_digest(self.package), hashlib.sha256(contents).hexdigest())
 
     def test_resumes_draft_with_original_origin(self):
         self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
