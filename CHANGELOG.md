@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Put map and session commands first in File, add Open and Save shortcuts, and name the next undo action. Make Advanced visualization settings easier to scan and show the map resolution in base-pair units.
 - Show the full region dimensions in the desktop ribbon while keeping it on one row. Align the empty workspace card and its opening actions.
 - Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
 - Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.

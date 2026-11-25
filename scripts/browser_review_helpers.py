@@ -3,10 +3,14 @@ import re
 from pathlib import PurePosixPath
 
 
-def expand_slider_limits(page):
+def expand_slider_limits(page, *, edit=False):
     details = page.locator("#signal-advanced")
     if details.get_attribute("open") is None:
         details.locator(":scope > summary").click()
+    if edit:
+        edit_limits = details.get_by_role("button", name="Edit slider limits", exact=True)
+        if edit_limits.get_attribute("aria-expanded") == "false":
+            edit_limits.click()
 
 
 def link_fasta(page, filename):

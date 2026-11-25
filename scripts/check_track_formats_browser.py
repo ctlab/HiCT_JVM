@@ -182,7 +182,7 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 aggregates = {}
                 for mode, expected in (('MAX', -4), ('MEAN', -6), ('SUM', -4.8)) if args.signed else (('MAX', 9), ('MEAN', 6), ('SUM', 4.8)):
                     if mode != 'MAX':
-                        choose_mode(mode)
+                        choose_mode('MEAN_WITH_ZERO_GAPS' if mode == 'SUM' else mode)
                     verify_features()
                     assert values(query()['Signal']) == oracle
                     coarse = query(0, 5, 1)['Signal']

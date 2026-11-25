@@ -274,16 +274,17 @@ def main():
                 page.evaluate('()=>window.localStorage.clear()')
                 open_manual(fixture)
                 settle()
-                note = page.get_by_role('button', name='Change')
+                note = page.locator('#normalization-settings-dropdown').get_by_role('button', name='Change', exact=True)
                 if note.count():
                     check(f'{stem}: a one-line note offers Change', note.first.is_visible())
-                    note.first.click()
-                    page.get_by_role('button', name='Show raw contacts (no balancing)').click()
+                    note.click()
+                    policy = page.locator('#cooler-weights-nan-policy')
+                    check(f'{stem}: Change opens and focuses the policy',
+                          policy.evaluate('element => element === document.activeElement'))
+                    policy.select_option('DISABLE_WEIGHTS')
                     measure(f'{stem}-excluded-off')
-                    page.locator('#signal-advanced > summary').click()
-                    page.get_by_text('Cooler weights', exact=True).first.click()
                     for value in ('REPLACE_NANS_WITH_ONE', 'REPLACE_NANS_WITH_ZERO'):
-                        page.locator('#cooler-weights-nan-policy').select_option(value)
+                        policy.select_option(value)
                         measure(f'{stem}-excluded-{value.split("_")[-1].lower()}')
                 else:
                     check(f'{stem}: no excluded bins, nothing to mask', fixture not in args.nan_files)

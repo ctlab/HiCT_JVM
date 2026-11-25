@@ -139,18 +139,21 @@ try:
                 expected = page.evaluate(
                     "()=>window.__hictBenchmark.manager().viewAndLayersManager.getFinestVisibleSourceResolutionDescriptor()"
                 )
+                def bin_size(bp):
+                    if bp >= 1_000_000:
+                        return f"{bp / 1_000_000:.3g} Mb"
+                    if bp >= 1_000:
+                        return f"{bp / 1_000:.4g} kb"
+                    return f"{bp} bp"
+
                 text = (
-                    (
-                        "Base scale; native bins: "
-                        + str(expected["sourceBpResolution"])
-                        + " bp"
-                    )
+                    "Base scale; native bins: " + bin_size(expected["sourceBpResolution"])
                     if expected.get("displayGrid") == "SEQUENCE_BP"
-                    else "Bin resolution: 1:" + str(expected["bpResolution"])
+                    else "Resolution: " + bin_size(expected["bpResolution"])
                 )
                 expect(overlay).to_contain_text(text)
                 expect(overlay).to_contain_text(
-                    "Guidance source: " + expected.get("sourceName", "PRIMARY")
+                    "Showing data from: " + expected.get("sourceName", "PRIMARY").lower()
                 )
                 return expected
 
@@ -220,7 +223,8 @@ try:
                 dialog.locator("#osd-field-resolution").uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 move()
-                expect(overlay).not_to_contain_text("Bin resolution:")
+                expect(overlay).not_to_contain_text("Resolution:")
+                expect(overlay).not_to_contain_text("Base scale; native bins:")
                 expect(overlay.locator("div")).to_have_css("bottom", "12px")
                 record("info-position-and-field-settings-retain-the-existing-layout")
                 check.menu("View", "Info settings…")

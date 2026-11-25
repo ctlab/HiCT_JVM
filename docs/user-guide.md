@@ -2,10 +2,6 @@
 
 ## Open a map
 
-The portable Launcher uses loopback by default. If you run `start-server`
-directly, it binds to `0.0.0.0`. Set `HICT_BIND_HOST=127.0.0.1` to accept
-connections from this computer only.
-
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press
 Enter. The picker lists files inside the server's data directory. Use
 **Open with options…** for `.hic`, `.cool` and `.mcool` conversion and optional
@@ -259,3 +255,9 @@ An action failure shows one message with Details and Copy diagnostics. Notificat
 retains background messages. Job failures remain in Jobs. A failed session save
 keeps the assembly marked unsaved. Before opening another map or closing an edited
 one, respond to the unsaved-edits dialog. Keep a copy of your source data.
+
+## Installation and security
+
+The portable Launcher uses loopback by default. If you run `start-server`
+directly, it binds to `0.0.0.0`. Set `HICT_BIND_HOST=127.0.0.1` to accept
+connections from this computer only.

@@ -169,6 +169,7 @@ def main():
                 assert [lower.input_value(), upper.input_value()] == thresholds
                 assert pipeline() == graph
             page.get_by_role("button", name="Focus range", exact=True).click()
+            page.get_by_role("button", name="Edit slider limits", exact=True).click()
             minimum = page.get_by_label("Slider minimum signal", exact=True
             )
             maximum = page.get_by_label("Slider maximum signal", exact=True

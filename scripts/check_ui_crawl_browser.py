@@ -43,7 +43,8 @@ def main():
             assert availability.value.json() == {"available": False}
             assert not check.errors, check.errors
 
-            page.get_by_role("button", name="Open map…", exact=True).click()
+            page.keyboard.press("Control+o")
+            expect(page.get_by_role("heading", name="Open Hi-C dataset")).to_be_visible()
             check.choose_file(args.file)
             page.get_by_role("button", name="Load", exact=True).click()
             page.wait_for_function("window.__hictBenchmark?.manager()")
@@ -61,6 +62,9 @@ def main():
                 check.reverse()
                 expect(page.get_by_role("button", name="Undo", exact=True)).to_be_enabled()
                 assert agp() != initial
+                page.get_by_role("link", name="Edit", exact=True).click()
+                expect(page.get_by_role("button", name="Undo Reverse selection", exact=True)).to_be_enabled()
+                page.keyboard.press("Escape")
                 page.get_by_role("button", name="Undo", exact=True).click()
                 check.settle()
                 assert agp() == initial
