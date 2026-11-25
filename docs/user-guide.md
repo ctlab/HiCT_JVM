@@ -243,7 +243,7 @@ leaves balancing unavailable.
 | Action | Input |
 |---|---|
 | Pan | Drag on the map |
-| Zoom | Mouse wheel or zoom buttons |
+| Zoom | Mouse wheel, zoom buttons, or Tab to the contact map and press +, =, or − |
 | Select contigs/scaffolds | Shift-drag |
 | Keep a rectangle for sequence/dotplot analysis | Ctrl-drag |
 | Open selected file | Enter or double-click |

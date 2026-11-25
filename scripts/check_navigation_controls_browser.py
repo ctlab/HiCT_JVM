@@ -122,6 +122,21 @@ def main():
                     "test": "Toolbar and native zoom respect both constrained endpoints and preserve center"
                 }
             )
+            surface = page.get_by_role("region", name="Contact map", exact=True)
+            for key in ("=", "+"):
+                surface.press(key)
+                check.settle()
+                assert view()["resolution"] < before["resolution"]
+                assert view()["center"] == before["center"]
+                surface.press("-")
+                check.settle()
+                assert abs(view()["resolution"] - before["resolution"]) < before["resolution"] * 1e-9
+            text_entry = page.get_by_label("Lower signal threshold", exact=True)
+            text_entry.focus()
+            page.keyboard.press("=")
+            check.settle()
+            assert view() == before
+            results.append({"test": "Map keyboard zoom keeps the center and ignores text fields"})
             page.get_by_role("button", name="Hide side panel", exact=True).click()
             expect(page.locator("aside.sidebar")).to_have_class(
                 "sidebar sidebar-collapsed"

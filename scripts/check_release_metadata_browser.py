@@ -68,8 +68,8 @@ def main():
             return text.length > 0 && !text.includes('loading');
         }""")
         versions = dialog.locator(".about-versions").inner_text()
-        assert f"WebUI: {args.webui_version}" in versions, versions
-        assert f"Commit: {args.webui_commit}" in versions.splitlines(), versions
+        assert f"WebUI revision: {args.webui_commit}" in versions.splitlines(), versions
+        assert f"WebUI: {args.webui_version}" not in versions, versions
         assert "unknown" not in versions and "loading" not in versions, versions
         citation = dialog.locator(".how-to-cite").inner_text()
         assert api_versions["version"] in citation and api_versions["backendRevision"] in citation and args.webui_commit in citation
