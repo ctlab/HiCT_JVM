@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_library.assembly.SequenceSearchQueries;
 import ru.itmo.ctlab.hict.fixtures.ChildProcessFixture;
+import java.io.IOException;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.List;
@@ -101,6 +102,22 @@ class RemoteBlastRunnerTest {
     });
   }
 
+  private void removeStoppedProcessFiles() throws IOException, InterruptedException {
+    // On Windows a file can remain pending deletion until its last handle closes.
+    // Retry the fixture cleanup before JUnit checks that the directory is empty.
+    for (int attempt = 1; ; attempt++) {
+      try {
+        Files.deleteIfExists(dir.resolve("remote-blast.log"));
+        Files.deleteIfExists(dir.resolve("queries.fasta"));
+        Files.deleteIfExists(dir);
+        return;
+      } catch (FileSystemException pendingRemoval) {
+        if (attempt == 20) throw pendingRemoval;
+        Thread.sleep(50);
+      }
+    }
+  }
+
   @Test void controlledProcessProducesAReportAndUploadsOnlyGeneratedQueryIds() throws Exception {
     var fixture = Files.writeString(dir.resolve("fixture result.tsv"), row());
     var result = controlledProcess("copy-output", fixture.toString()).run(Path.of("blastn"), dir, queries,
@@ -128,6 +145,7 @@ class RemoteBlastRunnerTest {
       p -> { if (p != null) process.set(p); }, () -> false, Duration.ofMillis(50), Duration.ZERO));
     assertNotNull(process.get()); assertFalse(process.get().isAlive());
     assertFalse(Files.exists(dir.resolve("remote-blast.json"))); assertFalse(Files.exists(dir.resolve("remote-blast.tsv")));
+    removeStoppedProcessFiles();
   }
 
   @Test void cancellationStopsTheOwnedProcessAndDoesNotPublishAReport() throws Exception {
@@ -136,5 +154,7 @@ class RemoteBlastRunnerTest {
       p -> { if (p != null) { process.set(p); cancel.set(true); } }, cancel::get, Duration.ofSeconds(5), Duration.ZERO));
     assertNotNull(process.get()); assertFalse(process.get().isAlive());
     assertFalse(Files.exists(dir.resolve("remote-blast.json")));
+    assertFalse(Files.exists(dir.resolve("remote-blast.tsv")));
+    removeStoppedProcessFiles();
   }
 }

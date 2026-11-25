@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Wait briefly for Windows to release temporary files in the cancellation tests.
 - Record map startup and sustained idle CPU separately in the Linux browser check.
 - Provide stable Main and Development download links alongside versioned releases.
 - Save and restore isolated coordinate regions and contig selections in sessions.
