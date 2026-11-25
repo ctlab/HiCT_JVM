@@ -47,7 +47,11 @@ def main():
                 if(q.pickerMode==='deny')throw new DOMException('Picker denied','NotAllowedError');
                 const name='chosen-'+options.suggestedName;
                 const handle={name,getFile:async()=>{q.readbacks++;return q.files[name];},createWritable:async()=>{
-                  const chunks=[];return {write:async value=>{if(q.writeMode==='fail-write')throw Error('Simulated write failure');chunks.push(value);},
+                  const chunks=[];return {write:async value=>{
+                    if(q.writeMode==='fail-write')throw Error('Simulated write failure');
+                    // The real writable consumes the bytes before write() resolves.
+                    chunks.push(value instanceof Uint8Array ? value.slice() : value);
+                  },
                     close:async()=>{if(q.writeMode==='fail-close')throw Error('Simulated close failure');
                       const commit=()=>{q.files[name]=new File(chunks,name,{type:chunks[0]?.type||'text/plain'});q.last=name;};
                       if(q.writeMode==='wait-close')await new Promise(resolve=>{q.releaseWrite=()=>{commit();q.releaseWrite=null;resolve();};});else commit();},
@@ -135,7 +139,11 @@ def main():
                 expected=json.loads(app.http('/sequence/region',{'startBp':0,'endBp':4000}))['sequence']
                 mode();check.menu('Assembly','Export FASTA…');page.wait_for_function('window.__fileQA.last==="chosen-assembly.fasta"')
                 path=artifact('assembly.fasta');actual=''.join(line for line in path.read_text().splitlines() if not line.startswith('>'))
-                assert actual==expected
+                assert actual == expected, {
+                    "expectedLength": len(expected),
+                    "exportedLength": len(actual),
+                    "firstMismatch": next((i for i, pair in enumerate(zip(actual, expected)) if pair[0] != pair[1]), None),
+                }
                 check.menu('Assembly','Export AGP…');page.wait_for_function('window.__fileQA.last==="chosen-assembly.agp"');artifact('assembly.agp')
                 calls=page.evaluate('window.__fileQA.calls');assert any(c['id']=='hict-fasta' for c in calls) and any(c['id']=='hict-agp' for c in calls)
             check.step('assembly-fasta-agp-use-save-destinations',assembly_files)

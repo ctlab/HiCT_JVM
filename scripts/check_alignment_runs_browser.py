@@ -120,10 +120,15 @@ def main():
             check.step('regular-lines-align-with-letter-boundaries',regular_lines)
             scope('column',names['300']);focus(305,106)
             def rendered_substitution():
-                page.wait_for_function('''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().some(f=>f.get('alignmentSegment').operation==='SUBSTITUTION')''')
+                has_substitution = '''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().some(f=>f.get('alignmentSegment').operation==='SUBSTITUTION')'''
+                page.wait_for_function(has_substitution)
                 state=rendered();assert any(f['color']=='#c2410c' for f in state['features']),state
                 assert all(f['type']=='LineString' for f in state['features'])
+                # Keep both aligner windows in view while zooming. Trimming this
+                # repetitive fixture can legitimately turn a mismatch into an indel.
+                page.set_viewport_size({'width':1600,'height':1750})
                 focus(305,106,1/12000)
+                page.wait_for_function(has_substitution)
                 assert any(f['segment']['operation']=='SUBSTITUTION' for f in rendered()['features'])
             check.step('substitution-lines-survive-further-zoom',rendered_substitution)
             def exports():

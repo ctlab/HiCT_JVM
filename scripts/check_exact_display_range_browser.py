@@ -132,7 +132,9 @@ def main():
                 values = []
                 for limit in ("minimum", "maximum"):
                     field = page.get_by_label(f"Slider {limit} signal", exact=True)
+                    expect(field).to_be_visible()
                     field.focus()
+                    expect(field).to_be_focused()
                     values.append(field.input_value())
                     field.blur()
                 return values
@@ -158,6 +160,7 @@ def main():
                 ).fill("8")
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
+                page.get_by_role("button", name="Edit slider limits", exact=True).click()
                 graph = post("/render_pipeline/get")
                 opts = options()
                 start = len(requests)

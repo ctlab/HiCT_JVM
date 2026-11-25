@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show the custom rendering toggle only on the Observed tab, where it takes effect.
 - Put the Normalization label above its full-width selector and keep Apply visible at desktop window sizes.
 - Keep the map context menu within nine rows with contig and scaffold submenus, and restore the full map directly after isolating a region.
 - Refresh the map after scoped zoom when queued tiles have no active transfers.

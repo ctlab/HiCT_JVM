@@ -133,7 +133,7 @@ def main():
                             }
                         )
                     page.get_by_role(
-                        "button", name="Borders and labels", exact=True
+                        "button", name="Borders & labels", exact=True
                     ).click()
                     record = page.locator(".layer-record").filter(
                         has=page.locator('.layer-name[title="Contig borders"]')
