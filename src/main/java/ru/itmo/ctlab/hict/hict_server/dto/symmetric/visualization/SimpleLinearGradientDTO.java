@@ -51,7 +51,8 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
 
   public static java.util.List<Double> readCurve(JsonObject json) {
     if (!json.containsKey("curve") || json.getValue("curve") == null) return null;
-    final var points = json.getJsonArray("curve");
+    if (!(json.getValue("curve") instanceof io.vertx.core.json.JsonArray points))
+      throw new IllegalArgumentException("Expected a color curve array");
     if (points.size() > 128) throw new IllegalArgumentException("Too many color curve points");
     final var values = new java.util.ArrayList<Double>();
     for (Object value : points) {

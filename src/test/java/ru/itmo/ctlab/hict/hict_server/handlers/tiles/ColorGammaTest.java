@@ -8,10 +8,54 @@ import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLin
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.SimpleLinearGradientDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.SessionVisualizationCodec;
 import java.awt.Color;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ColorGammaTest {
+  private record TransferCase(double input, List<Double> curve, double weight) {}
+
+  @Test void explicitEndpointsSetColorWeightsAtAndBeyondTheBounds() {
+    final var right = List.of(0.85, 1.0, 1.0, 0.0);
+    final var cases = List.of(
+      new TransferCase(0.5, null, 0.5), new TransferCase(0.5, List.of(0.5, 0.8), 0.8),
+      new TransferCase(0, List.of(0.0, 0.25), 0.25), new TransferCase(-3, List.of(0.0, 0.25), 0.25),
+      new TransferCase(0.5, List.of(0.0, 0.25), 0.625), new TransferCase(1, right, 0),
+      new TransferCase(7, right, 0), new TransferCase(0.85, right, 1),
+      new TransferCase(0.925, right, 0.5)
+    );
+    for (var sample : cases) {
+      assertEquals(sample.weight(), SimpleLinearGradient.transfer(sample.input(), 1, sample.curve()), 1e-12);
+    }
+    assertEquals(List.of(0.0, 0.2, 0.5, 0.5, 1.0, 0.0),
+      SimpleLinearGradient.validateCurve(List.of(0.0, 0.2, 0.5, 0.5, 1.0, 0.0)));
+    for (var invalid : List.of(List.of(0.5, 0.5, 0.0, 0.2), List.of(1.0, 0.0, 0.5, 0.5), List.of(0.0, 1.2))) {
+      assertThrows(IllegalArgumentException.class, () -> SimpleLinearGradient.validateCurve(invalid));
+    }
+    assertEquals(0.5, SimpleLinearGradient.transfer(0.5, 2, List.of()));
+  }
+
+  @Test void endpointWeightsReachRenderedPixelsAndRoundTripThroughSession() {
+    final var start = new Color(11, 22, 33, 0);
+    final var end = Color.RED;
+    final var points = List.of(0.0, 0.25, 0.85, 1.0, 1.0, 0.0);
+    final var gradient = new SimpleLinearGradient(32, start, end, 10, 110, 1, points);
+    final var options = new SimpleVisualizationOptions(-1, -1, false, false, false, gradient);
+    final var restored = (SimpleLinearGradient) SessionVisualizationCodec.decode(
+      SessionVisualizationCodec.encode(options)).getColormap();
+    assertEquals(points, restored.getCurve());
+    assertEquals(start.getRGB(), restored.mapSignal(120).getRGB());
+    final var expression = new JsonObject().put("type", "colormap").put("mode", "LINEAR")
+      .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#0b162100").put("endColor", "#ff0000ff")
+      .put("minSignal", 10).put("maxSignal", 110).put("curve", new io.vertx.core.json.JsonArray(points));
+    final var config = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+      .put("upperExpression", expression).put("lowerExpression", expression.copy()));
+    final var pixel = new RenderPipelineConfig.MutablePixelContext();
+    pixel.primaryValue = 120;
+    assertEquals(start.getRGB(), config.evaluateArgb(true, pixel, options));
+  }
+
   @Test void gammaChangesOnlyRgbaInterpolationAndPreservesDefaultEndpoints() {
     for (double gamma : new double[]{0.05, 0.5, 1, 2, 10, 100}) {
       var gradient = new SimpleLinearGradient(32, new Color(255,255,255,0), new Color(0,0,0,255), 10, 110, gamma);
@@ -113,6 +157,15 @@ class ColorGammaTest {
           assertEquals(expected.getRed(), Byte.toUnsignedInt(rgba[index*4]),1);
           assertEquals(expected.getAlpha(), Byte.toUnsignedInt(rgba[index*4+3]),1);
         }
+      }
+      final var endpoints = new SimpleLinearGradient(32, new Color(255,255,255,0), Color.BLACK,
+        10, 75, 1, List.of(0.0, 0.25, 0.85, 1.0, 1.0, 0.0));
+      final var mapped = service.tryMapLinearGradientRgba(values, endpoints);
+      assertNotNull(mapped);
+      for (int index = 0; index < values[0].length; index++) {
+        final var expected = endpoints.mapSignal(values[0][index]);
+        assertEquals(expected.getRed(), Byte.toUnsignedInt(mapped[index * 4]), 1);
+        assertEquals(expected.getAlpha(), Byte.toUnsignedInt(mapped[index * 4 + 3]), 1);
       }
       assertArrayEquals(new double[]{0,1,25,50,75,100},values[0]);
     } finally { service.setRequestedEnabled(false); }

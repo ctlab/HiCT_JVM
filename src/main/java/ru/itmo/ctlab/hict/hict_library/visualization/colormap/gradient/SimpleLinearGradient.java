@@ -78,24 +78,32 @@ public class SimpleLinearGradient extends DoubleColormap {
     }
   }
 
-  /** Alternating normalized input and output coordinates, with implicit (0,0) and (1,1). */
+  /** Alternating normalized input and output coordinates. End pairs default to (0,0) and (1,1). */
   public static java.util.List<Double> validateCurve(java.util.List<Double> points) {
     if (points == null) return null;
     if (points.size() % 2 != 0 || points.size() > 128) throw new IllegalArgumentException("Invalid color curve length");
-    double previous = 0;
-    for (int i=0; i<points.size(); i+=2) {
-      double x = points.get(i), y = points.get(i+1);
-      if (!(x > previous && x < 1 && y >= 0 && y <= 1)) throw new IllegalArgumentException("Invalid color curve point");
+    double previous = -1;
+    for (int i = 0; i < points.size(); i += 2) {
+      final Double x = points.get(i), y = points.get(i + 1);
+      if (x == null || y == null || !(x >= 0 && x <= 1 && x > previous && y >= 0 && y <= 1))
+        throw new IllegalArgumentException("Invalid color curve point");
       previous = x;
     }
     return java.util.List.copyOf(points);
   }
 
-  public static double transfer(double x, double gamma, java.util.List<Double> points) {
-    if (points == null) return gamma == 1 ? x : Math.pow(x,gamma);
+  public static double transfer(double fraction, double gamma, java.util.List<Double> points) {
+    final double x = Math.max(0.0d, Math.min(1.0d, fraction));
+    if (points == null) return gamma == 1 ? x : Math.pow(x, gamma);
     double left = 0, lower = 0;
-    for (int i=0; i < points.size(); i+=2) {
-      double right = points.get(i), upper = points.get(i+1);
+    final boolean hasStart = !points.isEmpty() && points.getFirst() == 0.0d;
+    if (hasStart) {
+      lower = points.get(1);
+      if (x == 0) return lower;
+    }
+    if (x == 1 && !points.isEmpty() && points.get(points.size() - 2) == 1) return points.getLast();
+    for (int i = hasStart ? 2 : 0; i < points.size(); i += 2) {
+      final double right = points.get(i), upper = points.get(i + 1);
       if (x <= right) return lower + (upper-lower)*(x-left)/(right-left);
       left = right;
       lower = upper;

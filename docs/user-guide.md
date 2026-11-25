@@ -104,7 +104,8 @@ settings to choose the destination.
 Use the Visualization sidebar to change the color range, Displayed signal and
 normalization, then Apply. Slider scale below the histogram changes the spacing
 of the slider and histogram. Displayed signal changes the values used to color
-the map. Square-root coverage uses a single
+the map. Drag the square curve handles up or down to change the color at and
+beyond the Lower and Upper limits. Square-root coverage uses a single
 whole-map domain at each resolution. Bins without contacts remain empty.
 When two sources are open, choose **Primary** or **Secondary** in Visualization
 before setting Normalization. For example, use square-root coverage for the

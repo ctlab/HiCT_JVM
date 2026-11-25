@@ -923,8 +923,13 @@ public final class RenderPipelineConfig {
 
   private static int mapIdentityColor(double value, double minimum, double maximum, double gamma, java.util.List<Double> curve) {
     if (!Double.isFinite(value) || !Double.isFinite(minimum) || !Double.isFinite(maximum)
-        || value <= 0 || value < minimum || minimum < 0 || maximum < minimum) return 0;
-    final double fraction = maximum == minimum ? 1 : Math.min(1, (value - minimum) / (maximum - minimum));
+        || value <= 0 || minimum < 0 || maximum < minimum) return 0;
+    // The legacy percentage cutoff keeps absent and below-threshold cells transparent.
+    // An explicit lower endpoint can shade positive observations below the threshold.
+    if (value < minimum && (curve == null || curve.isEmpty() || curve.getFirst() != 0)) return 0;
+    final double fraction = maximum == minimum
+      ? (value < minimum ? 0 : 1)
+      : (value - minimum) / (maximum - minimum);
     final double index = SimpleLinearGradient.transfer(fraction, gamma, curve) * (IDENTITY_COLORS.length - 1);
     final int left = Math.min(IDENTITY_COLORS.length - 2, (int) index);
     final double mix = index - left;

@@ -3033,9 +3033,11 @@ components:
         SimpleLinearGradient colormaps optionally accept gamma (finite, 0.05 through
         100, default 1). Ordinary gradient colors interpolate with
         pow(clamp((signal-minSignal)/(maxSignal-minSignal),0,1),gamma).
-        Gamma affects RGBA only, not numeric signals, histograms or thresholds.
-        O/E retains its neutral-at-1 ratio palette and identity palettes retain
-        their fixed mapping. Legacy payloads without gamma keep their appearance.
+        A curve is an array of up to 64 input/output pairs in [0,1], with strictly
+        increasing inputs. Optional inputs 0 and 1 set the color weights at and
+        beyond the limits. Omitted endpoints use weights 0 and 1. An explicit
+        curve replaces gamma. These settings only affect RGBA. O/E retains its
+        neutral-at-1 ratio palette. Legacy payloads keep their appearance.
       additionalProperties: true
       properties:
         preserveRenderPipeline:
@@ -3068,8 +3070,11 @@ components:
         processing and uses the same palette mapping for O/E.
         LINEAR colormap nodes optionally accept gamma in [0.05,100], default 1,
         applying the same color-only power curve as ordinary gradient options.
-        Gamma does not alter the node input or numeric diagnostics and has no
-        effect on O/E or identity palette mappings.
+        LINEAR and MODDOTPLOT_IDENTITY accept up to 64 normalized curve pairs,
+        with optional endpoint inputs 0 and 1 and strictly increasing inputs.
+        Color curves change RGBA only, including the weight at and beyond the
+        limits. Identity cells without an alignment remain transparent.
+        The O/E palette keeps its neutral at 1.
       additionalProperties: true
 
     TileWithRangesResponse:

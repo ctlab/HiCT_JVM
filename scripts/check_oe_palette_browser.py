@@ -241,6 +241,7 @@ def main():
                     def colors():
                         nonlocal pixels
                         mode("OBSERVED_OVER_EXPECTED")
+                        expect(page.locator(".curve-endpoint")).to_have_count(0)
                         bounds(0.25, 4)
                         pick(0, "#00ff0080")
                         pick(1, "#ff00ffcc")
