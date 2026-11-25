@@ -69,17 +69,23 @@ def upload_missing_asset(repo, tag, release_id, file, digest):
     for attempt in range(3):
         present = uploaded_assets(repo, release_id).get(file.name)
         if present:
-            if not matches(present, file, digest):
-                raise RuntimeError(f"Existing asset differs or upload is incomplete: {file.name}")
-            return
+            break
         print(f"Uploading {file.name} (attempt {attempt + 1})", flush=True)
         result = subprocess.run(["gh", "release", "upload", tag, "--repo", repo, str(file)])
         if result.returncode == 0:
             break
         time.sleep(2 ** attempt)
-    present = uploaded_assets(repo, release_id).get(file.name)
-    if not present or not matches(present, file, digest):
-        raise RuntimeError(f"Could not verify uploaded asset: {file.name}")
+    # The asset list can lag behind the upload response.
+    for delay in (0, 1, 2, 4, 8, 16):
+        if delay:
+            time.sleep(delay)
+        present = uploaded_assets(repo, release_id).get(file.name)
+        if not present or present["state"] != "uploaded":
+            continue
+        if matches(present, file, digest):
+            return
+        break
+    raise RuntimeError(f"Could not verify uploaded asset: {file.name}")
 
 
 def publish(repo, tag, version, source, directory, notes, *, channel="jvm-sfx-native"):

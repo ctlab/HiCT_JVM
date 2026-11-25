@@ -35,6 +35,8 @@ class DraftPublicationTest(unittest.TestCase):
         self.writes = []
         self.upload_failures = 0
         self.draft_reads_to_delay = 0
+        self.asset_reads_to_delay = {}
+        self.uploads_with_lost_response = {}
 
     def write_manifest(self):
         self.manifest.write_text("".join(
@@ -82,6 +84,8 @@ class DraftPublicationTest(unittest.TestCase):
             self.upload_failures -= 1
             return CompletedProcess(args, 1)
         self.save_asset(file)
+        if file.name in self.uploads_with_lost_response:
+            return CompletedProcess(args, 1)
         return CompletedProcess(args, 0)
 
     def fake_pages(self, endpoint):
@@ -91,7 +95,16 @@ class DraftPublicationTest(unittest.TestCase):
                 return []
             return [self.release] if self.release else []
         self.assertEqual(endpoint, f"repos/{self.repo}/releases/8/assets?per_page=100")
-        return list(self.assets.values())
+        visible = []
+        for name, asset in self.assets.items():
+            if self.asset_reads_to_delay.get(name, 0):
+                self.asset_reads_to_delay[name] -= 1
+                continue
+            if self.uploads_with_lost_response.get(name, 0):
+                self.uploads_with_lost_response[name] -= 1
+                asset = dict(asset, state="starter", size=0, digest=None)
+            visible.append(asset)
+        return visible
 
     def publish(self, channel="jvm-sfx-native"):
         with (
@@ -120,6 +133,25 @@ class DraftPublicationTest(unittest.TestCase):
         self.assertEqual(self.draft_reads_to_delay, 0)
         self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
                                        self.manifest.name, "publish"])
+
+    def test_waits_for_an_accepted_asset_to_appear_without_uploading_again(self):
+        self.asset_reads_to_delay[self.package.name] = 2
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_pending_asset_after_lost_response_finishes_without_uploading_again(self):
+        self.uploads_with_lost_response[self.package.name] = 2
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_draft_stays_unpublished_if_an_accepted_asset_never_appears(self):
+        self.asset_reads_to_delay[self.package.name] = 100
+        with self.assertRaisesRegex(RuntimeError, "Could not verify uploaded asset"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name])
 
     def test_unlisted_draft_stays_unpublished_when_lookup_expires(self):
         self.draft_reads_to_delay = 50
