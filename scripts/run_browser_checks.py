@@ -38,6 +38,7 @@ def main():
             "--file", "structural.hict.hdf5", "--fasta", "structural.fa",
         ],
         "check_isolation_zoom_browser.py": ["--file", "structural.hict.hdf5"],
+        "check_idle_coverage_browser.py": ["--file", "structural.hict.hdf5"],
         "check_mixed_pyramids_browser.py": ["--inline-source-info"],
         "check_workspace_controls_browser.py": [],
         "check_failed_primary_open_browser.py": [],
@@ -98,6 +99,8 @@ def main():
                                     "--api", server.url, "--output", str(out / "screens"), *options]
                                 if name == "check_batch_conversion_browser.py":
                                     command += ["--data-dir", str(data)]
+                                if name == "check_idle_coverage_browser.py" and sys.platform == "linux":
+                                    command += ["--server-pid", str(server.process.pid)]
                                 if not run_check(command, out):
                                     failures.append(f"{run}: {name}")
                         finally:
