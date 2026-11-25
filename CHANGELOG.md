@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
+- Show Print width and Label size together. Offer larger labels when the smallest text may be unreadable in print.
+- Confirm expensive selection exports and clipboard copies with the sampled bin count and figure dimensions.
+- Keep Launcher console logs available after a manual stop or startup failure.
+- Publish each branch preview once all platform files and checksums are verified.
 - Keep the opening wizard compact, label the current step, and put the primary and optional maps in reading order.
 - Put both visible bin sizes in the main Info overlay and figure notes, including the outgoing level while a finer overlay loads. Keep Apply accessible with both sources open.
 - Put the ModDotPlot storage estimate and its budget recovery action in one warning row.
