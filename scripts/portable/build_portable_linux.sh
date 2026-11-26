@@ -221,7 +221,7 @@ release size, and avoid opaque native self-extracting packers.
 EOF
 
 runtime_options=()
-trim_native_heap_interval_ms=5000
+trim_native_heap_interval_ms=1000
 trim_native_heap_option="-XX:TrimNativeHeapInterval=${trim_native_heap_interval_ms}"
 jdk_java="$(dirname "$(readlink -f "${JLINK}")")/java"
 if [[ -z "${ABI_SUFFIX}" ]] &&

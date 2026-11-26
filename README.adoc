@@ -127,7 +127,7 @@ provides a 4 GiB Java heap. Set `HICT_JAVA_OPTS=-Xmx6g` to choose an explicit li
 for a suitable host. Native tools and the browser use additional memory.
 Linux portable launchers default to two glibc allocation arenas per process.
 Set `MALLOC_ARENA_MAX` before launch to override that value.
-The bundled glibc Linux runtime trims unused native heap pages every five seconds
+The bundled glibc Linux runtime trims unused native heap pages every second
 when the build JDK supports it. Set
 `HICT_JAVA_OPTS=-XX:TrimNativeHeapInterval=0` to disable automatic trimming.
 
