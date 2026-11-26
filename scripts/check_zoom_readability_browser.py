@@ -6,6 +6,7 @@ contact signal along the visible diagonal, excluding borders and entity labels.
 Fixtures must be disposable copies in the server data directory.
 """
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -51,12 +52,7 @@ def main(default_normalizations=("file", "sqrt")):
         )
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         context.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        context.route(
-            "http://localhost:5000/**",
-            lambda r: r.continue_(
-                url=args.api + r.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(120000)
         page.on("pageerror", lambda e: report["pageErrors"].append(str(e)))

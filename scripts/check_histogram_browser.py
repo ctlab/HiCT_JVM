@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -27,8 +27,7 @@ def main():
         page.on("request", lambda request: queries.append(request.post_data_json)
                 if request.url.endswith("/matrix/query") else None)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)

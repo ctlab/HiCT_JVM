@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 from playwright.sync_api import expect,sync_playwright
-from sequence_browser_harness import BrowserCheck,HictTestServer
+from sequence_browser_harness import BrowserCheck,HictTestServer, configure_test_api
 
 
 def main():
@@ -51,7 +51,7 @@ with h5py.File(sys.argv[1],'r+') as f:
                 browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1440,'height':1000})
                 page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page.add_init_script("window.__workspaceErrors=[];window.addEventListener('error',event=>{if(event instanceof ErrorEvent)window.__workspaceErrors.push(event.message);},true)")
-                page.route('http://localhost:5000/**',lambda r:r.continue_(url=api.url+r.request.url.removeprefix('http://localhost:5000')))
+                configure_test_api(page, api.url)
                 check=BrowserCheck(page,out);dialog=page.locator('.track-manager-root [role=dialog]').first
                 def manager():check.menu('View','1D tracks…');dialog.wait_for()
                 def tab(name):

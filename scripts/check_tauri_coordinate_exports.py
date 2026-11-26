@@ -162,6 +162,7 @@ class NativeCheck:
         self.command('POST', '/element/' + element + '/value', {'text': api, 'value': list(api)})
         self.click('Connect')
         self.click('Join running session')
+        self.click('Connect')
         until(lambda: self.js('return !!document.querySelector(".file-chips .file-chip--static[title]");'))
         assert self.js('return window.__HICT_TAURI_EXPORT_STREAM_VERSION__') == 1
 

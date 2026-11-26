@@ -10,7 +10,7 @@ import subprocess
 import threading
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -48,8 +48,7 @@ def main():
             page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
             page.set_default_timeout(30000)
             page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check = BrowserCheck(page, output)
             requests = []
             view_positions = []

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import expect, sync_playwright
 from check_reinforcement_baseline_browser import percentile
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def main():
@@ -56,12 +56,7 @@ def main():
             console.error('Unhandled promise in release soak', event.reason);
         });"""
         )
-        context.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(context, args.api)
         page = context.new_page()
         install_download_picker(page)
         page.set_default_timeout(60000)

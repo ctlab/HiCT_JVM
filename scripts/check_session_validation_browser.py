@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1440, 'height': 1000}, accept_downloads=True)
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         install_download_picker(page)
         page.set_default_timeout(15000)
@@ -34,6 +34,9 @@ def main():
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
             page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             page.evaluate('() => {window.__sessionValidationManager=window.__hictBenchmark.manager();}')
 

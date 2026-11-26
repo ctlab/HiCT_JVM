@@ -10,7 +10,7 @@ import os
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 from browser_review_helpers import link_fasta
 
 
@@ -40,7 +40,7 @@ def main():
         page.on('requestfailed', lambda request: network_errors.append({'url': request.url, 'error': request.failure}))
         page.on('response', lambda response: network_errors.append({'url': response.url, 'status': response.status}) if response.status >= 400 else None)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function('window.__hictBenchmark')
@@ -137,6 +137,9 @@ def main():
             attached_before = page.evaluate('''() => {const m=window.__hictBenchmark.manager();return {view:[m.getView().getCenter(),m.getView().getResolution()],styles:m.viewAndLayersManager.getTrackStylePreset()}}''')
             page.get_by_role('link', name='File', exact=True).click()
             page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.wait_for_timeout(2500)
             attached_after = page.evaluate('''() => {const m=window.__hictBenchmark.manager();return {view:[m.getView().getCenter(),m.getView().getResolution()],styles:m.viewAndLayersManager.getTrackStylePreset()}}''')
             assert attached_before == attached_after, (attached_before, attached_after)

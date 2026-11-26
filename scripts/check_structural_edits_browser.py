@@ -5,7 +5,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200), contigs=None):
@@ -107,12 +107,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(60000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on(
             "console",

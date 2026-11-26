@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify mixed resolution projection through real viewport rendering."""
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -31,8 +32,7 @@ with sync_playwright() as pw:
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         pending = set()
         peak_pending = [0]
         requests = []

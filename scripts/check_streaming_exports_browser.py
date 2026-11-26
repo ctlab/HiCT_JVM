@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def digest(path):
@@ -42,12 +42,8 @@ def main():
             app.http('/open',{'filename':native.name});app.http('/link_fasta',{'fastaFilename':'sequence.fa'})
             context=pw.chromium.launch_persistent_context(str(out/'chromium-profile'),headless=True,executable_path=args.browser_executable,viewport={'width':1600,'height':1100},accept_downloads=True);page=context.pages[0]
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            forwarding=lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000'))
-            page.route('http://localhost:5000/**',forwarding)
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,out);page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
-            # Do not intercept the large response: qualify the actual fetch network path.
-            page.evaluate('host=>window.__hictBenchmark.manager().networkManager.onHostChanged(host)',app.url)
-            page.unroute('http://localhost:5000/**',forwarding)
             page.evaluate('''async()=>{
               const root=await navigator.storage.getDirectory();
               window.__streamHandle=await root.getFileHandle('assembly.fa',{create:true});

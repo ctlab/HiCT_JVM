@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Read-only browser checks for whole-resolution contrast bounds; no generation jobs."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 from pathlib import Path
@@ -25,8 +26,7 @@ def main():
         page.on("request", lambda request: blocks.append(request.post_data_json)
                 if request.url.endswith("/matrix/statistics") and not request.post_data_json.get("metadataOnly") else None)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)

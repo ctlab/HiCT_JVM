@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise actual search completion and visible track delivery on disposable DATA."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 import random
@@ -29,8 +30,7 @@ def main():
         page.set_default_timeout(60000)
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function('window.__hictBenchmark')

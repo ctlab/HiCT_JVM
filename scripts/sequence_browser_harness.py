@@ -104,6 +104,17 @@ class HictTestServer:
             self.artifact.unlink(missing_ok=True)
 
 
+def configure_test_api(target, address):
+    """Select the disposable API when a test serves the WebUI separately."""
+    endpoint = json.dumps(address)
+    target.add_init_script(f"""(() => {{
+        if (window !== window.top || !/^https?:$/.test(location.protocol)) return;
+        const url = new URL(location.href);
+        url.searchParams.set('api', {endpoint});
+        history.replaceState(history.state, '', url);
+    }})();""")
+
+
 def install_download_picker(page):
     """Provide a writable browser save picker backed by observable downloads."""
     page.add_init_script('''(() => {
@@ -169,6 +180,10 @@ class BrowserCheck:
         for role in ("button", "menuitemradio", "menuitemcheckbox"):
             target = target.or_(options.get_by_role(role, name=action, exact=True))
         target.click()
+        if (menu, action) == ("File", "Join running session"):
+            self.page.get_by_role("dialog", name=action, exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
 
     def advanced(self):
         for toggle in self.page.locator(

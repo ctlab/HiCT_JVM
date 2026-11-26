@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise declared menu destinations and record controls without claiming functional coverage."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import hashlib
 import json
@@ -27,8 +28,7 @@ def main():
             context = browser.new_context(viewport={'width': width, 'height': height})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
-            context.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(context, args.api)
             page = context.new_page()
             page.set_default_timeout(15000)
             errors = []
@@ -104,8 +104,7 @@ def main():
             context = browser.new_context(viewport={'width': 1280, 'height': 720})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
-            context.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(context, args.api)
             errors, http_errors = [], []
             context.on('console', lambda message: errors.append(message.text) if message.type=='error' else None)
             context.on('page', lambda page: page.on('pageerror', lambda error: errors.append(str(error))))

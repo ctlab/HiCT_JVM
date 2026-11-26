@@ -17,8 +17,9 @@ internet access. Completed local examples remain usable offline.
 
 Opening fits the initial color range to the visible signal. Excluded weighted
 bins are masked. The one-line note offers Change when you want another policy.
-Use **File → Join running session** to show the current map in another window. Changes share one server
-assembly and save-conflict protection applies.
+Use **File → Join running session** and select **Connect** to show the server’s
+current map in another window. The address starts with the server that served
+the page. Changes share one server assembly and save-conflict protection applies.
 The active Hi-C map, linked FASTA, and loaded AGP appear beside **Jobs**.
 
 ## Navigate and select

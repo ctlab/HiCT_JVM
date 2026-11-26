@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Open a fine-only Borrelia layer beyond the tile read limit and use its Jobs result."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import hashlib
 import json
@@ -43,8 +44,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
-        page.route("http://localhost:5000/**", lambda r: r.continue_(
-            url=args.api + r.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")

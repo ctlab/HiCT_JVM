@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 from check_edited_view_browser import first_sequence
 from browser_review_helpers import link_fasta
 
@@ -71,8 +71,7 @@ def main():
                 if(this.canvas.classList.contains('sequence-axis'))(this.canvas.__letters ||= []).push({value,x,y,color:this.fillStyle});
                 return text.call(this,value,x,y,...args);
             };""")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")

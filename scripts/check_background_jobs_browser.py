@@ -7,7 +7,7 @@ import random
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck, install_download_picker
+from sequence_browser_harness import BrowserCheck, install_download_picker, configure_test_api
 
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output", "data-dir"):
@@ -37,12 +37,7 @@ with sync_playwright() as pw:
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-    page.route(
-        "http://localhost:5000/**",
-        lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")
-        ),
-    )
+    configure_test_api(page, args.api)
 
     def post(path, body=None):
         response = page.request.post(args.api + path, data=body or {})

@@ -16,7 +16,7 @@ import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def sha(path):
@@ -132,8 +132,7 @@ def main():
             with sync_playwright() as pw:
                 browser=pw.chromium.connect_over_cdp(endpoint);context=browser.contexts[0];context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page=context.pages[0];page.set_default_timeout(30000);check=BrowserCheck(page,out)
-                forward=lambda r:r.continue_(url=api+r.request.url.removeprefix('http://localhost:5000'))
-                page.route('http://localhost:5000/**',forward)
+                configure_test_api(page, api)
                 page.reload(wait_until='domcontentloaded')
                 check.menu('File','Join running session');check.settle()
                 page.evaluate('api=>window.__hictBenchmark.manager().networkManager.onHostChanged(api)',api)

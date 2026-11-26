@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise optimistic workspace saving with independent real browser clients."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 from pathlib import Path
@@ -36,8 +37,7 @@ def main():
             page.set_default_timeout(60000)
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route("http://localhost:5000/**", lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+            configure_test_api(page, args.api)
 
         def stored():
             response = a.request.post(args.api + "/attach", data={})
@@ -56,6 +56,9 @@ def main():
             page.get_by_role("link", name="File", exact=True).click()
             with page.expect_response("**/attach"):
                 page.get_by_role("link", name="Join running session", exact=True).click()
+                page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                    "button", name="Connect", exact=True
+                ).click()
             page.get_by_text(f"Attached to session {filename}", exact=True).wait_for()
             page.locator('.open-progress-modal').wait_for(state='hidden')
             page.wait_for_function("!window.__hictBenchmark.manager().getView().getAnimating()")

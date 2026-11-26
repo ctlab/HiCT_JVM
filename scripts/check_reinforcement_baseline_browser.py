@@ -5,6 +5,7 @@ Use --release-gate to enforce the declared frame and input acknowledgement limit
 The two samples use a fresh browser and a repeat in that browser with retained
 server and OS caches.
 """
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 import platform
@@ -52,8 +53,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         results["browser"] = browser.version
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
-        context.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(30000)
         page.on("pageerror", lambda error: errors.append(str(error)))

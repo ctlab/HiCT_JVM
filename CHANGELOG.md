@@ -1,7 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
-- Serve the map viewer and API on one port, with a single Port field in the Launcher.
+- Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session.
 - Selecting a scaffold followed by short hidden contigs now highlights and edits exactly that scaffold at every zoom level.
 - Keep BED feature labels beside their blocks when there is room.
 

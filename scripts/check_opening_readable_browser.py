@@ -5,6 +5,7 @@ Opens each fixture through File > Manual Open, the Open Wizard and Attach, with 
 measures how much of the main diagonal is drawn in a color that differs from the background. A blank map, or a
 pipeline that still multiplies by weights the options switched off, fails the check.
 """
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -42,7 +43,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1440, 'height': 900})
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(60000)
         page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
@@ -109,6 +110,9 @@ def main():
             page.reload()
             page.wait_for_function('window.__hictBenchmark')
             file_menu('Join running session')
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             wait_for_map()
 
         def server_state():

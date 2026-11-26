@@ -4,7 +4,7 @@ import argparse, functools, http.server, json, os, random, shutil, sys, threadin
 from pathlib import Path
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck, install_download_picker
+from sequence_browser_harness import HictTestServer, BrowserCheck, install_download_picker, configure_test_api
 
 
 def main():
@@ -57,7 +57,7 @@ class OverlayFixture { public static void main(String[] a) {
         page = browser.new_page(viewport=dict(width=1440, height=1000)); page.set_default_timeout(60000)
         install_download_picker(page)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(url=app.url + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, app.url)
         check = BrowserCheck(page, out); success = False
         def load_file(menu, action, name, endpoint):
             check.menu(menu, action); check.choose_file(name)

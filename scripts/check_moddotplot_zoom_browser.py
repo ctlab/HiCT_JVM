@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real generated identity overlays, source contrast and zoom rendering."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -37,8 +38,7 @@ def main():
         page.on("response", lambda response: failures.append({"url": response.url, "status": response.status})
                 if response.status >= 500 else None)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
 
         def settled():
             page.wait_for_function("""() => {const map=window.__hictBenchmark.manager().getMap();

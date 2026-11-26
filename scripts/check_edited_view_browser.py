@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import sync_playwright
 from browser_review_helpers import link_fasta
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def first_sequence(path):
@@ -63,8 +63,7 @@ def main():
                 }
                 return original.call(this,text,x,y,...args);
             };""")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")

@@ -49,8 +49,6 @@ def main():
                 route.fulfill(status=200, headers=headers,
                               content_type="application/octet-stream" if binary else "application/json",
                               body=b"" if binary else json.dumps({"image": placeholder, "cancelled": True}))
-            elif request.url.startswith("http://localhost:5000/"):
-                route.continue_(url=args.api + request.url.removeprefix("http://localhost:5000"))
             else:
                 route.continue_()
 

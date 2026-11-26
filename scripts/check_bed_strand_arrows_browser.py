@@ -11,7 +11,7 @@ import threading
 from playwright.sync_api import sync_playwright
 
 from check_structural_edits_browser import prepare_fixture
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 BED = """one	0	85000	Clipped	0	-
@@ -157,12 +157,7 @@ def main():
                 viewport={"width": 1440, "height": 900}, device_scale_factor=dpr
             )
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             page.goto(f"http://127.0.0.1:{web.server_port}/")
             page.wait_for_function("window.__hictBenchmark")

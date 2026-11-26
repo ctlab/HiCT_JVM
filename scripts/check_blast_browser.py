@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run real local BLAST through WebUI on disposable physical quad input copies."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import base64
 import json
@@ -32,8 +33,7 @@ def main():
         page.set_default_timeout(60000)
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function('window.__hictBenchmark')

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the built WebUI metadata, citation and guide entry in a fresh browser."""
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 from pathlib import Path
@@ -31,12 +32,7 @@ def main():
                 errors.append(message.text) if message.type == "error" else None
             ),
         )
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         response = context.request.get(args.api.rstrip("/") + "/version")
         assert response.ok, response.status
         api_versions = response.json()

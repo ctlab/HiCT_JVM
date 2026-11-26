@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 p = argparse.ArgumentParser()
 for k in ("url", "api", "output"):
@@ -43,12 +43,7 @@ with sync_playwright() as pw:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-    page.route(
-        "http://localhost:5000/**",
-        lambda r: r.continue_(
-            url=a.api + r.request.url.removeprefix("http://localhost:5000")
-        ),
-    )
+    configure_test_api(page, a.api)
     page.goto(a.url)
     page.wait_for_function("window.__hictBenchmark")
     page.evaluate(

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -27,8 +27,7 @@ def main():
             permissions=['clipboard-read', 'clipboard-write'],
         )
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         BrowserCheck(page,output)  # Controlled writable destination, as in other browser acceptance.
         page.set_default_timeout(15000)

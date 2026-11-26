@@ -13,7 +13,7 @@ import subprocess
 import threading
 import time
 from urllib.request import urlopen
-from urllib.parse import unquote,urlsplit
+from urllib.parse import parse_qs,unquote,urlsplit
 from playwright.sync_api import sync_playwright
 from sequence_browser_harness import BrowserCheck,HictTestServer
 
@@ -78,7 +78,8 @@ def main():
                     page.on('console',lambda message:print('renderer',message.type,message.text,flush=True))
                     return browser,context,page
                 browser,context,page=connect()
-                page.wait_for_url('**/index.html',wait_until='commit');fallback=page.url
+                page.wait_for_url('**/index.html?api=*',wait_until='commit');fallback=page.url
+                assert parse_qs(urlsplit(fallback).query)["api"] == [url.rstrip("/")]
                 try:page.get_by_role('button',name='Reconnect',exact=True).wait_for()
                 except Exception:
                     subprocess.run(['import','-display',env['DISPLAY'],'-window','root',str(out/'bootstrap-display.png')],env=env,check=True,timeout=10)
@@ -91,7 +92,13 @@ def main():
                     assert (payload/'app'/unquote(urlsplit(href).path).lstrip('/')).is_file(),href
                 rows.append('packaged offline startup, native preload and public icons')
                 context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-                page.route('http://localhost:5000/**',lambda r:r.continue_(url=api.url+r.request.url.removeprefix('http://localhost:5000')))
+                def forward_api(route):
+                    if route.request.is_navigation_request():
+                        route.fallback()
+                    else:
+                        route.continue_(url=api.url + route.request.url.removeprefix(url.rstrip("/")))
+
+                page.route(url + "**", forward_api)
                 page.reload();page.get_by_role('button',name='Reconnect',exact=True).wait_for()
                 page.evaluate("localStorage.setItem('hict.recovery.probe','keep')")
                 def retry():

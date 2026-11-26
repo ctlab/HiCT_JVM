@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -45,13 +45,7 @@ def main():
                 assert version in (8, 9)
                 context = browser.new_context(viewport={"width": 1440, "height": 1000})
                 context.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-                context.route(
-                    "http://localhost:5000/**",
-                    lambda route: route.continue_(
-                        url=args.api
-                        + route.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(context, args.api)
                 page = context.new_page()
                 page.set_default_timeout(60000)
                 check = BrowserCheck(page, output)

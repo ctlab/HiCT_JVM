@@ -14,7 +14,7 @@ import subprocess
 import threading
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -86,12 +86,7 @@ def main():
             context.add_init_script(
                 "window.__HICT_BENCHMARK_ENABLED__=true;window.__layoutErrors=[];window.addEventListener('error',e=>{if(e instanceof ErrorEvent){window.__layoutErrors.push(e.message);window.__captureLayoutError(e.message);}},true)"
             )
-            context.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(context, api.url)
             page = context.new_page()
             page.set_default_timeout(30000)
             check = BrowserCheck(page, out)
@@ -507,13 +502,7 @@ def main():
                     restore_choice,
                 )
                 fresh = browser.new_context(viewport={"width": 640, "height": 800})
-                fresh.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(fresh, api.url)
                 empty = fresh.new_page()
                 empty.on("pageerror", lambda error: check.errors.append(str(error)))
                 empty.goto(url)

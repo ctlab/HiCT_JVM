@@ -18,7 +18,7 @@ import threading
 import time
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -86,8 +86,7 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 page = browser.new_page(viewport={'width': 1600, 'height': 1100}, accept_downloads=True)
                 page.set_default_timeout(30000)
                 page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-                page.route('http://localhost:5000/**', lambda route: route.continue_(
-                    url=app.url + route.request.url.removeprefix('http://localhost:5000')))
+                configure_test_api(page, app.url)
                 check = BrowserCheck(page, case)
                 page.goto(f'http://127.0.0.1:{static.server_port}/')
                 check.menu('File', 'Join running session')

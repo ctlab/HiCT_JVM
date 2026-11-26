@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import threading
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 parser = argparse.ArgumentParser(description=__doc__)
 for key in ("jar", "webui", "source-dir", "output", "hdf-python"):
@@ -112,12 +112,7 @@ try:
             page.on("crash", crashed)
             page.set_default_timeout(60000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             overlay = page.locator(".ol-mouse-position")
 
@@ -282,13 +277,7 @@ try:
                 page.on("crash", crashed)
                 page.set_default_timeout(60000)
                 page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-                page.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(page, api.url)
                 check = BrowserCheck(page, out)
                 page.goto(f"http://127.0.0.1:{web.server_port}")
                 page.evaluate(

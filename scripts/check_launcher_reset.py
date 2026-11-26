@@ -10,6 +10,7 @@ import signal
 import socket
 import subprocess
 import tempfile
+from zipfile import ZipFile
 
 
 def main():
@@ -34,7 +35,13 @@ def main():
         port = listener.getsockname()[1]
     env["HICT_PORT"] = str(port)
     # An existing saved WebUI port wins over the environment for migrated installations.
-    (out / "launcher.properties").write_text(f"WEBUI_PORT={port}\nVXPORT=1\n", encoding="ascii")
+    jar = Path(args.jar).resolve(strict=True)
+    with ZipFile(jar) as archive:
+        version = archive.read("version.txt").decode("utf-8").strip()
+    (out / "launcher.properties").write_text(
+        f"launcherSettings.appVersion={version}\nWEBUI_PORT={port}\nVXPORT=1\n",
+        encoding="ascii",
+    )
     env.update(
         HICT_APP_HOME=str(out),
         DATA_DIR=str(out / "data"),
@@ -43,7 +50,7 @@ def main():
         HICT_LOG_LEVEL="WARN",
         TILE_SIZE="512",
         HICT_TEST_PRIVATE_DISPLAY="1",
-        HICT_JAR_PATH=str(Path(args.jar).resolve(strict=True)),
+        HICT_JAR_PATH=str(jar),
     )
     xvfb_env = env.copy()
     libraries = Path(args.xvfb).resolve().parent.parent / "lib/x86_64-linux-gnu"

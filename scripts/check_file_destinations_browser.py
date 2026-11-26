@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import threading
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
             app.http('/open',{'filename':native.name});app.http('/link_fasta',{'fastaFilename':'sequence.fa'})
             browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1600,'height':1100},accept_downloads=True)
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,out);requests=[];expected_errors=[];downloads=[]
             page.on('download',lambda item:downloads.append(item.suggested_filename))
             page.on('request',lambda r:requests.append(r.url))

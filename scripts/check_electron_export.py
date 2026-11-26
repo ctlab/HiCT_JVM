@@ -4,6 +4,7 @@
 Requires Xvfb and xdotool (paths configurable), a built WebUI, and an isolated
 quad-data test server. No dialogs or input events reach the user's desktop.
 """
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 import os
@@ -105,8 +106,7 @@ def main():
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.on('console', lambda message: errors.append(message.text[:200])
                         if message.text.startswith('Could not load image') else None)
-                page.route('http://localhost:5000/**', lambda route: route.continue_(
-                    url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+                configure_test_api(page, args.api)
                 page.reload()
                 page.wait_for_function('Boolean(window.__hictBenchmark && window.hictDesktop?.saveExport)')
                 assert page.evaluate('''async () => {

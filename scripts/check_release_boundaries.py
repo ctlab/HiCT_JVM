@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -24,8 +24,7 @@ def main():
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route("http://localhost:5000/**", lambda r: r.continue_(
-            url=args.api + r.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         def post(path, body):
             res = page.request.post(args.api+path, data=body)
             assert res.ok, (path, res.text())
