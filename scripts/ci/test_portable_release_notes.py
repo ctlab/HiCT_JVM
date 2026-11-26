@@ -32,6 +32,7 @@ class PortableReleaseNotesTest(unittest.TestCase):
             "### Changelog", "for provenance and checksums.",
         )]
         self.assertEqual(positions, sorted(positions))
+        self.assertIn("from `123abcd" + "0" * 33 + "`", text)
         self.assertIn("**More info**, then **Run anyway**", text)
         self.assertIn("**Open Anyway**", text)
 

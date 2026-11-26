@@ -96,6 +96,9 @@ def publish(repo, tag, version, source, directory, notes, *, channel="jvm-sfx-na
         or tag != f"{channel}-{version}"
     ):
         raise RuntimeError("Expected an exact versioned branch release tag")
+    source_line = f"from `{source}`"
+    if source_line not in notes.read_text(encoding="utf-8"):
+        raise RuntimeError("Release notes must identify the exact source revision")
     prerelease = channel == "jvm-sfx-native"
     ref = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))["object"]
     if ref["type"] != "commit" or ref["sha"] != source:
@@ -126,7 +129,7 @@ def publish(repo, tag, version, source, directory, notes, *, channel="jvm-sfx-na
                 break
         if release is None:
             raise RuntimeError(f"Created draft for {tag} but it did not become visible")
-    if release["prerelease"] != prerelease or f"from `{source}`" not in (release["body"] or ""):
+    if release["prerelease"] != prerelease or source_line not in (release["body"] or ""):
         raise RuntimeError(f"Unexpected release metadata for {tag}")
 
     assets = uploaded_assets(repo, release["id"])

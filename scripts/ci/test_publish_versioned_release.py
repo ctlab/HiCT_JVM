@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from portable_release_notes import notes
 from publish_versioned_release import file_digest, publish
 
 
@@ -22,7 +23,10 @@ class DraftPublicationTest(unittest.TestCase):
         self.dist = root / "release-dist"
         self.dist.mkdir()
         self.notes = root / "release-body.md"
-        self.notes.write_text(f"Automated build from `{self.source}`.\n")
+        self.notes.write_text(notes(
+            self.repo, self.tag, self.version, self.source, "44",
+            [f"HiCT-{self.version}-linux-x86_64.run"], ["Portable build."],
+        ), encoding="utf-8")
         self.origin = self.dist / f"HiCT-{self.version}-build-origin.txt"
         self.manifest = self.dist / f"HiCT-{self.version}-release-assets.sha256"
         self.package = self.dist / f"HiCT-{self.version}-linux-x86_64.run"
@@ -159,6 +163,13 @@ class DraftPublicationTest(unittest.TestCase):
             self.publish()
         self.assertTrue(self.release["draft"])
         self.assertEqual(self.writes, ["create"])
+
+    def test_invalid_notes_are_rejected_before_creating_draft(self):
+        self.notes.write_text("Source revision omitted.", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "notes must identify"):
+            self.publish()
+        self.assertEqual(self.writes, [])
+        self.assertIsNone(self.release)
 
     def test_existing_release_for_wrong_commit_is_untouched(self):
         self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")

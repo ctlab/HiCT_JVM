@@ -75,7 +75,9 @@ def notes(repo, tag, version, source, run_id, assets, changes):
     appimage = prefix + "x86_64.AppImage"
 
     lines = [
-        f"Automated HiCT portable build from [`{source[:7]}`]({root}/commit/{source}).",
+        f"Automated HiCT portable build from `{source}`.",
+        "",
+        f"[Source revision]({root}/commit/{source})",
         "",
         f"[Latest Main build]({root}/releases/tag/latest-master) · "
         f"[Latest Development build]({root}/releases/tag/latest-jvm-sfx-native) · "
