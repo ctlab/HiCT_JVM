@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Show new bookmarks first in Entities and highlight them briefly. Pan the focused, unlocked contact map with arrow keys or Shift+arrows.
 - Choose one finest detail or enter custom sizes for Dotplot and ModDotPlot. Review expected storage and acknowledge large worst cases before generating. Jobs stop if free disk space runs low.
 - Keep search, scope and signal controls in place as the selection changes. Find Selection and Square selection at the end of the left ribbon group.
 - Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.

@@ -352,7 +352,7 @@ def main():
             assert go_buttons.count() == 2
             page.locator(
                 'button[title="Remove saved location"], button[data-bs-original-title="Remove saved location"]'
-            ).last.click()
+            ).first.click()
             assert go_buttons.count() == 1
             with page.expect_download() as download:
                 page.locator(".bookmark-actions").get_by_role(
