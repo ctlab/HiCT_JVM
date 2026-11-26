@@ -27,7 +27,7 @@ def sample_paf(path, rows, columns, row_offset, col_offset, step_bp, min_length,
     """Emit canonical physical-bin pairs; reject points in unowned bin gaps."""
     if step_bp < 1 or min_length < 1:
         raise ValueError('Sample interval and minimum alignment length must be positive')
-    with open(path) as stream:
+    with open(path, encoding="utf-8") as stream:
         for line in stream:
             fields = line.rstrip().split('\t')
             if len(fields) < 12:

@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
+import ru.itmo.ctlab.hict.hict_server.util.AsciiJson;
 
 import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
 
@@ -730,7 +731,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
           throw new IOException("Insufficient space for the overview cache");
         sourceStamp.check(source); templateStamp.check(template);
         var file = dir.resolve("analysis-plan.json");
-        Files.writeString(file, plan.put("output", pending.toString()).encode());
+        Files.writeString(file, AsciiJson.encode(plan.put("output", pending.toString()), false));
         runAdapter(job, tool, file);
         sourceStamp.check(source); templateStamp.check(template);
         verifyLevels(pending, extra);
@@ -1114,7 +1115,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels)
         .put("overviewLevels", job.request.getJsonArray("overviewLevels"));
       if (previous != null) plan.put("previous", previous.toString());
-      var planFile = job.directory.resolve("analysis-plan.json"); Files.writeString(planFile, plan.encodePrettily(), StandardOpenOption.CREATE_NEW);
+      var planFile = job.directory.resolve("analysis-plan.json");
+      Files.writeString(planFile, AsciiJson.encode(plan, true), StandardOpenOption.CREATE_NEW);
       job.log("Dotplots use source-bin anchored windows in the captured active assembly. Existing scores move with edits; changed joins are not silently recomputed.");
       job.log(previous == null ? "Creating a separate overlay version" : "Accumulating compatible regions; reclaiming the superseded matrix after successful publication and detach");
       job.state = "running"; job.save();

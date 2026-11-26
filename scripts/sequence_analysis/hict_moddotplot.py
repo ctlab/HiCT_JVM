@@ -12,7 +12,7 @@ from overlay_store import OverlayWriter
 
 def run(plan_path):
     plan_path = Path(plan_path)
-    plan = json.loads(plan_path.read_text())
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
     if plan.get('kind') == 'overview-cache':
         from overview import cache_existing
         return cache_existing(plan)

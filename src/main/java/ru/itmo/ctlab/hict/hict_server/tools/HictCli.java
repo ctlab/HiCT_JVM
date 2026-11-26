@@ -1,6 +1,8 @@
 package ru.itmo.ctlab.hict.hict_server.tools;
 
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Launcher;
+import io.vertx.core.Vertx;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import hdf.hdf5lib.H5;
@@ -124,7 +126,10 @@ public class HictCli implements Runnable {
       if (System.getProperty("AUTO_OPEN_BROWSER") == null) {
         System.setProperty("AUTO_OPEN_BROWSER", "true");
       }
-      commandLine.execute("start-server");
+      final int exitCode = commandLine.execute("start-server");
+      if (exitCode != 0) {
+        System.exit(exitCode);
+      }
       return;
     }
 
@@ -148,7 +153,7 @@ public class HictCli implements Runnable {
     final var parseResult = commandLine.getParseResult();
     final var subcommand = parseResult == null ? null : parseResult.subcommand();
     final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
-    if ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName)) {
+    if (exitCode == 0 && ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName))) {
       return;
     }
     System.exit(exitCode);
@@ -315,6 +320,14 @@ public class HictCli implements Runnable {
     return null;
   }
 
+  private static final class ServerLauncher extends Launcher {
+    @Override
+    public void handleDeployFailed(final Vertx vertx, final String verticle,
+                                   final DeploymentOptions options, final Throwable cause) {
+      vertx.close().onComplete(ignored -> System.exit(1));
+    }
+  }
+
   @Command(
     name = "start-server",
     mixinStandardHelpOptions = true,
@@ -329,7 +342,7 @@ public class HictCli implements Runnable {
       if (serveWebUi != null) {
         System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
       }
-      Launcher.main(new String[]{"run", MainVerticle.class.getName()});
+      new ServerLauncher().dispatch(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }
   }
@@ -343,7 +356,7 @@ public class HictCli implements Runnable {
     @Override
     public Integer call() {
       System.setProperty("SERVE_WEBUI", "false");
-      Launcher.main(new String[]{"run", MainVerticle.class.getName()});
+      new ServerLauncher().dispatch(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }
   }

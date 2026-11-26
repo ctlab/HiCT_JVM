@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Recover from failed FASTA searches and stale export previews. On Windows, handle Unicode paths, shorten deep tool paths, and report failures before server readiness.
 - Show new bookmarks first in Entities and highlight them briefly. Pan the focused, unlocked contact map with arrow keys or Shift+arrows.
 - Choose one finest detail or enter custom sizes for Dotplot and ModDotPlot. Review expected storage and acknowledge large worst cases before generating. Jobs stop if free disk space runs low.
 - Keep search, scope and signal controls in place as the selection changes. Find Selection and Square selection at the end of the left ribbon group.
@@ -121,6 +122,10 @@
 - Linux launchers start with a smaller Java heap and release idle heap more readily. The existing extra JVM options still take precedence.
 - The bundled ModDotPlot uses updated imaging dependencies. Linux retains glibc 2.17 compatibility, and package checks now render real PNG and SVG plots.
 - Portable package builds keep the verified BLAST cache when ModDotPlot requirements change.
+
+### Known limitations
+
+- Windows: please re-test F1, F2, F3, F5, F8 on a real machine.
 
 ## 2.0.0
 

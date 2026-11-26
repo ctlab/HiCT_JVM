@@ -1,5 +1,6 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ru.itmo.ctlab.hict.hict_server.util.WindowsPaths;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import lombok.extern.slf4j.Slf4j;
@@ -96,7 +97,7 @@ public final class ExternalToolchainManager {
     if (toolchain.hictkCommand() == null) {
       throw new IllegalStateException(ToolchainStatus.fromResolved(toolchain, dotplotAlignerPreference()).summary());
     }
-    return toolchain;
+    return prepareNativeTools(toolchain, null);
   }
 
   /** Optional sequence-analysis commands share the portable manifest/extraction path. */
@@ -112,7 +113,7 @@ public final class ExternalToolchainManager {
     if (override.isPresent()) {
       var explicit = Path.of(override.get()).toAbsolutePath().normalize();
       if (!isUsableCommand(explicit)) throw new IllegalStateException(setting + " is not an executable file");
-      return explicit;
+      return new WindowsPaths(environment).executable(explicit);
     }
     var directory = readSetting(TOOLCHAIN_DIR_KEY);
     if (directory.isPresent()) {
@@ -121,10 +122,10 @@ public final class ExternalToolchainManager {
       if (Files.isRegularFile(manifestPath)) {
         var commands = new JsonObject(Files.readString(manifestPath)).getJsonObject("commands", new JsonObject());
         var resolved = resolveManifestCommand(root, commands, command, Optional.empty());
-        if (resolved != null) return resolved;
+        if (resolved != null) return new WindowsPaths(environment).executable(resolved);
       }
       var local = root.resolve("bin").resolve(command + (isWindows() ? ".exe" : ""));
-      if (isUsableCommand(local)) return local;
+      if (isUsableCommand(local)) return new WindowsPaths(environment).executable(local);
     }
     var platform = detectPlatform();
     try (var stream = ExternalToolchainManager.class.getResourceAsStream(BUNDLED_ROOT + "/" + platform + "/manifest.json")) {
@@ -132,11 +133,11 @@ public final class ExternalToolchainManager {
         var manifest = new JsonObject(new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
         var root = extractBundledPayload(platform, manifest);
         var resolved = resolveManifestCommand(root, manifest.getJsonObject("commands", new JsonObject()), command, Optional.empty());
-        if (resolved != null) return resolved;
+        if (resolved != null) return new WindowsPaths(environment).executable(resolved);
       }
     }
     var found = findOnPath(List.of(command, command + ".exe"));
-    if (found != null) return found;
+    if (found != null) return new WindowsPaths(environment).executable(found);
     throw new IllegalStateException(command + " is not available in this build. Configure " + setting + " or install the portable sequence-tool payload.");
   }
 
@@ -144,7 +145,7 @@ public final class ExternalToolchainManager {
     final var toolchain = resolveAnyToolchain();
     final var command = toolchain.selectedDotplotAlignerCommand(dotplotAlignerPreference());
     if (command == null) throw new IllegalStateException("Configure or bundle minimap2/mm2-plus for alignment dotplots");
-    return command;
+    return prepareNativeExecutable(command);
   }
 
   public @NotNull ResolvedToolchain requireDotplotToolchain() {
@@ -165,7 +166,27 @@ public final class ExternalToolchainManager {
       }
       throw new IllegalStateException("Dotplot generation is unavailable because " + String.join(" and ", limitations) + ".");
     }
-    return toolchain;
+    return prepareNativeTools(toolchain, selectedAligner);
+  }
+
+  private Path prepareNativeExecutable(Path executable) {
+    try {
+      return new WindowsPaths(environment).executable(executable);
+    } catch (IOException ex) {
+      throw new IllegalStateException(ex.getMessage(), ex);
+    }
+  }
+
+  private ResolvedToolchain prepareNativeTools(ResolvedToolchain tools, Path selectedAligner) {
+    if (!isWindows()) return tools;
+    return new ResolvedToolchain(tools.platform(), tools.source(), prepareNativeExecutable(tools.hictkCommand()),
+      selectedAligner != null && selectedAligner.equals(tools.minimap2Command())
+        ? prepareNativeExecutable(selectedAligner) : tools.minimap2Command(),
+      selectedAligner != null && selectedAligner.equals(tools.mm2PlusAvx2Command())
+        ? prepareNativeExecutable(selectedAligner) : tools.mm2PlusAvx2Command(),
+      selectedAligner != null && selectedAligner.equals(tools.mm2PlusAvx512Command())
+        ? prepareNativeExecutable(selectedAligner) : tools.mm2PlusAvx512Command(),
+      tools.coolerCommand(), tools.pythonCommand(), tools.notices(), tools.citations(), tools.limitations());
   }
 
   private @NotNull ResolvedToolchain resolveBundled(final @NotNull String platform) {

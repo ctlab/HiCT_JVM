@@ -561,34 +561,10 @@ if not defined HICT_BIND_HOST (
   set "HICT_BIND_HOST=127.0.0.1"
 )
 
-set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="--version" goto :Version
-set "HICT_RUNTIME_PREFLIGHT="
-if "%~1"=="" set "HICT_RUNTIME_PREFLIGHT=1"
-if "%~1"=="start-server" set "HICT_RUNTIME_PREFLIGHT=1"
-if "%~1"=="start-api-server" set "HICT_RUNTIME_PREFLIGHT=1"
-if "%~1"=="launcher" set "HICT_RUNTIME_PREFLIGHT=1"
-if "%~1"=="convert" set "HICT_RUNTIME_PREFLIGHT=1"
-if "%~2"=="--help" set "HICT_RUNTIME_PREFLIGHT="
-if "%~2"=="-h" set "HICT_RUNTIME_PREFLIGHT="
-if "%~3"=="--help" set "HICT_RUNTIME_PREFLIGHT="
-if "%~3"=="-h" set "HICT_RUNTIME_PREFLIGHT="
 call :WarnWebView2IfNeeded
-call :SelectRuntimeTempDir
-if errorlevel 1 exit /b 1
-set "TMP=%HICT_TEMP_DIR%"
-set "TEMP=%HICT_TEMP_DIR%"
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
-if not defined PROCESSED_DIR (
-  call :CanWriteRuntimeDir "%DATA_DIR%\processed"
-  if errorlevel 1 (
-    set "PROCESSED_DIR=%HICT_TEMP_DIR%\processed"
-  ) else (
-    set "PROCESSED_DIR=%DATA_DIR%\processed"
-  )
-)
-if not exist "%PROCESSED_DIR%" mkdir "%PROCESSED_DIR%" >nul 2>nul
 pushd "%DATA_DIR%" >nul 2>nul
 if errorlevel 1 (
   echo Failed to enter DATA_DIR "%DATA_DIR%".
@@ -605,70 +581,6 @@ exit /b %HICT_EXIT_CODE%
 
 :Version
 "%APP_HOME%\bin\hict-cli.exe" %*
-exit /b %ERRORLEVEL%
-
-:SelectRuntimeTempDir
-if defined HICT_TEMP_DIR (
-  call :CanUseRuntimeDir "%HICT_TEMP_DIR%"
-  if not errorlevel 1 exit /b 0
-)
-if defined LOCALAPPDATA (
-  call :CanUseRuntimeDir "%LOCALAPPDATA%\HiCT\runtime"
-  if not errorlevel 1 (
-    set "HICT_TEMP_DIR=%LOCALAPPDATA%\HiCT\runtime"
-    exit /b 0
-  )
-)
-if defined USERPROFILE (
-  call :CanUseRuntimeDir "%USERPROFILE%\AppData\Local\HiCT\runtime"
-  if not errorlevel 1 (
-    set "HICT_TEMP_DIR=%USERPROFILE%\AppData\Local\HiCT\runtime"
-    exit /b 0
-  )
-)
-if defined TEMP (
-  call :CanUseRuntimeDir "%TEMP%\HiCT\runtime"
-  if not errorlevel 1 (
-    set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
-    exit /b 0
-  )
-)
-call :CanUseRuntimeDir "%DATA_DIR%\tmp"
-if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
-  exit /b 0
-)
-call :CanUseRuntimeDir "%APP_HOME%\tmp"
-if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%APP_HOME%\tmp"
-  exit /b 0
-)
-echo HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.
-exit /b 1
-
-:CanUseRuntimeDir
-call :CanWriteRuntimeDir "%~1"
-if errorlevel 1 exit /b 1
-if not defined HICT_RUNTIME_PREFLIGHT exit /b 0
-setlocal
-set "TEMP=%~1"
-set "TMP=%~1"
-"%JAVA_EXE%" "-Djava.io.tmpdir=%~1" %HICT_JAVA_OPTS% -jar "%HICT_JAR_PATH%" check-toolchains --require-hdf5-native --quiet >nul 2>nul
-set "HICT_NATIVE_STATUS=%ERRORLEVEL%"
-if not "%HICT_NATIVE_STATUS%"=="0" echo The native HDF5 check failed with working folder "%~1". Trying another folder.
-endlocal & exit /b %HICT_NATIVE_STATUS%
-
-:CanWriteRuntimeDir
-set "HICT_PROBE_DIR=%~1"
-if "%HICT_PROBE_DIR%"=="" exit /b 1
-if not exist "%HICT_PROBE_DIR%" mkdir "%HICT_PROBE_DIR%" >nul 2>nul
-set "HICT_PROBE=%HICT_PROBE_DIR%\.hict-write-test-%RANDOM%-%RANDOM%"
-(echo HiCT) > "%HICT_PROBE%" 2>nul
-if errorlevel 1 (
-  echo Cannot write a runtime file in "%HICT_PROBE_DIR%".
-  exit /b 1
-)
-del /q "%HICT_PROBE%" >nul 2>nul
 exit /b %ERRORLEVEL%
 
 :WarnWebView2IfNeeded

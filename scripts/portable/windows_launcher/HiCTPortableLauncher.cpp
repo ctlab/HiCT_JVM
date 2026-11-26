@@ -24,6 +24,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -635,22 +636,75 @@ std::vector<std::wstring> runtimeTempCandidates(const std::wstring &dataDir, con
       joinPath(appHome, L"tmp")};
 }
 
+std::wstring javaRuntimeTempOptions(const std::wstring &tempDir) {
+  return L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir)
+       + L" " + quoteArg(L"-Dvertx.cacheDirBase=" + joinPath(tempDir, L"vertx-cache"));
+}
+
+bool isAsciiPath(const std::wstring &path) {
+  return !path.empty() && std::all_of(path.begin(), path.end(), [](wchar_t unit) { return unit <= 0x7f; });
+}
+
+std::wstring shortPath(const std::wstring &path) {
+  if (!directoryExists(path)) return {};
+  const DWORD size = GetShortPathNameW(path.c_str(), nullptr, 0);
+  if (!size) return {};
+  std::wstring shortName(size, L'\0');
+  const DWORD length = GetShortPathNameW(path.c_str(), shortName.data(), size);
+  if (!length || length >= size) return {};
+  shortName.resize(length);
+  return shortName;
+}
+
 bool prepareRuntimeTempDir(const std::wstring &candidate, const std::wstring &appHome,
                            const std::wstring &javaCommand, const std::wstring &jar,
                            const std::wstring &configuredOptions, bool requireNative) {
-  if (!canWritePrivateFile(candidate)) return false;
+  if (!isAsciiPath(candidate) || !canWritePrivateFile(candidate)) return false;
   SetEnvironmentVariableW(L"HICT_TEMP_DIR", candidate.c_str());
   SetEnvironmentVariableW(L"TMP", candidate.c_str());
   SetEnvironmentVariableW(L"TEMP", candidate.c_str());
   if (!requireNative) return true;
 
-  const auto probe = javaCommand + L" " + quoteArg(L"-Djava.io.tmpdir=" + candidate)
-                   + L" " + configuredOptions + L" -jar " + quoteArg(jar)
+  const auto probe = javaCommand + L" " + configuredOptions + javaRuntimeTempOptions(candidate)
+                   + L" -jar " + quoteArg(jar)
                    + L" check-toolchains --require-hdf5-native --quiet";
   if (runProcess(probe, appHome, true) == 0) return true;
   std::wcerr << L"The native HDF5 check failed with working folder " << candidate
              << L". Trying another folder.\n";
   return false;
+}
+
+std::wstring selectRuntimeTempDir(const std::wstring &requested, const std::wstring &appHome,
+                                  const std::wstring &javaCommand, const std::wstring &jar,
+                                  const std::wstring &configuredOptions, bool requireNative) {
+  if (requested.empty()) return {};
+  std::vector<std::wstring> candidates;
+  if (isAsciiPath(requested)) {
+    candidates.push_back(requested);
+  } else {
+    candidates.push_back(shortPath(requested));
+    const auto programData = getEnvironmentVariableValue(L"ProgramData");
+    const auto systemDrive = getEnvironmentVariableValue(L"SystemDrive");
+    if (!programData.empty()) candidates.push_back(joinPath(programData, L"HiCT\\tmp"));
+    if (!systemDrive.empty()) candidates.push_back(joinPath(systemDrive, L"HiCT-tmp"));
+  }
+  for (const auto &candidate : candidates) {
+    if (prepareRuntimeTempDir(candidate, appHome, javaCommand, jar, configuredOptions, requireNative)) {
+      if (candidate != requested) {
+        std::wcout << L"Contains non-ASCII characters. HiCT uses " << candidate
+                   << L" for Java temporary files instead.\n";
+      }
+      return candidate;
+    }
+  }
+  return {};
+}
+
+bool needsNativePreflight(const std::vector<std::wstring> &args) {
+  if (std::find(args.begin(), args.end(), L"--help") != args.end()
+      || std::find(args.begin(), args.end(), L"-h") != args.end()) return false;
+  return args.empty() || args.front() == L"start-server" || args.front() == L"start-api-server"
+    || args.front() == L"launcher" || args.front() == L"convert";
 }
 
 std::wstring getDataDirectory(const std::wstring &selfPath) {
@@ -791,20 +845,49 @@ int extractPayload(const std::wstring &selfPath,
   return 0;
 }
 
+int startJava(const std::wstring &appHome, const std::wstring &dataDir,
+              const std::vector<std::wstring> &args, bool chooseFallback) {
+  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
+  const auto jar = joinPath(appHome, L"lib\\hict.jar");
+  const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
+  const auto command = quoteArg(java) + L" -XX:MaxRAMPercentage=50.0";
+  if (args.size() == 1 && args.front() == L"--version") {
+    return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), appHome);
+  }
+
+  const bool preflight = needsNativePreflight(args);
+  std::wstring tempDir;
+  for (const auto &candidate : runtimeTempCandidates(dataDir, appHome)) {
+    tempDir = selectRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, preflight);
+    if (!tempDir.empty()) break;
+  }
+  if (tempDir.empty() && chooseFallback && args.empty() && isConsoleOwnedByThisProcess()) {
+    const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its temporary files. Choose a writable working folder to retry.");
+    if (!chosen.empty()) {
+      tempDir = selectRuntimeTempDir(joinPath(chosen, L"HiCT\\runtime"), appHome, command, jar, configuredOptions, preflight);
+    }
+  }
+  if (tempDir.empty()) {
+    throw std::runtime_error("HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.");
+  }
+  if (!environmentVariableIsDefined(L"PROCESSED_DIR")) {
+    const auto processed = joinPath(dataDir, L"processed");
+    const auto fallback = joinPath(tempDir, L"processed");
+    if (canWritePrivateFile(processed)) SetEnvironmentVariableW(L"PROCESSED_DIR", processed.c_str());
+    else if (canWritePrivateFile(fallback)) SetEnvironmentVariableW(L"PROCESSED_DIR", fallback.c_str());
+    else throw std::runtime_error("No writable processed-data directory could be prepared.");
+  }
+  return runProcess(command + L" " + configuredOptions + javaRuntimeTempOptions(tempDir)
+                    + javaJarWithArguments(jar, args), dataDir);
+}
+
 int run() {
   const auto selfPath = getSelfPath();
   const auto args = readArguments();
 #ifdef HICT_EXTRACTED_LAUNCHER
   const auto appHome = dirnameOf(dirnameOf(selfPath));
-  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
-  const auto jar = joinPath(appHome, L"lib\\hict.jar");
-  const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
-  std::wstring command = quoteArg(java);
-  if (args.empty() || args.front() != L"--version") {
-    const auto tempDir = getEnvironmentVariableValue(L"HICT_TEMP_DIR");
-    command += L" -XX:MaxRAMPercentage=50.0 " + quoteArg(L"-Djava.io.tmpdir=" + tempDir);
-  }
-  return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), L"");
+  const auto configuredData = getEnvironmentVariableValue(L"DATA_DIR");
+  return startJava(appHome, configuredData.empty() ? appHome : configuredData, args, false);
 #else
   const auto manifest = readManifest(selfPath);
   printStartupHeader();
@@ -817,15 +900,6 @@ int run() {
     return extractPayload(selfPath, manifest, args[1], false);
   }
   const bool versionOnly = args.size() == 1 && args.front() == L"--version";
-  bool needsNativeCheck = args.empty() || args.front() == L"start-server"
-      || args.front() == L"start-api-server" || args.front() == L"launcher" || args.front() == L"convert";
-  for (const auto &arg : args) {
-    if (arg == L"--help" || arg == L"-h") {
-      needsNativeCheck = false;
-      break;
-    }
-  }
-
   const auto cacheKey = utf8ToWide(shortPayloadCacheKey(manifest));
   const auto localHiCTDir = getLocalHiCTDirectory();
   std::wstring cacheRoot;
@@ -853,13 +927,8 @@ int run() {
   }
 
   const auto appHome = joinPath(cacheRoot, utf8ToWide(manifest.appDirName));
-  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
+  if (versionOnly) return startJava(appHome, appHome, args, false);
   const auto jar = joinPath(appHome, L"lib\\hict.jar");
-  const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
-  std::wstring command = quoteArg(java) + L" -XX:MaxRAMPercentage=50.0";
-  if (versionOnly) {
-    return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), appHome);
-  }
 
   const auto dataDir = getDataDirectory(selfPath);
   createDirectories(dataDir);
@@ -874,36 +943,11 @@ int run() {
   const auto browsers = joinPath(appHome, L"browsers\\windows_x86_64");
   if (directoryExists(browsers)) defaultEnvironment(L"HICT_BROWSER_DIR", browsers);
 
-  std::wstring tempDir;
-  for (const auto &candidate : runtimeTempCandidates(dataDir, appHome)) {
-    if (prepareRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, needsNativeCheck)) {
-      tempDir = candidate;
-      break;
-    }
-  }
-  if (tempDir.empty() && args.empty() && isConsoleOwnedByThisProcess()) {
-    const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its temporary files. Choose a writable working folder to retry.");
-    if (!chosen.empty()) {
-      const auto candidate = joinPath(chosen, L"HiCT\\runtime");
-      if (prepareRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, needsNativeCheck)) tempDir = candidate;
-    }
-  }
-  if (tempDir.empty()) {
-    throw std::runtime_error("HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.");
-  }
-  if (!environmentVariableIsDefined(L"PROCESSED_DIR")) {
-    const auto processed = joinPath(dataDir, L"processed");
-    const auto fallback = joinPath(tempDir, L"processed");
-    if (canWritePrivateFile(processed)) SetEnvironmentVariableW(L"PROCESSED_DIR", processed.c_str());
-    else if (canWritePrivateFile(fallback)) SetEnvironmentVariableW(L"PROCESSED_DIR", fallback.c_str());
-    else throw std::runtime_error("No writable processed-data directory could be prepared.");
-  }
   SetEnvironmentVariableW(L"DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_EXE_PATH", selfPath.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_CACHE_DIR", cacheRoot.c_str());
-  command += L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir) + L" " + configuredOptions + javaJarWithArguments(jar, args);
-  const int exitCode = runProcess(command, dataDir);
+  const int exitCode = startJava(appHome, dataDir, args, true);
   pauseOnFailureIfNeeded(exitCode);
   return exitCode;
 #endif
