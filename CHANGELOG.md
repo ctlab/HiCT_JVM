@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Keep BED feature labels beside their blocks when there is room.
 
 - Put exact operating-system downloads, startup guidance, and a short changelog in each portable release.
 - Move contigs and scaffolds to either end of the assembly using the outer translocation triangles.

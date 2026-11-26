@@ -8,8 +8,8 @@ from pathlib import Path
 from sequence_browser_harness import BrowserCheck
 
 
-def prepare_fixture(directory, jar):
-    """Build an independent four-contig, two-level map through the real converter."""
+def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200)):
+    """Build an independent four-contig map through the real converter."""
     import subprocess
     import cooler
     import numpy as np
@@ -22,12 +22,12 @@ def prepare_fixture(directory, jar):
     target = directory / "structural.hict.hdf5"
     if matrix.exists() or target.exists():
         raise ValueError("Fixture generation requires fresh output paths")
-    for resolution in (100, 200):
+    for resolution in resolutions:
         bins_per_contig = 400000 // resolution
         count = bins_per_contig * 4
         bins = pd.DataFrame(
             {
-                "chrom": np.repeat(["one", "two", "three", "four"], bins_per_contig),
+                "chrom": np.repeat([first_contig, "two", "three", "four"], bins_per_contig),
                 "start": np.tile(np.arange(bins_per_contig) * resolution, 4),
                 "end": np.tile(np.arange(1, bins_per_contig + 1) * resolution, 4),
             }
@@ -48,12 +48,13 @@ def prepare_fixture(directory, jar):
         )
     converter = directory / "StructuralFixture.java"
     converter.write_text("""import java.nio.file.Path;
-import java.util.List;
+import java.util.Arrays;
 import ru.itmo.ctlab.hict.hict_library.converters.*;
 class StructuralFixture {
     public static void main(String[] args) {
         new McoolToHictConverter().convert(new ConversionOptions(
-            Path.of(args[0]), Path.of(args[1]), List.of(100L, 200L), 8192, 1,
+            Path.of(args[0]), Path.of(args[1]),
+            Arrays.stream(args[2].split(",")).map(Long::valueOf).toList(), 8192, 1,
             ConversionOptions.CompressionAlgorithm.DEFLATE, "", false, 4,
             true, false, false, false, ConversionOptions.ExportMode.INTERNAL),
             System.err::println);
@@ -69,6 +70,7 @@ class StructuralFixture {
                 str(converter),
                 str(matrix),
                 str(target),
+                ",".join(map(str, resolutions)),
             ],
             check=True,
             stdout=log,
