@@ -26,9 +26,10 @@ The active Hi-C map, linked FASTA, and loaded AGP appear beside **Jobs**.
 
 Drag to pan and use the wheel or zoom buttons to change scale. The ruler-corner
 lock anchors the map to its top and left boundaries. Unlock it for free panning.
-Hold Shift and click or drag to select entities for assembly editing. The
-temporary drag box disappears on release; selected entity borders stay
-highlighted. **Selection** chooses whether Shift selects contigs or scaffolds.
+Shift-click or Shift-drag on the diagonal selects contigs. A scaffold that is
+touched is selected whole. To change one contig inside a scaffold, right-click
+it. The temporary drag box disappears on release and the selection stays
+highlighted.
 Hold Ctrl (Command on macOS) and drag a persistent region for dot plots, sequence
 tools, histograms and exports. A region does not select entities for editing.
 Click outside the region, use **Selection → Clear selection**, or press Escape

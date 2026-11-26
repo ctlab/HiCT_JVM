@@ -632,6 +632,29 @@ class ScaffoldEditingInvariantTest {
     }
   }
 
+  @Test void exactMoveDetachesOnlyOneContigAndPreservesRemainingScaffold() {
+    try (var file = fixture()) {
+      final var operations = file.scaffoldingOperations();
+      final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      operations.scaffoldRegion(0, 18000, bp, QueryLengthUnit.BASE_PAIRS, null);
+      final var before = file.snapshotAssembly();
+      final var original = file.getScaffoldTree().getScaffoldList().getFirst();
+      assertThrows(IllegalArgumentException.class, () -> operations.moveSelectionRangeBp(6001, 12000, 18000, true));
+      assertThrows(IllegalArgumentException.class, () -> operations.moveSelectionRangeBp(0, 12000, 18000, true));
+      assertEquals(before, file.snapshotAssembly());
+
+      operations.moveSelectionRangeBp(6000, 12000, 18000, true);
+      assertEquals(List.of("A", "C", "B"), file.getContigTree().getOrderedContigList().stream()
+        .map(contig -> contig.descriptor().getContigName()).toList());
+      final var scaffolds = file.getScaffoldTree().getScaffoldList();
+      assertEquals(1, scaffolds.size());
+      assertEquals(original.scaffoldDescriptor(), scaffolds.getFirst().scaffoldDescriptor());
+      assertEquals(0, scaffolds.getFirst().scaffoldBordersBP().startBP());
+      assertEquals(12000, scaffolds.getFirst().scaffoldBordersBP().endBP());
+      assertNull(file.getScaffoldTree().getScaffoldAtBp(12000));
+    }
+  }
+
   @Test void bpSplitInsideBinSnapsSequenceToTheRemovedContactBin() {
     try (var f = fixture()) {
       f.scaffoldingOperations().splitContigAtBin(1500, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);

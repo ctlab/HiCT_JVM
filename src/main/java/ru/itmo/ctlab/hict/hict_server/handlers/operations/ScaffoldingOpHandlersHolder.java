@@ -126,8 +126,14 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           log.debug("Got ChunkedFile from map");
 
           validateRanges(chunkedFiles, request.startBP(), request.endBP(), request.targetStartBP());
+          if (request.exactContig()) {
+            for (final var file : chunkedFiles.operationOrder()) {
+              file.scaffoldingOperations().validateExactContig(request.startBP(), request.endBP());
+            }
+          }
           for (final var file : chunkedFiles.operationOrder()) {
-            file.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
+            file.scaffoldingOperations().moveSelectionRangeBp(
+              request.startBP(), request.endBP(), request.targetStartBP(), request.exactContig());
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));

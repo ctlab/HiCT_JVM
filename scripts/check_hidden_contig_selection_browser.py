@@ -30,13 +30,9 @@ MODEL = """() => {
     const center = (a + b) / 2, extent = [a,-b,b,-a];
     const view = m.getMap().getViewport().getBoundingClientRect();
     const point = m.getMap().getPixelFromCoordinate([center, -center]);
-    const s = m.scaffoldHolder.getScaffoldLocusByBp(h.prefix_sum_bp[i]);
-    const track = l.currentViewState.entitySelectionKind === 'scaffold'
-        ? l.track2DHolder.scaffoldBordersTrack : l.track2DHolder.contigBordersTrack;
+    const track = l.track2DHolder.contigBordersTrack;
     const border = track.features.get(d.bpResolution)?.find(f =>
-        f.get('contigDescriptor')?.contigId === h.contigDescriptors[i].contigId
-        || f.get('scaffoldDescriptor')?.scaffoldId === s?.scaffoldId
-        || f.get('scaffolDescriptor')?.scaffoldId === s?.scaffoldId);
+        f.get('contigDescriptor')?.contigId === h.contigDescriptors[i].contigId);
     return {resolution:d.bpResolution, viewResolution:m.getView().getResolution(),
         extent, border:border?.getGeometry().getExtent(),
         bp:[h.prefix_sum_bp[i],h.prefix_sum_bp[i+1]],
@@ -121,11 +117,8 @@ def main():
             state = page.evaluate(MODEL)
             assert state["resolution"] == resolution, state
 
-        def select(kind):
-            page.evaluate("""kind => {
-                const l=window.__hictBenchmark.manager().viewAndLayersManager;
-                l.clearSelections();l.setEntitySelectionKind(kind);
-            }""", kind)
+        def select():
+            page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.clearSelections()")
             current = page.evaluate(MODEL)
             page.keyboard.down("Shift")
             page.mouse.click(*current["point"])
@@ -161,34 +154,33 @@ def main():
             assert agp() == expected
 
         for resolution in RESOLUTIONS:
-            for kind in ("contig", "scaffold"):
-                level(resolution)
-                before = agp()
-                state = select(kind)
-                page.screenshot(path=str(out / f"{resolution}-{kind}.png"))
-                draw_exact_region(state)
-                page.mouse.click(*page.evaluate(MODEL)["point"], button="right")
-                menu = page.get_by_role("menu", name="Assembly actions")
-                menu.wait_for()
-                scaffold = menu.locator('[data-submenu="scaffold"]')
-                entity = scaffold if scaffold.count() else menu.locator('[data-submenu="contig"]')
-                entity.click()
-                with page.expect_response("**/reverse_selection_range") as response:
-                    page.get_by_role("menuitem", name="Reverse", exact=True).click()
-                assert response.value.ok, response.value.text()
-                payload = response.value.request.post_data_json
-                assert [payload["startBP"], payload["endBP"]] == state["bp"], payload
-                check.settle()
-                after = agp()
-                changed = [(a.split("\t"), b.split("\t")) for a, b in zip(before, after) if a != b]
-                assert len(after) == len(before) and len(changed) == 1, changed
-                old, new = changed[0]
-                assert old[5] == "middle" and old[:-1] == new[:-1] and [old[-1], new[-1]] == ["+", "-"], changed
-                # Verify the highlight and region after reloading a reversed contig.
-                level(resolution)
-                draw_exact_region(select(kind))
-                rows.append(dict(resolution=resolution, kind=kind, bounds=state["bp"], reverseExact=True))
-                undo(before)
+            level(resolution)
+            before = agp()
+            state = select()
+            page.screenshot(path=str(out / f"{resolution}-selection.png"))
+            draw_exact_region(state)
+            page.mouse.click(*page.evaluate(MODEL)["point"], button="right")
+            menu = page.get_by_role("menu", name="Assembly actions")
+            menu.wait_for()
+            scaffold = menu.locator('[data-submenu="scaffold"]')
+            entity = scaffold if scaffold.count() else menu.locator('[data-submenu="contig"]')
+            entity.click()
+            with page.expect_response("**/reverse_selection_range") as response:
+                page.get_by_role("menuitem", name="Reverse", exact=True).click()
+            assert response.value.ok, response.value.text()
+            payload = response.value.request.post_data_json
+            assert [payload["startBP"], payload["endBP"]] == state["bp"], payload
+            check.settle()
+            after = agp()
+            changed = [(a.split("\t"), b.split("\t")) for a, b in zip(before, after) if a != b]
+            assert len(after) == len(before) and len(changed) == 1, changed
+            old, new = changed[0]
+            assert old[5] == "middle" and old[:-1] == new[:-1] and [old[-1], new[-1]] == ["+", "-"], changed
+            # Verify the highlight and region after reloading a reversed contig.
+            level(resolution)
+            draw_exact_region(select())
+            rows.append(dict(resolution=resolution, bounds=state["bp"], reverseExact=True))
+            undo(before)
 
         # Move the last visible contig to the assembly start. The hidden run is
         # now at the end, so a right-edge selection must still end at middle.
@@ -196,7 +188,6 @@ def main():
         before = agp()
         page.evaluate("""() => {
             const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager,h=m.contigDimensionHolder;
-            l.setEntitySelectionKind('contig');
             const i=h.contigDescriptors.findIndex(c=>c.contigName==='right');
             l.selectEntityRangeByBp(h.prefix_sum_bp[i],h.prefix_sum_bp[i+1]);
             l.fitViewToActiveExtent();
@@ -219,7 +210,7 @@ def main():
         check.settle()
         assert next(line for line in agp() if not line.startswith("#")).split("\t")[5] == "right"
         level(RESOLUTIONS[0])
-        draw_exact_region(select("contig"))
+        draw_exact_region(select())
         undo(before)
         assert not check.errors, check.errors
         browser.close()

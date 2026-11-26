@@ -145,7 +145,6 @@ def main():
             scaffold=page.evaluate('''()=>{const m=window.__hictBenchmark.manager();return [...m.scaffoldHolder.scaffoldTable.values()].find(s=>s.scaffoldBordersBP?.startBP===0&&s.scaffoldBordersBP?.endBP===2000);}''')
             assert scaffold,scaffold
             def scaffold_pick():
-                choose('Scaffolds')
                 page.keyboard.down('Shift');page.mouse.click(*point(500,500));page.keyboard.up('Shift');check.settle()
                 s=state();assert len(s['ids'])==2 and len(s['scaffolds'])==1 and s['highlights']==1,s
                 page.evaluate('''()=>window.__hictBenchmark.manager().viewAndLayersManager.restoreViewPosition({centerBp:[1000,1000],resolution:.008})''');check.settle()
@@ -173,9 +172,8 @@ def main():
             def hide_scoped():
                 choose('Hide borders in scoped view')
                 assert page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager;return [l.getActiveContigBordersLayer(),l.getActiveScaffoldBordersLayer()].every(layer=>layer.getSource().getFeatures().every(f=>!['contigBorders','scaffoldBorders'].includes(f.get('trackType'))));}''')
-                choose('Contigs')
                 page.keyboard.down('Shift');page.mouse.click(*point(1200,1200));page.keyboard.up('Shift');check.settle()
-                assert len(state()['ids'])==1 and state()['highlights']==1,state()
+                assert len(state()['ids'])==2 and state()['highlights']==1,state()
             check.step('scoped-borders-and-visible-selection',hide_scoped)
             def typed_region():
                 dialog=coordinates();fill(dialog,{'row-start':'0'});dialog.get_by_role('button',name='Select region',exact=True).click()
@@ -225,7 +223,7 @@ def main():
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.clearSelections()');check.settle()
                 clean=export('clean-export')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,2000)');check.settle()
-                assert state()['highlights']==2
+                assert state()['highlights']==1
                 assert export('entity-export')==clean
                 assert len(state()['ids'])==2 and page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.entityHighlightLayer.getVisible()')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds({rowStart:100,rowEnd:1000,columnStart:300,columnEnd:2000})');check.settle()

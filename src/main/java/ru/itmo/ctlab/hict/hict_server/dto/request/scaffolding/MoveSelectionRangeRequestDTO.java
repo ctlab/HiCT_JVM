@@ -31,10 +31,17 @@ import org.jetbrains.annotations.NotNull;
 public record MoveSelectionRangeRequestDTO(
   long startBP,
   long endBP,
-  long targetStartBP
+  long targetStartBP,
+  boolean exactContig
 ) {
 
   public static @NotNull MoveSelectionRangeRequestDTO fromJSONObject(final @NotNull JsonObject json) {
-    return new MoveSelectionRangeRequestDTO(RequestJson.requireLong(json, "startBP"), RequestJson.requireLong(json, "endBP"), RequestJson.requireLong(json, "targetStartBP"));
+    final var exact = json.getValue("exactContig");
+    if (exact != null && !(exact instanceof Boolean)) {
+      throw new IllegalArgumentException("exactContig must be a boolean");
+    }
+    return new MoveSelectionRangeRequestDTO(RequestJson.requireLong(json, "startBP"),
+      RequestJson.requireLong(json, "endBP"), RequestJson.requireLong(json, "targetStartBP"),
+      Boolean.TRUE.equals(exact));
   }
 }

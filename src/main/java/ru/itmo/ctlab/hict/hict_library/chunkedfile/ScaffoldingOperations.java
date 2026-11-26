@@ -75,6 +75,11 @@ public class ScaffoldingOperations {
   }
 
   public void moveSelectionRangeBp(final long queriedStartBpIncl, final long queriedEndBpExcl, final long targetStartBp) {
+    moveSelectionRangeBp(queriedStartBpIncl, queriedEndBpExcl, targetStartBp, false);
+  }
+
+  public void moveSelectionRangeBp(final long queriedStartBpIncl, final long queriedEndBpExcl,
+                                   final long targetStartBp, final boolean exactContig) {
     final var contigTree = this.chunkedFile.getContigTree();
     final var scaffoldTree = this.chunkedFile.getScaffoldTree();
     final var contigLock = contigTree.getRootLock();
@@ -82,7 +87,9 @@ public class ScaffoldingOperations {
     try {
       contigLock.writeLock().lock();
       scaffoldLock.writeLock().lock();
-      final var range = resolveSelectionWithScaffolds(queriedStartBpIncl, queriedEndBpExcl, contigTree, scaffoldTree);
+      final var range = exactContig
+        ? requireExactContig(queriedStartBpIncl, queriedEndBpExcl, contigTree)
+        : resolveSelectionWithScaffolds(queriedStartBpIncl, queriedEndBpExcl, contigTree, scaffoldTree);
       if (range == null) {
         return;
       }
@@ -110,8 +117,12 @@ public class ScaffoldingOperations {
         final var nlnr = (tmp != null)
           ? tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), adjustedTargetStartBp, false, QueryLengthUnit.BASE_PAIRS)
           : new ContigTree.Node.SplitResult(null, null);
+        if (exactContig) {
+          scaffoldTree.moveExactContig(range.startBp(), range.endBpExcl(), adjustedTargetStartBp);
+        } else {
+          scaffoldTree.moveSelectionRange(range.startBp(), range.endBpExcl(), adjustedTargetStartBp);
+        }
         contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
-        scaffoldTree.moveSelectionRange(range.startBp(), range.endBpExcl(), adjustedTargetStartBp);
       }
     } finally {
       scaffoldLock.writeLock().unlock();
@@ -271,6 +282,31 @@ public class ScaffoldingOperations {
     if (start < 0 || start >= end || end > length) {
       throw new IllegalArgumentException("Select a nonempty range within the assembly");
     }
+  }
+
+  public void validateExactContig(final long startBp, final long endBp) {
+    final var tree = chunkedFile.getContigTree();
+    final var lock = tree.getRootLock().readLock();
+    lock.lock();
+    try {
+      requireExactContig(startBp, endBp, tree);
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private SelectionRange requireExactContig(final long startBp, final long endBp, final ContigTree tree) {
+    final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+    validateRange(startBp, endBp, bp, QueryLengthUnit.BASE_PAIRS);
+    final var exposed = tree.expose(bp, startBp, endBp, QueryLengthUnit.BASE_PAIRS);
+    final long actualStart = exposed.less() == null ? 0
+      : exposed.less().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp);
+    if (exposed.segment() == null || exposed.segment().getSubtreeCount() != 1
+      || actualStart != startBp
+      || exposed.segment().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp) != endBp - startBp) {
+      throw new IllegalArgumentException("Exact Move requires the full range of one contig");
+    }
+    return new SelectionRange(startBp, endBp, endBp - startBp);
   }
 
   private @Nullable SelectionRange resolveSelectionWithScaffolds(

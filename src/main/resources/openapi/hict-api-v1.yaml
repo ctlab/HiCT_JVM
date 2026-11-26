@@ -3359,6 +3359,10 @@ components:
         startBP: { type: integer, format: int64 }
         endBP: { type: integer, format: int64 }
         targetStartBP: { type: integer, format: int64 }
+        exactContig:
+          type: boolean
+          default: false
+          description: Require one whole contig. Detach it when moved and preserve the remaining scaffold.
       required: [startBP, endBP, targetStartBP]
     SplitContigRequest:
       type: object
