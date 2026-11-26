@@ -67,11 +67,16 @@ def main():
             assert page.locator('#normalization-mode option[value="file"]').is_enabled()
             assert not page.locator('#imported-weights-unavailable').count()
             # Hover a native-weight value on hidden sequence and inspect the scientific resolution label.
-            point=page.evaluate('''()=>{const t=window.__hictBenchmark.manager().linearTrackManager,s=t.lastRenderedSnapshot.horizontal;
-                const idx=s.tracks.findIndex(t=>t.name==='Weights'),bin=s.tracks[idx].bins.find(b=>b.startBp===1);
-                const r=document.querySelector('#horizontal-igv-track-div').getBoundingClientRect();
-                return [r.left+s.viewport.pxToScreen(1.5),r.top+(idx+.5)*s.canvasHeight/s.tracks.length];}''')
-            page.mouse.move(*point)
+            track_host = page.locator('#horizontal-igv-track-div')
+            weights_lane = track_host.get_by_role('region', name='Weights feature rows', exact=True)
+            lane_bounds = weights_lane.bounding_box()
+            assert lane_bounds and lane_bounds['height'] > 0
+            weight_x = track_host.evaluate('''host => {
+                const tracks = window.__hictBenchmark.manager().linearTrackManager;
+                return host.getBoundingClientRect().left +
+                    tracks.lastRenderedSnapshot.horizontal.viewport.pxToScreen(1.5);
+            }''')
+            page.mouse.move(weight_x, lane_bounds['y'] + lane_bounds['height'] / 2)
             page.get_by_text('Native weights: 100 bp bins',exact=False).last.wait_for()
             page.get_by_text('Assembly 2-2 bp (1-based, inclusive)',exact=True).last.wait_for()
             page.screenshot(path=str(out/'hidden-binless-tracks.png'))
