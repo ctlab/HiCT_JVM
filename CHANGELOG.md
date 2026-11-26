@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.
 - Select whole scaffolds with Shift and keep the selected contigs highlighted across edits. Use the contig menu to move one contig.
 - Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session.
 - Selecting a scaffold followed by short hidden contigs now highlights and edits exactly that scaffold at every zoom level.
