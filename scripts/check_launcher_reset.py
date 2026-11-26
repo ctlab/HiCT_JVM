@@ -29,10 +29,12 @@ def main():
         directory = out / key.lower()
         directory.mkdir(mode=0o700)
         env[key] = str(directory)
-    with socket.socket() as api, socket.socket() as webui:
-        api.bind(("127.0.0.1", 0))
-        webui.bind(("127.0.0.1", 0))
-        env.update(VXPORT=str(api.getsockname()[1]), WEBUI_PORT=str(webui.getsockname()[1]))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", int(os.environ.get("HICT_LAUNCHER_TEST_PORT", "0"))))
+        port = listener.getsockname()[1]
+    env["HICT_PORT"] = str(port)
+    # An existing saved WebUI port wins over the environment for migrated installations.
+    (out / "launcher.properties").write_text(f"WEBUI_PORT={port}\nVXPORT=1\n", encoding="ascii")
     env.update(
         HICT_APP_HOME=str(out),
         DATA_DIR=str(out / "data"),

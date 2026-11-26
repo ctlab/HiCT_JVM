@@ -321,12 +321,14 @@ public class HictCli implements Runnable {
     description = "Start API server with WebUI."
   )
   static class StartServer implements Callable<Integer> {
-    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).", defaultValue = "true")
-    boolean serveWebUi;
+    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).")
+    Boolean serveWebUi;
 
     @Override
     public Integer call() {
-      System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
+      if (serveWebUi != null) {
+        System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
+      }
       Launcher.main(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }

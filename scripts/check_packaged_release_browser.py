@@ -124,23 +124,15 @@ def main():
         names.append(source.name)
     evidence["inputSources"] = inputs
     hashes = {p.name: sha256(p) for p in data.glob("*.hdf5")}
-    sockets = []
-    try:
-        for _ in range(2):
-            reservation = socket.socket()
-            reservation.bind(("127.0.0.1", 0))
-            sockets.append(reservation)
-        api_port, web_port = [s.getsockname()[1] for s in sockets]
-    finally:
-        for reservation in sockets:
-            reservation.close()
-    api, web = f"http://127.0.0.1:{api_port}", f"http://127.0.0.1:{web_port}"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    api = web = f"http://127.0.0.1:{port}"
     env = {
         **os.environ,
         "DATA_DIR": str(data),
         "PROCESSED_DIR": str(out / "processed"),
-        "VXPORT": str(api_port),
-        "WEBUI_PORT": str(web_port),
+        "HICT_PORT": str(port),
         "HICT_BIND_HOST": "127.0.0.1",
         "AUTO_OPEN_BROWSER": "false",
         "WEBUI_ROOT": str(app / "webui"),

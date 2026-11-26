@@ -95,7 +95,7 @@ class LauncherResetAcceptance {
     var bundle = constructor.newInstance("reset-fixture", "electron", 0, output, Path.of("/bin/sh"), List.of("-c", script));
     var method = launcher.getClass().getDeclaredMethod("tryOpenBundledBrowser", type, String.class);
     method.setAccessible(true);
-    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:" + System.getenv("WEBUI_PORT") + "/");
+    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:" + System.getenv("HICT_PORT") + "/");
   }
 
   static void confirm(String action, String title, boolean accept, String screenshot) throws Exception {
@@ -146,6 +146,9 @@ class LauncherResetAcceptance {
         return null;
       });
       var fields = (Map<String, JTextField>) field("fields");
+      require(!fields.containsKey("VXPORT") && !fields.containsKey("WEBUI_PORT"), "Legacy port fields are still visible");
+      require(edt(() -> fields.get("HICT_PORT").getText()).equals(System.getenv("HICT_PORT")), "Saved WebUI port did not migrate");
+      ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("one-port.png").toFile());
       var expectedData = output.resolve("retained-data").toString();
       var expectedProcessed = output.resolve("retained-processed").toString();
       edt(() -> {
@@ -262,9 +265,14 @@ class LauncherResetAcceptance {
         return null;
       });
       var client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(1)).build();
-      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + System.getenv("VXPORT") + "/version"))
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + System.getenv("HICT_PORT") + "/version"))
         .timeout(java.time.Duration.ofSeconds(2)).build();
       require(awaitServerVersion(client, request), "Launcher did not start a reachable real server");
+      final var indexUrl = java.net.URI.create((String) invoke("webUiUrl"));
+      final var index = client.send(java.net.http.HttpRequest.newBuilder(indexUrl).build(),
+        java.net.http.HttpResponse.BodyHandlers.ofString());
+      require(index.statusCode() == 200 && index.body().contains("<script"), "Launcher port did not serve the map viewer");
+      require(((String) invoke("webUiLaunchUrl")).startsWith(indexUrl + "?hict_launch="), "Viewer launch port differs");
       var owned = (Process) field("serverProcess");
       require(owned != null && owned.isAlive(), "Launcher lost ownership of its real server");
       var serverChildren = owned.descendants().toList();

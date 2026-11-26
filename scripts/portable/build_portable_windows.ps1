@@ -694,7 +694,8 @@ exit /b 0
 @echo off
 setlocal
 set "HICT_URL=%~1"
-if "%HICT_URL%"=="" set "HICT_URL=http://localhost:8080/"
+if "%HICT_PORT%"=="" set "HICT_PORT=8080"
+if "%HICT_URL%"=="" set "HICT_URL=http://localhost:%HICT_PORT%/"
 for /l %%i in (1,1,90) do (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 '%HICT_URL%'; if ($r.StatusCode -ge 200) { exit 0 } } catch { exit 1 }" >nul 2>nul
   if not errorlevel 1 (

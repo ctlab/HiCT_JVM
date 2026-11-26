@@ -224,8 +224,7 @@ public final class HictLauncherGui {
       new ConfigSpec("HICT_TEMP_DIR", "Working folder", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("PROCESSED_DIR", "Processed/cache directory", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("HICT_BIND_HOST", "Bind host", "127.0.0.1", PathKind.NONE, "Folders and network"),
-      new ConfigSpec("VXPORT", "API port", "5000", PathKind.NONE, "Folders and network"),
-      new ConfigSpec("WEBUI_PORT", "WebUI port", "8080", PathKind.NONE, "Folders and network"),
+      new ConfigSpec("HICT_PORT", "Port", "8080", PathKind.NONE, "Folders and network"),
       new ConfigSpec("MIN_DS_POOL", "Min dataset pool", "4", PathKind.NONE, "Memory and threads"),
       new ConfigSpec("MAX_DS_POOL", "Max dataset pool", "16", PathKind.NONE, "Memory and threads"),
       new ConfigSpec("HICT_WORKERS_TOTAL_MAX", "Total worker limit", "", PathKind.NONE, "Memory and threads"),
@@ -372,7 +371,7 @@ public final class HictLauncherGui {
       });
 
       updateBrowserStatus();
-      updateStatusLabels(false, false);
+      updateStatusLabels(false);
       this.statusTimer = new Timer(1_000, ignored -> pollStatusInBackground());
       this.statusTimer.setInitialDelay(0);
       this.statusTimer.start();
@@ -692,6 +691,16 @@ public final class HictLauncherGui {
           browse.addActionListener(ignored -> browsePath(spec, field));
           form.add(browse, gbc);
           rowComponents.add(browse);
+        }
+        if ("HICT_PORT".equals(spec.key())) {
+          final var hint = new JLabel("HiCT serves the map viewer and its API on this one port.");
+          hint.setForeground(new Color(90, 96, 104));
+          gbc.gridy = gridy++;
+          gbc.gridx = 1;
+          gbc.gridwidth = 2;
+          form.add(hint, gbc);
+          gbc.gridwidth = 1;
+          rowComponents.add(hint);
         }
         this.configRows.add(new ConfigRow(spec, label, rowComponents));
       }
@@ -1202,7 +1211,7 @@ public final class HictLauncherGui {
       applyEnvironment(env, dataDir, tempDir);
       env.put("PROCESSED_DIR", processedDir.toString());
       this.serverShutdownToken = java.util.UUID.randomUUID().toString();
-      this.serverShutdownUri = URI.create("http://127.0.0.1:" + normalizedPort("VXPORT", "5000") + "/shutdown");
+      this.serverShutdownUri = URI.create("http://127.0.0.1:" + normalizedPort("HICT_PORT", "8080") + "/shutdown");
       env.put("HICT_LAUNCHER_SHUTDOWN_TOKEN", this.serverShutdownToken);
 
       appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
@@ -1230,22 +1239,21 @@ public final class HictLauncherGui {
       }
     }
 
-    private int parsePort(final String key, final String name, final String fallback) {
-      final var raw = getFieldValue(key);
-      final var text = raw.isBlank() ? fallback : raw;
+    private int parsePort() {
+      final var text = normalizedPort("HICT_PORT", "8080");
       final int port;
       try {
         port = Integer.parseInt(text.trim());
       } catch (final NumberFormatException ex) {
-        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got '" + text + "').");
+        throw new IllegalArgumentException("Port must be an integer from 1024 to 65535 (got '" + text + "').");
       }
-      if (port < 1 || port > 65535) {
-        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got " + port + ").");
+      if (port < 1024 || port > 65535) {
+        throw new IllegalArgumentException("Port must be an integer from 1024 to 65535 (got " + port + ").");
       }
       return port;
     }
 
-    private String checkPortBindable(final String host, final int port, final String name) {
+    private String checkPortBindable(final String host, final int port) {
       try (var socket = new ServerSocket()) {
         if (!isWindows()) {
           socket.setReuseAddress(true);
@@ -1256,35 +1264,23 @@ public final class HictLauncherGui {
       } catch (final UnknownHostException ex) {
         return "Bind host '" + host + "' cannot be resolved.";
       } catch (final IOException | RuntimeException ex) {
-        return name + " " + port + " is already in use or cannot be opened on "
-          + (host.isBlank() ? "all interfaces" : host) + ": " + ex.getMessage();
+        return "Port " + port + " is used by another program. Choose another port, for example 8765, or stop that program.";
       }
     }
 
     /** Checks everything that commonly makes the server fail right after start; reports the first problem. */
     private boolean validateBeforeStart() {
-      final int apiPort;
-      final int webUiPort;
+      final int port;
       try {
-        apiPort = parsePort("VXPORT", "API port", "5000");
-        webUiPort = parsePort("WEBUI_PORT", "WebUI port", "8080");
+        port = parsePort();
       } catch (final IllegalArgumentException ex) {
         showErrorMessage("Invalid port", ex.getMessage());
         return false;
       }
-      if (apiPort == webUiPort) {
-        showErrorMessage("Invalid port", "API port and WebUI port must differ (both are " + apiPort + ").");
-        return false;
-      }
       final var host = getFieldValue("HICT_BIND_HOST");
-      final var apiProblem = checkPortBindable(host, apiPort, "API port");
-      if (apiProblem != null) {
-        showErrorMessage("Cannot start HiCT", apiProblem);
-        return false;
-      }
-      final var webUiProblem = checkPortBindable(host, webUiPort, "WebUI port");
-      if (webUiProblem != null) {
-        showErrorMessage("Cannot start HiCT", webUiProblem);
+      final var portProblem = checkPortBindable(host, port);
+      if (portProblem != null) {
+        showErrorMessage("Cannot start HiCT", portProblem);
         return false;
       }
       final var dataDir = safeNormalizePath(getFieldValue("DATA_DIR"));
@@ -1522,8 +1518,9 @@ public final class HictLauncherGui {
         }
       }
       env.putIfAbsent("HICT_BIND_HOST", "127.0.0.1");
-      env.putIfAbsent("VXPORT", "5000");
-      env.putIfAbsent("WEBUI_PORT", "8080");
+      env.put("HICT_PORT", normalizedPort("HICT_PORT", "8080"));
+      env.remove("VXPORT");
+      env.remove("WEBUI_PORT");
       env.put("HICT_APP_HOME", this.appHome.toString());
       if (this.jarPath != null) {
         env.put("HICT_JAR_PATH", this.jarPath.toString());
@@ -1693,7 +1690,7 @@ public final class HictLauncherGui {
       this.backgroundExecutor.submit(() -> {
         final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
         while (!this.closing && isProcessAlive() && System.nanoTime() < deadline) {
-          if (isUrlReachable(webUiUrl())) {
+          if (isUrlReachable(apiUrl("/version"))) {
             if (isProcessAlive()) {
               SwingUtilities.invokeLater(this::openWebUi);
             }
@@ -1932,13 +1929,12 @@ public final class HictLauncherGui {
 
     private void pollStatusInBackground() {
       this.backgroundExecutor.submit(() -> {
-        final var apiReachable = isUrlReachable(apiUrl("/version"));
-        final var webUiReachable = isUrlReachable(webUiUrl());
-        SwingUtilities.invokeLater(() -> updateStatusLabels(apiReachable, webUiReachable));
+        final var reachable = isUrlReachable(apiUrl("/version"));
+        SwingUtilities.invokeLater(() -> updateStatusLabels(reachable));
       });
     }
 
-    private void updateStatusLabels(final boolean apiReachable, final boolean webUiReachable) {
+    private void updateStatusLabels(final boolean reachable) {
       final var green = new Color(20, 118, 55);
       final var red = new Color(170, 40, 40);
       final var amber = new Color(176, 112, 0);
@@ -1949,7 +1945,7 @@ public final class HictLauncherGui {
       Color color;
       boolean starting = false;
       if (alive) {
-        if (apiReachable && webUiReachable) {
+        if (reachable) {
           text = "Running";
           color = green;
         } else {
@@ -1966,7 +1962,7 @@ public final class HictLauncherGui {
           SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
             this.frame, message, "HiCT Launcher", JOptionPane.ERROR_MESSAGE));
         }
-      } else if (apiReachable || webUiReachable) {
+      } else if (reachable) {
         text = "Port in use by another program";
         color = amber;
       } else {
@@ -2301,11 +2297,11 @@ public final class HictLauncherGui {
     }
 
     private String apiUrl(final String path) {
-      return "http://" + clientHost() + ":" + normalizedPort("VXPORT", "5000") + path;
+      return "http://" + clientHost() + ":" + normalizedPort("HICT_PORT", "8080") + path;
     }
 
     private String webUiUrl() {
-      return "http://" + clientHost() + ":" + normalizedPort("WEBUI_PORT", "8080") + "/";
+      return "http://" + clientHost() + ":" + normalizedPort("HICT_PORT", "8080") + "/";
     }
 
     private String webUiLaunchUrl() {
@@ -2334,7 +2330,9 @@ public final class HictLauncherGui {
     }
 
     private String resolveInitialValue(final ConfigSpec spec) {
-      final var fromSettings = this.settings.getProperty(spec.key());
+      final var fromSettings = "HICT_PORT".equals(spec.key())
+        ? this.settings.getProperty(spec.key(), this.settings.getProperty("WEBUI_PORT"))
+        : this.settings.getProperty(spec.key());
       if (fromSettings != null) {
         return fromSettings;
       }

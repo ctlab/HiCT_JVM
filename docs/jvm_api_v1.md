@@ -11,8 +11,9 @@ Interactive documentation is served by the backend itself:
 
 ## Base URL
 
-The default API address is `http://localhost:5000`. Set `VXPORT` to select
-another port. The WebUI is served separately on `WEBUI_PORT`, default 8080.
+The API and WebUI share `http://localhost:8080` by default. Set `HICT_PORT` to
+use another port. Set `VXPORT` and `WEBUI_PORT` to two different values to keep
+the old two-port layout.
 Set `HICT_BIND_HOST=127.0.0.1` for local access or SSH forwarding. The default
 all-interface bind and permissive CORS expose an unauthenticated editing API.
 Use a trusted host and restrict network access as described in the README.

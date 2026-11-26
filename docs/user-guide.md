@@ -1,5 +1,9 @@
 # HiCT user guide
 
+The API and map viewer share `http://localhost:8080` by default. Set
+`HICT_PORT` to use another port. Set `VXPORT` and `WEBUI_PORT` to two different
+values to keep the old two-port layout.
+
 ## Open a map
 
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press

@@ -8,7 +8,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import threading
 from unittest.mock import Mock
 
 from check_packaged_server import clean_up
@@ -35,10 +34,8 @@ def serve():
             self.end_headers()
             self.wfile.write(payload)
 
-    with http.server.HTTPServer(("127.0.0.1", int(os.environ["VXPORT"])), Handler) as api:
-        with http.server.HTTPServer(("127.0.0.1", int(os.environ["WEBUI_PORT"])), Handler) as web:
-            threading.Thread(target=api.serve_forever, daemon=True).start()
-            web.serve_forever()
+    with http.server.HTTPServer(("127.0.0.1", int(os.environ["HICT_PORT"])), Handler) as server:
+        server.serve_forever()
 
 
 def main():

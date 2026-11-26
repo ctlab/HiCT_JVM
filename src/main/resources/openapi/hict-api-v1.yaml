@@ -27,7 +27,7 @@ info:
     split-lineage `sourceOffsetBp` values. Portable sessions validate complete
     source intervals against the maximum exact JavaScript integer (9007199254740991).
 servers:
-  - url: /
+  - url: http://localhost:8080
 tags:
   - name: Info
   - name: Files
