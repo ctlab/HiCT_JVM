@@ -349,6 +349,37 @@ def main():
                 )
 
             round_trip("move-arrow-after-resolution-change", move_by_arrow)
+            def move_to_end(first):
+                select_orders(1, 1)
+                manager = "window.__hictBenchmark.manager()"
+                order = page.evaluate(f"{manager}.contigDimensionHolder.contigDescriptors.map(c=>c.contigId)")
+                page.get_by_role("button", name="Enter translocation mode", exact=True).click()
+                target = page.evaluate(
+                    """first => {
+                        const m = window.__hictBenchmark.manager(), l = m.viewAndLayersManager;
+                        const resolution = l.currentViewState.resolutionDesciptor.bpResolution;
+                        const feature = l.layersHolder.bpResolutionToContigTranslocationArrowsLayer
+                            .get(resolution).getSource().getFeatures().find(f =>
+                                !f.get(first ? 'leftContigDescriptor' : 'rightContigDescriptor'));
+                        const [x, y] = m.getMap().getPixelFromCoordinate(
+                            feature.getGeometry().getInteriorPoints().getCoordinates()[0]);
+                        const rect = m.getMap().getViewport().getBoundingClientRect();
+                        const prefix = m.contigDimensionHolder.prefix_sum_bp;
+                        return {x: rect.left + x, y: rect.top + y, bp: first ? 0 : prefix[prefix.length - 1]};
+                    }""",
+                    first,
+                )
+                with page.expect_response("**/move_selection_range") as response:
+                    page.mouse.move(target["x"], target["y"])
+                    page.mouse.click(target["x"], target["y"])
+                assert response.value.ok, response.value.text()
+                assert response.value.request.post_data_json["targetStartBP"] == target["bp"]
+                check.settle()
+                actual = page.evaluate(f"{manager}.contigDimensionHolder.contigDescriptors.map(c=>c.contigId)")
+                assert actual == ([order[1], order[0], *order[2:]] if first else [order[0], *order[2:], order[1]]), actual
+
+            round_trip("move-arrow-to-first-position", lambda: move_to_end(True))
+            round_trip("move-arrow-to-last-position", lambda: move_to_end(False))
             select_orders()
 
             def split():

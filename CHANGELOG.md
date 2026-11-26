@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Move contigs and scaffolds to either end of the assembly using the outer translocation triangles.
+- Zoom the map from 1D tracks by default, or turn on track scrolling in View. Drag the dividers to resize tracks.
+- Browse FASTA files while discovery runs, and generate a standalone ModDotPlot from the Tools menu.
+
 - Wait briefly for Windows to release temporary files in the cancellation tests.
 - Record map startup and sustained idle CPU separately in the Linux browser check.
 - Provide stable Main and Development download links alongside versioned releases.

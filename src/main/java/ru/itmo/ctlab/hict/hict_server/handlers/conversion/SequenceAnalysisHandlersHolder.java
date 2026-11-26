@@ -9,6 +9,8 @@ import io.vertx.core.json.*;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.HttpException;
 import ru.itmo.ctlab.hict.hict_library.assembly.*;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.AlignmentDetailRequestDTO;
@@ -51,6 +53,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         job.error, job.state.equals("finished") && job.output != null
           ? List.of(new BackgroundJob.Output(job.id, "open_blast_results", null)) : List.of(),
         new BackgroundJob.Details("NCBI BLAST · " + job.request.getString("remoteDatabase"), null, null, null));
+      if (job.request.containsKey("sourceFastaFilename"))
+        return new BackgroundJob(job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null,
+          job.created, null, job.finished, job.state, job.error,
+          job.output == null ? List.of() : List.of(new BackgroundJob.Output(job.output, "open_map",
+            job.request.getString("sourceFastaFilename"))),
+          new BackgroundJob.Details("ModDotPlot from FASTA", null, null, job.request.getString("sourceFastaFilename")));
       return new BackgroundJob(
       job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
       job.repeatPeriod == null ? job.state : repeatSummary(job), job.error, job.output == null ? List.of() : List.of(
@@ -753,6 +761,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       if (!alignment && resolutions.getFirst() < settings.getInteger("k"))
         throw new IllegalArgumentException("Each ModDotPlot window must be at least as long as its k-mer size");
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
+    if (request.containsKey("sourceFastaFilename")) {
+      if (alignment || preview || !request.getString("scope").equals("assembly") || request.getBoolean("mergeCompatible"))
+        throw new HttpException(400, "A FASTA ModDotPlot uses the full file and creates a separate map.");
+      return submitFastaModDotPlot(request, settings, resolutions);
+    }
     var shared = vertx.sharedData().getLocalMap("hict_server");
     boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
     var wrapper = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
@@ -818,6 +831,96 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.outputBytes())); }
     catch (RejectedExecutionException e) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
     return job.statusJson();
+  }
+
+  private JsonObject submitFastaModDotPlot(JsonObject request, JsonObject settings, List<Long> resolutions) throws Exception {
+    var shared = vertx.sharedData().getLocalMap("hict_server");
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    if (!(request.getValue("sourceFastaFilename") instanceof String filename) || filename.isBlank())
+      throw new HttpException(400, "Choose a FASTA file.");
+    var candidate = data.resolve(filename).normalize();
+    if (!candidate.startsWith(data) || !Files.isRegularFile(candidate))
+      throw new HttpException(400, "Choose a FASTA file inside the data directory.");
+    var fasta = candidate.toRealPath();
+    if (!fasta.startsWith(data))
+      throw new HttpException(400, "The FASTA file must remain inside the data directory.");
+    var sourceStamp = Stamp.read(fasta);
+    var executable = SequenceToolAvailability.require("hict-moddotplot");
+    var root = data.resolve("processed/sequence-analysis");
+    Files.createDirectories(root);
+    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
+    var options = request.copy().put("gapLengthBp", 0L).put("displayMode", "none").put("overviewLevels", new JsonArray());
+    try { validateOutputRequest(options, data, ".hict.hdf5"); }
+    catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
+    catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
+    var id = UUID.randomUUID().toString();
+    var directory = Files.createDirectory(root.resolve(id));
+    var job = new Job(id, directory, data, new AssemblySequenceSnapshot(List.of()), options, "", "moddotplot");
+    jobs.put(id, job);
+    try {
+      workers.execute(() -> prepareFastaModDotPlot(job, fasta, sourceStamp, executable, settings, resolutions));
+    } catch (RejectedExecutionException e) {
+      jobs.remove(id);
+      Files.delete(directory);
+      throw new HttpException(429, "Sequence analysis queue is full");
+    }
+    return job.statusJson();
+  }
+
+  private void prepareFastaModDotPlot(Job job, Path fasta, Stamp sourceStamp, Path executable,
+                                     JsonObject settings, List<Long> resolutions) {
+    var template = job.directory.resolve("fasta-template.hict.hdf5");
+    job.thread = Thread.currentThread();
+    try {
+      job.checkCancelled();
+      job.state = "preparing";
+      job.log("Reading the FASTA and building its sequence-only assembly.");
+      sourceStamp.check(fasta);
+      var scan = FastaOnlyAssembly.scan(fasta, FastaOnlyAssembly.DEFAULT_MIN_N_RUN, job.cancelled::get, null);
+      scan.warnings().forEach(job::log);
+      FastaOnlyAssembly.write(scan, template, job.cancelled::get, null);
+      sourceStamp.check(fasta);
+      try (var map = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(template, 1, 2))) {
+        var layout = AssemblySequenceLayout.capture(map, 0L);
+        var full = new AssemblyAnalysisPlan.Region(0, layout.sequence().length());
+        long memory = Runtime.getRuntime().maxMemory() / 4;
+        long disk = Files.getFileStore(job.directory).getUsableSpace() / 2;
+        long bytesPerWindow = 256L + Long.BYTES * settings.getInteger("sketch_size");
+        var estimate = AssemblyAnalysisPlan.estimate(map, resolutions, full, full, (bp, cumulative) -> {
+          if (cumulative.windows() > memory / bytesPerWindow || cumulative.outputBytes() > disk)
+            throw new IllegalArgumentException("The analysis exceeds the memory or disk budget at "
+              + bp + " bp. Choose fewer or coarser resolutions.");
+        });
+        var analysis = AssemblyAnalysisPlan.capture(map, resolutions, full, full);
+        job.snapshot = analysis.sequence();
+        job.snapshotId = job.snapshot.fingerprint();
+        job.sequenceLength = job.snapshot.length();
+        runOverlay(job, map.getFastaProcessor(), fasta, sourceStamp, template, Stamp.read(template),
+          executable, null, analysis, layout, settings, estimate.outputBytes());
+      }
+    } catch (Exception failure) {
+      synchronized (job) {
+        if (job.finished == 0) {
+          job.state = job.cancelled.get() || failure instanceof CancellationException ? "cancelled" : "failed";
+          if (job.state.equals("failed")) {
+            job.error = Objects.toString(failure.getMessage(), failure.getClass().getSimpleName());
+            job.log(job.error);
+          }
+          job.finished = System.currentTimeMillis();
+          try { job.save(); } catch (IOException e) { job.log("Could not save job details: " + e.getMessage()); }
+          job.snapshot = null;
+        }
+      }
+    } finally {
+      try {
+        Files.deleteIfExists(template);
+        Files.deleteIfExists(job.directory.resolve("assembly.fasta"));
+        Files.deleteIfExists(job.directory.resolve("moddotplot.hict.hdf5.pending"));
+      } catch (IOException e) { job.log("Could not remove temporary analysis files: " + e.getMessage()); }
+      job.thread = null;
+      trimCompletedJobs();
+      Thread.interrupted();
+    }
   }
 
   private void runOverlay(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path template,
@@ -911,7 +1014,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var delivered = publishRequestedOutput(published, job, ".hict.hdf5");
       job.output = job.data.relativize(delivered).toString().replace('\\', '/');
       var managedOutput = job.data.relativize(published).toString().replace('\\', '/');
-      atomicJson(registry, new JsonObject().put("outputFile", managedOutput).put("jobId", job.id).put("settings", settings));
+      if (!job.request.containsKey("sourceFastaFilename"))
+        atomicJson(registry, new JsonObject().put("outputFile", managedOutput).put("jobId", job.id).put("settings", settings));
       job.log("Saved overlay: " + job.output + ". Generation is complete; display attachment is a separate step.");
       if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
         new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
@@ -1046,7 +1150,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
 
   private static final class Job {
-    final String id, mapFilename, kind, snapshotId; final long sequenceLength; final Path directory, data;
+    final String id, mapFilename, kind; final Path directory, data;
+    volatile String snapshotId; volatile long sequenceLength;
     volatile AssemblySequenceSnapshot snapshot;
     final JsonObject request; final long created = System.currentTimeMillis(); final AtomicBoolean cancelled = new AtomicBoolean();
     final ArrayDeque<String> logs = new ArrayDeque<>();

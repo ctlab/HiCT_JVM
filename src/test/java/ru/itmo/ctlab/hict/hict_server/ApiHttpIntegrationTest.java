@@ -595,6 +595,26 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void discoversNestedGzipFastaUnderASymlinkedDataRoot() throws Exception {
+    final var real = Files.createDirectory(tempDataDir.resolve("data-target"));
+    Files.createDirectory(real.resolve("nested"));
+    Files.writeString(real.resolve("nested/assembly.fasta.gz"), "fixture", StandardCharsets.UTF_8);
+    final var link = tempDataDir.resolve("data-link");
+    try {
+      Files.createSymbolicLink(link, real);
+    } catch (UnsupportedOperationException | IOException unavailable) {
+      assumeTrue(false, "Directory symlinks are unavailable: " + unavailable);
+    }
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server")
+      .put("dataDirectory", new ShareableWrappers.PathWrapper(link));
+    final var response = post("/list_fasta_files", "{}");
+    assertEquals(200, response.statusCode(), response.body());
+    assertEquals(Path.of("nested", "assembly.fasta.gz").toString(),
+      new io.vertx.core.json.JsonArray(response.body()).getString(0));
+  }
+
+  @Test
   void fileListingSkipsUnreadableDirectories() throws Exception {
     assumeTrue(
       FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),

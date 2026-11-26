@@ -315,14 +315,17 @@ public class FSHandlersHolder extends HandlersHolder {
 
   private static @NotNull List<Path> listRegularFiles(final @NotNull Path dataDirectory) {
     final var files = new ArrayList<Path>();
-    final var exclusions = new DiscoveryExclusions(dataDirectory);
     try {
-      Files.walkFileTree(dataDirectory, new SimpleFileVisitor<>() {
+      // A configured data root may itself be a symlink. Resolve that root
+      // without following directory symlinks inside it during discovery.
+      final var discoveryRoot = dataDirectory.toRealPath();
+      final var exclusions = new DiscoveryExclusions(discoveryRoot);
+      Files.walkFileTree(discoveryRoot, new SimpleFileVisitor<>() {
         @Override
         public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
                                                           final @NotNull BasicFileAttributes attrs) {
-          if (!dir.equals(dataDirectory) && exclusions.contains(dir)) return FileVisitResult.SKIP_SUBTREE;
-          if (!dir.equals(dataDirectory) && attrs.isOther()) {
+          if (!dir.equals(discoveryRoot) && exclusions.contains(dir)) return FileVisitResult.SKIP_SUBTREE;
+          if (!dir.equals(discoveryRoot) && attrs.isOther()) {
             log.debug("Skipping non-standard directory while listing files: {}", dir);
             return FileVisitResult.SKIP_SUBTREE;
           }
@@ -333,7 +336,7 @@ public class FSHandlersHolder extends HandlersHolder {
         public @NotNull FileVisitResult visitFile(final @NotNull Path file,
                                                   final @NotNull BasicFileAttributes attrs) {
           if (!exclusions.contains(file) && (attrs.isRegularFile() || Files.isRegularFile(file))) {
-            files.add(file);
+            files.add(dataDirectory.resolve(discoveryRoot.relativize(file)));
           }
           return FileVisitResult.CONTINUE;
         }
