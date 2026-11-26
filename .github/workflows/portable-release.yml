@@ -2164,6 +2164,7 @@ jobs:
         id: collect-assets
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
           SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
           PUBLISH_LINUX_APPIMAGE: ${{ github.event_name != 'workflow_dispatch' || inputs.build_linux_appimage == 'true' }}
@@ -2334,63 +2335,11 @@ jobs:
               sort -k2 > "${checksum_file}"
           )
 
-          release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
-          linux_run="HiCT-${version}-linux-x86_64.run"
-          linux_appimage="HiCT-${version}-x86_64.AppImage"
-          windows_exe="HiCT-${version}-windows-x86_64.exe"
-          darwin_arm64_run="HiCT-${version}-darwin-arm64.run"
-          darwin_x86_64_run="HiCT-${version}-darwin-x86_64.run"
-          release_body_lines=(
-            "Automated HiCT portable build from \`${GITHUB_SHA}\`."
-            ""
-            "[Latest Main build](https://github.com/${GITHUB_REPOSITORY}/releases/tag/latest-master) · [Latest Development build](https://github.com/${GITHUB_REPOSITORY}/releases/tag/latest-jvm-sfx-native)"
-            ""
-            "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
-            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            ""
-            "**⚠️ For quick testing, download the exact artifact for your OS:**"
-          )
-
-          if [[ -f "release-dist/${windows_exe}" ]]; then
-            release_body_lines+=("- Windows: [\`${windows_exe}\`](${release_base_url}/${windows_exe})")
-          fi
-          if [[ -f "release-dist/${linux_run}" ]]; then
-            release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
-            release_body_lines+=("  Recommended for most desktop/server Linux systems such as Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, Arch, and similar glibc-based distributions. It caches the extracted program next to the downloaded file, so repeated starts usually do less unpacking.")
-            release_body_lines+=("  Run it with: \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
-          fi
-          if [[ -f "release-dist/${linux_appimage}" ]]; then
-            release_body_lines+=("- Linux AppImage: [\`${linux_appimage}\`](${release_base_url}/${linux_appimage})")
-            release_body_lines+=("  Use this when the Linux runfile does not start, or on older/minimal Linux systems such as manylinux2010-like environments and Alpine/musl containers. On normal desktop Linux it uses the system loader; if that cannot start the bundled Java runtime, it falls back to its included glibc/ld-linux runtime.")
-            release_body_lines+=("  Run it with: \`chmod +x ${linux_appimage}\` and then \`./${linux_appimage}\`.")
-            release_body_lines+=("  If the AppImage reports a FUSE or mount error, run: \`APPIMAGE_EXTRACT_AND_RUN=1 ./${linux_appimage}\`. This mode is more compatible but may unpack the application to a temporary directory each time.")
-          fi
-          if [[ -f "release-dist/${linux_run}" || -f "release-dist/${linux_appimage}" ]]; then
-            release_body_lines+=("")
-            release_body_lines+=("Linux choice summary:")
-            release_body_lines+=("- Start with the \`.run\` file on normal Linux installations.")
-            release_body_lines+=("- Use the AppImage for older systems, Alpine/musl, containers, or if the \`.run\` file reports a glibc/runtime error.")
-            release_body_lines+=("- Both Linux packages can start the server from the command line, for example: \`start-server\` or \`start-server --help\` after the artifact name.")
-            release_body_lines+=("- For a remote SSH cluster, forward both ports from your local computer: \`ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org\`, then run HiCT on the remote machine with \`start-server\` and open \`http://localhost:8080\` locally.")
-          fi
-          darwin_assets=()
-          if [[ -f "release-dist/${darwin_arm64_run}" ]]; then
-            darwin_assets+=("[\`${darwin_arm64_run}\`](${release_base_url}/${darwin_arm64_run})")
-          fi
-          if [[ -f "release-dist/${darwin_x86_64_run}" ]]; then
-            darwin_assets+=("[\`${darwin_x86_64_run}\`](${release_base_url}/${darwin_x86_64_run})")
-          fi
-          if [[ ${#darwin_assets[@]} -gt 0 ]]; then
-            release_body_lines+=("- macOS: ${darwin_assets[*]}")
-            release_body_lines+=("  These are Terminal-run \`.run\` files, not \`.dmg\` installers. There is no application icon to drag into Applications.")
-            release_body_lines+=("  Open Terminal, go to the download folder, run \`xattr -d com.apple.quarantine ./HiCT-*.run\` if macOS blocks the file, then run \`chmod +x ./HiCT-*.run\` and \`./HiCT-*.run\`.")
-          else
-            echo "::warning::No macOS portable artifacts were collected; publishing Windows/Linux release only."
-          fi
-
-          release_body_lines+=("")
-          release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
-          printf '%s\n' "${release_body_lines[@]}" > release-body.md
+          python scripts/ci/test_portable_release_notes.py
+          python scripts/ci/portable_release_notes.py --repo "${GITHUB_REPOSITORY}" \
+            --tag "${release_tag}" --channel "${release_channel}" --version "${version}" \
+            --source "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" \
+            --assets release-dist --output release-body.md
 
       - name: Check rolling release publication safeguards
         run: node --test scripts/ci/rolling_release.test.cjs

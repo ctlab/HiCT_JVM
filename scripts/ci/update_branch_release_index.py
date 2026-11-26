@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
 
+from portable_release_notes import QUICK_DOWNLOADS
 from publish_versioned_release import file_digest, gh, matches, uploaded_assets
 
 
@@ -16,12 +17,12 @@ START = "<!-- hict-current-downloads"
 END = "<!-- /hict-current-downloads -->"
 VERSION = r"\d+\.\d+\.\d+-ci1-[a-f0-9]{7}"
 DOWNLOADS = {
-    "Linux x64 runfile": "linux-x86_64.run",
-    "Linux x64 AppImage": "x86_64.AppImage",
     "Windows x64 installer": "windows-x86_64.exe",
-    "Windows x64 portable ZIP": "windows-x86_64-portable.zip",
     "macOS Apple Silicon": "darwin-arm64.run",
     "macOS Intel": "darwin-x86_64.run",
+    "Linux x64 runfile": "linux-x86_64.run",
+    "Linux x64 AppImage": "x86_64.AppImage",
+    "Windows x64 portable ZIP": "windows-x86_64-portable.zip",
 }
 
 
@@ -81,7 +82,11 @@ def index_body(repo, channel, version, release, links, previous_body):
     lines = [f"{START} {version} -->", f"## Latest {title} build",
              f"Current build: **{version}** · [Release and downloads]({release['html_url']})", "",
              f"[Latest {other_title} build](https://github.com/{repo}/releases/tag/{other_tag})", ""]
-    lines.extend(f"- [{label}]({url})" for label, url in links.items())
+    _, heading, instructions = (release.get("body") or "").partition(QUICK_DOWNLOADS)
+    if heading:
+        lines.extend([heading + instructions.rstrip(), ""])
+    else:
+        lines.extend(f"- [{label}]({url})" for label, url in links.items())
     if release["tag_name"] != alias:
         lines.extend(["", "The Assets section preserves the files originally attached to this channel page."])
     return "\n".join([*lines, END, "", body])
