@@ -90,6 +90,51 @@ def check_layout(page, check, args):
 
     check.step("complete-region-label-on-one-line", complete_region_label)
 
+    ribbon_positions = {}
+
+    def measure_ribbon(state):
+        selection = ribbon.locator(".selection-label")
+        assert selection.get_attribute("aria-label") == selection.get_attribute("title")
+        geometry = ribbon.evaluate("""ribbon => {
+            const left = ribbon.querySelector('#left-header-block');
+            const right = ribbon.querySelector('#right-header-block');
+            const controls = ['#global-search-input', '[aria-label="Rows scope"]',
+              '[aria-label="Columns scope"]', '[aria-label="Signal display"]', '.selection-label']
+              .map(selector => ribbon.querySelector(selector).getBoundingClientRect());
+            return {
+                ordered: controls.every((box, index) => index === 0 || controls[index-1].right <= box.left),
+                fits: left.lastElementChild.matches('.selection-tools')
+                  && left.lastElementChild.getBoundingClientRect().right <= right.getBoundingClientRect().left
+                  && ribbon.getBoundingClientRect().height <= 56,
+                width: controls[4].width,
+                requiredWidth: 13 * parseFloat(getComputedStyle(document.documentElement).fontSize),
+                x: controls.map(box => box.left),
+            };
+        }""")
+        assert geometry["ordered"] and geometry["fits"], geometry
+        assert geometry["width"] == geometry["requiredWidth"], geometry
+        ribbon_positions[state] = geometry["x"]
+        assert geometry["x"] == ribbon_positions["none"], ribbon_positions
+
+    def ribbon_selection_states():
+        page.evaluate("""() => window.__hictBenchmark.manager().viewAndLayersManager.clearSelections()""")
+        measure_ribbon("none")
+        page.keyboard.down("Shift")
+        page.mouse.click(*map_point(100000, 100000))
+        page.keyboard.up("Shift")
+        expect(ribbon.locator(".selection-label span")).to_have_text("Selection · 1 contig")
+        measure_ribbon("one-contig")
+        page.keyboard.down("Control")
+        page.mouse.move(*map_point(100000, 100000))
+        page.mouse.down()
+        page.mouse.move(*map_point(400000, 350000), steps=6)
+        page.mouse.up()
+        page.keyboard.up("Control")
+        expect(ribbon.locator(".selection-label span")).to_contain_text("Region ·")
+        measure_ribbon("region")
+
+    check.step("ribbon-clear-contig-and-region-positions", ribbon_selection_states)
+
     def menu_geometry(menu):
         geometry = menu.evaluate("""menu => {
             const bounds = menu.getBoundingClientRect();
@@ -155,13 +200,24 @@ def check_layout(page, check, args):
         manager = "window.__hictBenchmark.manager()"
         for start, end in ((0, 800000), (800000, 1600000)):
             page.evaluate(
-                f"([start,end]) => {manager}.viewAndLayersManager.selectEntityRangeByBp(start,end,'contig')",
+                f"([start,end]) => {manager}.viewAndLayersManager.selectEntityRangeByBp(start,end,{{expand:false}})",
                 [start, end],
             )
             with page.expect_response("**/group_contigs_into_scaffold") as grouped:
                 page.get_by_role("button", name="Group selection into scaffold", exact=True).click()
             assert grouped.value.ok
             check.settle()
+            if start == 0:
+                page.keyboard.down("Shift")
+                page.mouse.click(*map_point(100000, 100000))
+                page.keyboard.up("Shift")
+                expect(ribbon.locator(".selection-label span")).to_have_text("Selection · 2 contigs in 1 scaffold")
+                measure_ribbon("one-scaffold")
+                (check.output / "ribbon-positions.json").write_text(json.dumps(ribbon_positions, indent=2))
+                page.screenshot(path=str(check.output / "ribbon-selection.png"))
+                ribbon.locator(".selection-label").click()
+                page.screenshot(path=str(check.output / "ribbon-selection-dropdown.png"))
+                page.keyboard.press("Escape")
         page.mouse.click(*set_region(100000, 100000, 80000), button="right")
         menu = page.get_by_role("menu", name="Assembly actions")
         diagonal = menu_geometry(menu)
@@ -203,7 +259,10 @@ def check_layout(page, check, args):
             .every(scope => scope.kind === 'all')""")
         page.mouse.click(*map_point(140000, 140000), button="right")
         without_region = menu_geometry(menu)
-        expect(menu.get_by_role("menuitem", name="Zoom to contig", exact=True)).to_be_visible()
+        menu.locator('[data-submenu="contig"]').hover()
+        expect(menu.locator(".child-menu").get_by_role(
+            "menuitem", name="Zoom to contig", exact=True
+        )).to_be_visible()
         menu.locator('[data-submenu="scaffold"]').hover()
         expect(menu.locator(".child-menu").get_by_role(
             "menuitem", name="Ungroup into singletons", exact=True

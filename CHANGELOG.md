@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Keep search, scope and signal controls in place as the selection changes. Find Selection and Square selection at the end of the left ribbon group.
 - Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.
 - Select whole scaffolds with Shift and keep the selected contigs highlighted across edits. Use the contig menu to move one contig.
 - Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session.

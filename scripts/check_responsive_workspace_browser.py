@@ -256,7 +256,7 @@ def main():
                 square_box = ribbon.get_by_text("Square selection", exact=True).bounding_box()
                 check.select_range()
                 selection = ribbon.get_by_role("button", name=re.compile(r"^Region · "))
-                expect(selection).to_have_attribute("title", re.compile(r"^Region:"))
+                expect(selection).to_have_attribute("title", re.compile(r"^Region · rows"))
                 assert ribbon.bounding_box()["height"] == ribbon_height <= 56, (
                     ribbon_height,
                     ribbon.evaluate("""ribbon => Array.from(ribbon.querySelectorAll(
