@@ -156,13 +156,13 @@ def main():
             page.evaluate("""() => {
                 const m=window.__hictBenchmark.manager(),v=m.viewAndLayersManager;
                 m.getView().setResolution(v.getPixelResolutionForBpResolution(10000));
-                v.currentViewState.selectionBorders.leftBP=[1000000,1000000];
-                v.currentViewState.selectionBorders.rightBP=[1040000,1040000];
+                v.setRegionBounds({rowStart:1000000,rowEnd:1040000,columnStart:1000000,columnEnd:1040000});
             }""")
             check.settle()
             check.menu("Tools", "ModDotPlot…")
             dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
-            selected = dialog.locator(".resolution-options input:checked").evaluate_all(
+            detail = dialog.get_by_label("Finest detail", exact=True)
+            offered = detail.locator("option:not([value=custom])").evaluate_all(
                 "(items)=>items.map(i=>Number(i.value))"
             )
             native_resolutions = page.evaluate("""()=>{
@@ -170,7 +170,10 @@ def main():
                 return [...manager.viewAndLayersManager.resolutions].filter(r => r >= 1000).sort((a,b) => a-b);
             }""")
             assert native_resolutions[0] == 1000
-            assert selected == [21, 25, 50, 100, 250, 500, *native_resolutions], selected
+            assert offered == [21, 25, 50, 100, 250, 500, *native_resolutions], offered
+            active_bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+            assert int(detail.input_value()) == min(offered, key=lambda size: abs(size - active_bp))
+            detail.select_option("1000")
             scope = dialog.get_by_label("Analysis scope", exact=True)
             assert scope.input_value() == "selection"
             assert dialog.locator("#dotplot-display").input_value() == "overlay"
@@ -288,11 +291,13 @@ def main():
             alignment = page.get_by_role("dialog").filter(
                 has=page.locator("#dotplot-display")
             )
-            actual = alignment.locator(
-                ".resolution-options input:checked"
-            ).evaluate_all("(items)=>items.map(i=>Number(i.value))")
+            detail = alignment.get_by_label("Finest detail", exact=True)
+            options = detail.locator("option:not([value=custom])").evaluate_all("(items)=>items.map(i=>Number(i.value))")
             expected = [15, 25, 50, 100, 250, 500, *native_resolutions]
-            assert actual == expected, (actual, expected)
+            assert options == expected, (options, expected)
+            active_bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+            actual = int(detail.input_value())
+            assert actual == min(expected, key=lambda size: abs(size - active_bp))
             alignment.locator("footer").get_by_role(
                 "button", name="Close", exact=True
             ).click()

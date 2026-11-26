@@ -2453,19 +2453,10 @@ paths:
         $ref: '#/paths/~1sequence~1moddotplot~1jobs/post/requestBody'
       responses:
         '200':
-          description: Selected spans, direct and overview levels, upper storage estimate and first level over budget
+          description: Selected spans, direct and overview levels, expected and worst-case storage, and resource limits
           content:
             application/json:
-              schema:
-                type: object
-                required: [rowBp, columnBp, requestedLevels, overviewLevels, estimatedBytes]
-                properties:
-                  rowBp: {type: integer, format: int64}
-                  columnBp: {type: integer, format: int64}
-                  requestedLevels: {type: array, items: {type: integer, format: int64}}
-                  overviewLevels: {type: array, items: {type: integer, format: int64}}
-                  estimatedBytes: {type: integer, format: int64}
-                  limitingLevel: {type: integer, format: int64}
+              schema: { $ref: '#/components/schemas/SequenceAnalysisEstimate' }
         '400': {description: Invalid parameters or selection}
         '409': {description: Active map or FASTA unavailable}
         '413': {description: Estimate outside representable range}
@@ -2478,19 +2469,10 @@ paths:
         $ref: '#/paths/~1sequence~1dotplot~1jobs/post/requestBody'
       responses:
         '200':
-          description: Selected spans, direct and overview levels, upper storage estimate and first level over budget
+          description: Selected spans, direct and overview levels, expected and worst-case storage, and resource limits
           content:
             application/json:
-              schema:
-                type: object
-                required: [rowBp, columnBp, requestedLevels, overviewLevels, estimatedBytes]
-                properties:
-                  rowBp: {type: integer, format: int64}
-                  columnBp: {type: integer, format: int64}
-                  requestedLevels: {type: array, items: {type: integer, format: int64}}
-                  overviewLevels: {type: array, items: {type: integer, format: int64}}
-                  estimatedBytes: {type: integer, format: int64}
-                  limitingLevel: {type: integer, format: int64}
+              schema: { $ref: '#/components/schemas/SequenceAnalysisEstimate' }
         '400': {description: Invalid parameters or selection}
         '409': {description: Active map or FASTA unavailable}
         '413': {description: Estimate outside representable range}
@@ -2529,6 +2511,8 @@ paths:
                 scope: {type: string, enum: [assembly, selection]}
                 displayMode: {type: string, enum: [overlay, below, above, none], description: "Result presentation. Defaults to overlay for selection and below for assembly; retained in Jobs outputs."}
                 mergeCompatible: {type: boolean}
+                acceptLargeOutput: {type: boolean, default: false, description: 'Accept a worst-case storage warning. Hard limits still apply.'}
+                sourceFastaFilename: {type: string, description: 'Optional FASTA path relative to DATA_DIR for a separate whole-file ModDotPlot.'}
                 gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
                 resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
                 k: {type: integer, default: 21, minimum: 1, maximum: 65535}
@@ -2569,6 +2553,7 @@ paths:
                 scope: {type: string, enum: [assembly, selection]}
                 displayMode: {type: string, enum: [overlay, below, above, none], description: "Result presentation. Defaults to overlay for selection and below for assembly; retained in Jobs outputs."}
                 mergeCompatible: {type: boolean}
+                acceptLargeOutput: {type: boolean, default: false, description: 'Accept a worst-case storage warning. Hard limits still apply.'}
                 gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
                 resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
                 k: {type: integer, default: 15, minimum: 1, maximum: 28}
@@ -2620,6 +2605,21 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
         '404': { description: 'Unknown job' }
+  /dotplot/estimate:
+    post:
+      tags: [Conversion]
+      summary: Estimate storage for selected FASTA dotplots
+      operationId: estimateFastaDotplot
+      requestBody:
+        $ref: '#/paths/~1dotplot~1jobs/post/requestBody'
+      responses:
+        '200':
+          description: Storage estimate for the selected files
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SequenceAnalysisEstimate' }
+        '400': {description: Invalid FASTA paths or options}
+        '413': {description: Estimate outside representable range}
   /dotplot/jobs:
     post:
       tags: [Conversion]
@@ -2636,6 +2636,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+        '413': {description: A storage warning requires acknowledgement or the analysis exceeds a hard limit}
   /dotplot/jobs/list:
     post:
       tags: [Conversion]
@@ -3691,9 +3692,25 @@ components:
           type: boolean
           default: true
       required: [files]
+    SequenceAnalysisEstimate:
+      type: object
+      required: [rowBp, columnBp, requestedLevels, overviewLevels, expectedBytes, worstCaseBytes, estimatedBytes, diskBudgetBytes]
+      properties:
+        rowBp: {type: integer, format: int64}
+        columnBp: {type: integer, format: int64}
+        requestedLevels: {type: array, items: {type: integer, format: int64}}
+        overviewLevels: {type: array, items: {type: integer, format: int64}}
+        expectedBytes: {type: integer, format: int64, description: 'Sparse output plus temporary storage estimate'}
+        worstCaseBytes: {type: integer, format: int64, description: 'Dense output bound'}
+        estimatedBytes: {type: integer, format: int64, description: 'Compatibility alias for expectedBytes'}
+        diskBudgetBytes: {type: integer, format: int64, description: 'Free-space budget for the dense output warning'}
+        warningLevel: {type: integer, format: int64, description: 'First resolution whose worst-case storage exceeds the free-space budget'}
+        limitingLevel: {type: integer, format: int64, description: 'First resolution exceeding a hard limit'}
+        hardLimitReason: {type: string}
     StartDotplotJobsRequest:
       type: object
       properties:
+        acceptLargeOutput: {type: boolean, default: false}
         fastaFiles:
           type: array
           items: { type: string }

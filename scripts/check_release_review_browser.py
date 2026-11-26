@@ -170,14 +170,14 @@ def main():
             for iteration in range(2):
                 primary_before = page.evaluate('''async () => {const p=await window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig();
                     return p.upperExpression.type==='pixel_blend'?p.upperExpression.bottom:p.upperExpression;}''')
-                page.evaluate('''i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
-                    s.leftBP=[i*40000,i*40000];s.rightBP=[(i+1)*40000,(i+1)*40000];}''', iteration)
+                page.evaluate('''i => {const start=i*40000,end=start+40000;
+                    window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds(
+                      {rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});}''', iteration)
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 page.get_by_label('Analysis scope').select_option('selection')
-                for checkbox in dialog.locator('.resolution-options input').all(): checkbox.uncheck()
-                dialog.locator('.resolution-options input[value="5000"]').check()
+                dialog.get_by_label("Finest detail", exact=True).select_option("5000")
                 if not dialog.get_by_label("Worker threads", exact=True).is_visible():
                     dialog.locator('details.hict-advanced:not([open]) > summary').click()
                 page.get_by_label('Worker threads').fill('4')

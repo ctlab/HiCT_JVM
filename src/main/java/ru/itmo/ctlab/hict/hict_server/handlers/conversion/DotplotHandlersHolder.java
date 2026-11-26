@@ -8,6 +8,8 @@ import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.handler.HttpException;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
@@ -17,6 +19,8 @@ import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionJobDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.SequenceAnalysisBudgetRequestDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.sequence.SequenceAnalysisEstimateResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
@@ -28,10 +32,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @RequiredArgsConstructor
@@ -43,6 +51,11 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
   private final @NotNull ConcurrentHashMap<String, DotplotJob> jobs = new ConcurrentHashMap<>();
   private final @NotNull ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors())));
   private final @NotNull ExternalToolchainManager toolchainManager = new ExternalToolchainManager();
+  private final ScheduledExecutorService diskMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+    var thread = new Thread(runnable, "hict-fasta-dotplot-disk-monitor");
+    thread.setDaemon(true);
+    return thread;
+  });
   private final @NotNull SelfDotplotPipeline dotplotPipeline = new SelfDotplotPipeline();
 
   public List<BackgroundJob> backgroundJobs() {
@@ -70,6 +83,7 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
   public void close() {
     jobs.values().forEach(DotplotJob::requestCancel);
     executor.shutdownNow();
+    diskMonitor.shutdownNow();
   }
 
   @Override
@@ -85,62 +99,20 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
           + java.net.URLEncoder.encode(job.outputPath.getFileName().toString(), java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20"))
         .sendFile(job.outputPath.toString());
     });
+    router.post("/dotplot/estimate").handler(ctx -> {
+      var body = ctx.body().asJsonObject();
+      vertx.executeBlocking(() -> prepareDotplots(body, true), false)
+        .onSuccess(response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response)))
+        .onFailure(ctx::fail);
+    });
     router.post("/dotplot/jobs").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
-      if (scheduler == null) {
-        return;
-      }
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.EXPORT,
-        RequestTaskScheduler.CancellationDomain.EXPORT,
-        () -> {
-          cleanupOldJobs();
-          final var body = ctx.body().asJsonObject();
-          final var fastaFiles = body.getJsonArray("fastaFiles");
-          if (fastaFiles == null || fastaFiles.isEmpty()) {
-            throw new IllegalArgumentException("fastaFiles is required");
-          }
-          final var dataDirectory = requireDataDirectory();
-          final var outputDirectory = resolveOutputDirectory(body.getString("outputDirectory"));
-          final var referenceMapPath = resolveOptionalReferenceMap(dataDirectory, body.getString("referenceMapFilename"));
-          final var assemblyAgpPath = resolveOptionalAgp(dataDirectory, body.getString("assemblyAgpFilename"));
-          final var options = new DotplotOptions(
-            Math.max(1, body.getInteger("binSize", 1000)),
-            body.getString("resolutions", ""),
-            referenceMapPath,
-            assemblyAgpPath,
-            Math.max(1, body.getInteger("minimizerK", 17)),
-            Math.max(1, body.getInteger("minimizerWindow", 5)),
-            Math.max(0, body.getInteger("minChainScore", 40)),
-            body.getBoolean("skipDiagonal", false),
-            Math.max(0, body.getInteger("dropNearDiagonalBins", 0)),
-            ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(body.getInteger("alignmentThreads", -1), "HICT_ALIGNMENT_THREADS"),
-            ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(body.getInteger("conversionThreads", -1), "HICT_CONVERSION_THREADS"),
-            body.getBoolean("overwrite", false),
-            Math.max(1, body.getInteger("sampleBp", 250)),
-            Math.max(0, body.getInteger("minAlignmentLength", 50)),
-            body.getString("extraMinimap2Args", body.getString("extraAlignerArgs", "")),
-            body.getString("alignerPreference", ExternalToolchainManager.dotplotAlignerPreference())
-          );
-          final var ids = new ArrayList<String>();
-          final var groupId = UUID.randomUUID().toString();
-          for (int i = 0; i < fastaFiles.size(); i++) {
-            final var filename = fastaFiles.getString(i);
-            final var fastaPath = dataDirectory.resolve(filename).normalize();
-            if (!fastaPath.startsWith(dataDirectory) || !Files.isRegularFile(fastaPath)) {
-              throw new IllegalArgumentException("FASTA file not found: " + filename);
-            }
-            final var job = new DotplotJob(UUID.randomUUID().toString(), fastaPath, outputDirectory, options);
-            jobs.put(job.jobId, job);
-            ids.add(job.jobId);
-            executor.submit(() -> runJob(job));
-          }
-          return Map.of("status", "submitted", "groupId", groupId, "jobIds", ids);
-        },
+      if (scheduler == null) return;
+      var body = ctx.body().asJsonObject();
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.EXPORT, RequestTaskScheduler.CancellationDomain.EXPORT,
+        () -> prepareDotplots(body, false),
         response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response)),
-        () -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(Map.of("status", "cancelled")))
-      );
+        () -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(Map.of("status", "cancelled"))));
     });
 
     router.post("/dotplot/jobs/list").handler(ctx -> {
@@ -182,6 +154,90 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
     });
   }
 
+  private Object prepareDotplots(JsonObject body, boolean preview) throws IOException {
+    if (body == null) throw new HttpException(400, "fastaFiles is required");
+    var fastaFiles = body.getJsonArray("fastaFiles");
+    if (fastaFiles == null || fastaFiles.isEmpty()) throw new HttpException(400, "fastaFiles is required");
+    try {
+      var dataDirectory = requireDataDirectory();
+      var outputDirectory = resolveOutputDirectory(body.getString("outputDirectory"));
+      var options = options(body, dataDirectory);
+      var paths = new ArrayList<Path>();
+      for (var value : fastaFiles) {
+        if (!(value instanceof String filename)) throw new IllegalArgumentException("fastaFiles must contain paths");
+        var fasta = dataDirectory.resolve(filename).normalize();
+        if (!fasta.startsWith(dataDirectory) || !Files.isRegularFile(fasta))
+          throw new IllegalArgumentException("FASTA file not found: " + filename);
+        paths.add(fasta);
+      }
+      Files.createDirectories(outputDirectory);
+      long usable = Files.getFileStore(outputDirectory).getUsableSpace();
+      long expected = 0, worst = 0, bases = 0;
+      var overview = new TreeSet<Long>();
+      Long warning = null, limit = null;
+      String reason = null;
+      for (var fasta : paths) {
+        var estimate = SelfDotplotPipeline.estimate(options.pipeline(fasta, outputDirectory, "estimate"), usable);
+        expected = Math.addExact(expected, estimate.expectedBytes());
+        worst = Math.addExact(worst, estimate.worstCaseBytes());
+        bases = Math.addExact(bases, estimate.rowBp());
+        overview.addAll(estimate.overviewLevels());
+        if (warning == null) warning = estimate.warningLevel();
+        if (limit == null && estimate.limitingLevel() != null) {
+          limit = estimate.limitingLevel();
+          reason = estimate.hardLimitReason();
+        }
+      }
+      long base = options.binSize();
+      long budget = usable / 2;
+      if (warning == null && worst > budget) warning = base;
+      if (limit == null && expected > usable - SequenceAnalysisHandlersHolder.MINIMUM_FREE_DISK_BYTES) {
+        limit = base;
+        reason = "The analysis exceeds the memory or disk budget at " + base + " bp. Select a smaller region or fewer resolutions.";
+      }
+      var cost = new SequenceAnalysisEstimateResponseDTO(bases, bases, List.of(base), List.copyOf(overview),
+        expected, worst, budget, warning, limit, reason);
+      if (preview) return cost.toJson();
+      SequenceAnalysisHandlersHolder.requireOverlayBudget(cost, SequenceAnalysisBudgetRequestDTO.fromJson(body).acceptLargeOutput());
+      cleanupOldJobs();
+      var ids = new ArrayList<String>();
+      for (var path : paths) {
+        var job = new DotplotJob(UUID.randomUUID().toString(), path, outputDirectory, options);
+        jobs.put(job.jobId, job);
+        ids.add(job.jobId);
+        executor.submit(() -> runJob(job));
+      }
+      return Map.of("status", "submitted", "groupId", UUID.randomUUID().toString(), "jobIds", ids);
+    } catch (ArithmeticException overflow) {
+      throw new HttpException(413, "This analysis is too large. Select a smaller region or fewer resolutions.");
+    } catch (IllegalArgumentException invalid) {
+      throw new HttpException(400, invalid.getMessage());
+    }
+  }
+
+  private DotplotOptions options(JsonObject body, Path dataDirectory) {
+    var referenceMapPath = resolveOptionalReferenceMap(dataDirectory, body.getString("referenceMapFilename"));
+    var assemblyAgpPath = resolveOptionalAgp(dataDirectory, body.getString("assemblyAgpFilename"));
+    return new DotplotOptions(
+      Math.max(1, body.getInteger("binSize", 1000)),
+      body.getString("resolutions", ""),
+      referenceMapPath,
+      assemblyAgpPath,
+      Math.max(1, body.getInteger("minimizerK", 17)),
+      Math.max(1, body.getInteger("minimizerWindow", 5)),
+      Math.max(0, body.getInteger("minChainScore", 40)),
+      body.getBoolean("skipDiagonal", false),
+      Math.max(0, body.getInteger("dropNearDiagonalBins", 0)),
+      ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(body.getInteger("alignmentThreads", -1), "HICT_ALIGNMENT_THREADS"),
+      ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(body.getInteger("conversionThreads", -1), "HICT_CONVERSION_THREADS"),
+      body.getBoolean("overwrite", false),
+      Math.max(1, body.getInteger("sampleBp", 250)),
+      Math.max(0, body.getInteger("minAlignmentLength", 50)),
+      body.getString("extraMinimap2Args", body.getString("extraAlignerArgs", "")),
+      body.getString("alignerPreference", ExternalToolchainManager.dotplotAlignerPreference())
+    );
+  }
+
   private void runJob(final @NotNull DotplotJob job) {
     if (job.cancelRequested.get()) {
       job.status = "cancelled";
@@ -193,9 +249,14 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
     job.workerThread = Thread.currentThread();
     job.startedAtMs = Instant.now().toEpochMilli();
     Path staging = null;
+    ScheduledFuture<?> monitoring = null;
+    String terminal = "finished";
     try {
       job.log("Starting integrated dotplot generation for " + job.sourcePath.getFileName());
       Files.createDirectories(job.outputDirectory);
+      checkFreeDisk(job);
+      job.diskMonitorActive = true;
+      monitoring = diskMonitor.scheduleWithFixedDelay(() -> monitorDisk(job), 1, 1, TimeUnit.SECONDS);
       final var prefix = stripFastaSuffix(job.sourcePath.getFileName().toString()) + ".self.k" + job.options.minimizerK() + "w" + job.options.minimizerWindow();
       final var hictPath = job.outputDirectory.resolve(prefix + ".hict.hdf5");
       job.outputPath = hictPath;
@@ -220,33 +281,14 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
       job.toolchainCitations.addAll(toolchain.citations());
       staging = JobArtifacts.stage(job.outputDirectory, job.jobId);
       final var output = dotplotPipeline.generate(
-        new SelfDotplotPipeline.Options(
-          job.sourcePath,
-          staging,
-          prefix,
-          job.options.binSize(),
-          job.options.resolutions(),
-          job.options.referenceMapPath(),
-          job.options.assemblyAgpPath(),
-          job.options.minimizerK(),
-          job.options.minimizerWindow(),
-          job.options.minChainScore(),
-          job.options.skipDiagonal(),
-          job.options.dropNearDiagonalBins(),
-          job.options.alignmentThreads(),
-          job.options.conversionThreads(),
-          job.options.overwrite(),
-          false,
-          job.options.sampleBp(),
-          job.options.minAlignmentLength(),
-          job.options.extraAlignerArgs(),
-          job.options.alignerPreference()
-        ),
+        job.options.pipeline(job.sourcePath, staging, prefix),
         toolchain,
         job::log,
         process -> job.activeProcess = process,
         () -> job.cancelRequested.get()
       );
+      stopMonitoring(job, monitoring);
+      checkFreeDisk(job);
       if (job.cancelRequested.get()) throw new java.util.concurrent.CancellationException();
       try (var files = Files.list(staging)) {
         for (var file : files.filter(path -> !path.equals(output)).toList()) {
@@ -257,20 +299,47 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
       job.outputPath = hictPath;
       job.overallProgress = 1.0d;
       job.stageProgress = 1.0d;
-      job.status = "finished";
       job.currentStageLabel = "Dotplot ready";
       job.log("Dotplot generated: " + output.getFileName());
-    } catch (Exception e) {
-      job.status = job.cancelRequested.get() ? "cancelled" : "failed";
-      job.error = e.getMessage() == null ? e.toString() : e.getMessage();
+    } catch (Exception | OutOfMemoryError e) {
+      if (e instanceof OutOfMemoryError) job.stopReason = SequenceAnalysisHandlersHolder.MEMORY_ERROR;
+      terminal = job.stopReason == null && job.cancelRequested.get() ? "cancelled" : "failed";
+      job.error = job.stopReason != null ? job.stopReason : e.getMessage() == null ? e.toString() : e.getMessage();
       job.log("ERROR: " + job.error);
       log.warn("Dotplot job failed", e);
     } finally {
+      stopMonitoring(job, monitoring);
       job.workerThread = null;
+      Thread.interrupted();
       try { JobArtifacts.remove(staging); }
       catch (IOException cleanup) { log.warn("Could not remove incomplete dotplot outputs", cleanup); }
+      job.status = terminal;
       job.finishedAtMs = Instant.now().toEpochMilli();
     }
+  }
+
+  private static void checkFreeDisk(DotplotJob job) throws IOException {
+    if (Files.getFileStore(job.outputDirectory).getUsableSpace() < SequenceAnalysisHandlersHolder.MINIMUM_FREE_DISK_BYTES) {
+      job.stopReason = SequenceAnalysisHandlersHolder.LOW_DISK_ERROR;
+      throw new IOException(job.stopReason);
+    }
+  }
+
+  private static void monitorDisk(DotplotJob job) {
+    synchronized (job) {
+      if (!job.diskMonitorActive || job.cancelRequested.get()) return;
+      try { checkFreeDisk(job); }
+      catch (IOException failure) {
+        job.stopReason = failure.getMessage();
+        job.requestCancel();
+      }
+    }
+  }
+
+  private static void stopMonitoring(DotplotJob job, ScheduledFuture<?> monitoring) {
+    if (monitoring == null) return;
+    synchronized (job) { job.diskMonitorActive = false; }
+    monitoring.cancel(false);
   }
 
   private @NotNull Path requireDataDirectory() {
@@ -376,6 +445,12 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
     @NotNull String extraAlignerArgs,
     @NotNull String alignerPreference
   ) {
+    SelfDotplotPipeline.Options pipeline(Path fasta, Path directory, String prefix) {
+      return new SelfDotplotPipeline.Options(fasta, directory, prefix, binSize, resolutions, referenceMapPath,
+        assemblyAgpPath, minimizerK, minimizerWindow, minChainScore, skipDiagonal, dropNearDiagonalBins,
+        alignmentThreads, conversionThreads, overwrite, false, sampleBp, minAlignmentLength, extraAlignerArgs,
+        alignerPreference);
+    }
   }
 
   private static final class DotplotJob {
@@ -396,6 +471,8 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
     private volatile long finishedAtMs = 0L;
     private volatile Thread workerThread = null;
     private volatile Process activeProcess = null;
+    private volatile String stopReason;
+    private volatile boolean diskMonitorActive;
     private final @NotNull AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final @NotNull CopyOnWriteArrayList<String> toolchainNotices = new CopyOnWriteArrayList<>(
       List.of("Dotplot generation uses mm2-plus or minimap2 plus integrated Java PAF/BG2 conversion and hictk load/zoomify; Python and Cooler are not required.")

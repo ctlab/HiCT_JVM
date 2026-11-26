@@ -101,21 +101,28 @@ def main():
                     assert estimated.value.ok, estimated.value.text()
                     estimate = estimated.value.json()
                     assert (estimate["rowBp"], estimate["columnBp"]) == (span, span), estimate
-                    assert estimate["requestedLevels"] == expected, estimate
+                    detail = dialog.get_by_label("Finest detail", exact=True)
+                    options = detail.locator("option:not([value=custom])").evaluate_all(
+                        "options => options.map(option => Number(option.value))"
+                    )
+                    assert options == expected, options
+                    bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+                    requested = min(expected, key=lambda size: abs(size - bp))
+                    assert estimate["requestedLevels"] == [requested], estimate
                     generate = dialog.get_by_role("button", name="Generate", exact=True)
                     if estimate.get("limitingLevel"):
                         expect(generate).to_be_disabled()
-                        assert "Budget exceeded at" in generate.get_attribute("title")
+                        expect(generate).to_have_attribute("title", estimate["hardLimitReason"])
                         dialog.get_by_role("button", name="Use sizes that fit", exact=True).click()
                         expect(generate).to_be_enabled()
-                        kept = dialog.locator(".resolution-options input:checked").evaluate_all(
-                            "boxes => boxes.map(box => Number(box.value))"
-                        )
-                        assert kept and len(kept) < len(expected) and kept == expected[-len(kept):], kept
+                        assert int(detail.input_value()) > requested
+                    elif estimate.get("warningLevel"):
+                        expect(generate).to_be_disabled()
+                        dialog.get_by_role("checkbox", name="Generate anyway", exact=True).check()
+                        expect(generate).to_be_enabled()
                     else:
                         expect(generate).to_be_enabled()
-                        kept = expected
-                    observations.append({"spanBp": span, "entry": entry, "initialEstimate": estimate, "kept": kept})
+                    observations.append({"spanBp": span, "entry": entry, "initialEstimate": estimate, "kept": detail.input_value()})
                     dialog.get_by_role("button", name="Close", exact=True).last.click()
                     expect(dialog).to_be_hidden()
             (out / "moddotplot-defaults.json").write_text(json.dumps(observations, indent=2) + "\n")
@@ -250,45 +257,32 @@ def main():
             dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
             assert dialog.get_by_label("Analysis scope").input_value() == "selection"
             assert dialog.get_by_label("Show result as").input_value() == "overlay"
-            assert not dialog.get_by_text("Fine windows over a whole genome", exact=False).is_visible()
-            sizes = dialog.get_by_label("ModDotPlot window sizes (bp)", exact=True)
+            detail = dialog.get_by_label("Finest detail", exact=True)
+            sizes = dialog.locator("#sequence-overlay-resolutions")
             assert not sizes.is_visible()
-            check.advanced()
-            sizes.fill("37, 50, 250")
-            sizes.press("Tab")
-            dialog.locator('input[value="1000"]').check()
-            assert sizes.input_value() == "37, 50, 250, 1000"
-            dialog.locator('input[value="50"]').uncheck()
-            assert sizes.input_value() == "37, 250, 1000"
-            dialog.locator('input[value="50"]').check()
-            assert sizes.input_value() == "37, 250, 1000, 50"
+            detail.select_option("custom")
             sizes.fill("1, 37, 50, 250, 1000")
-            assert (
-                dialog.get_by_role("alert")
-                .get_by_text(
-                    "Each ModDotPlot window must be at least as long as its k-mer size."
-                )
-                .is_visible()
+            expect(dialog.get_by_role("alert")).to_contain_text(
+                "Each ModDotPlot window must be at least as long as its k-mer size."
             )
-            assert dialog.get_by_role(
-                "button", name="Generate", exact=True
-            ).is_disabled()
-            sizes.fill("37, 10000")
-            dialog.get_by_label("Analysis scope").select_option("assembly")
-            dialog.get_by_role("button", name="Use sizes that fit", exact=True).click()
-            expect(sizes).to_have_value("10000")
-            expect(dialog.get_by_role("button", name="Generate", exact=True)).to_be_enabled()
+            generate = dialog.get_by_role("button", name="Generate", exact=True)
+            expect(generate).to_be_disabled()
             sizes.fill("37, 50")
-            recovery = dialog.get_by_role("button", name="Use current rectangle", exact=True)
-            recovery.wait_for()
-            assert dialog.get_by_text("Budget exceeded at", exact=False).is_visible()
-            assert "Budget exceeded at" in dialog.get_by_role(
-                "button", name="Generate", exact=True
-            ).get_attribute("title")
-            recovery.click()
+            scope = dialog.get_by_label("Analysis scope", exact=True)
+            scope.select_option("assembly")
+            warning = dialog.get_by_role("checkbox", name="Generate anyway", exact=True)
+            expect(warning).to_be_visible()
+            expect(warning).not_to_be_checked()
+            expect(generate).to_be_disabled()
+            warning.check()
+            expect(generate).to_be_enabled()
+            scope.select_option("view")
+            scope.select_option("assembly")
+            expect(warning).to_be_visible()
+            expect(warning).not_to_be_checked()
+            scope.select_option("selection")
             assert sizes.input_value() == "37, 50"
-            dialog.get_by_text("Estimated storage", exact=False).wait_for()
-            assert dialog.get_by_label("Analysis scope").input_value() == "selection"
+            expect(generate).to_be_enabled()
             dialog.get_by_label("Show result as").select_option("below")
             if not dialog.get_by_label("Worker threads", exact=True).is_visible():
                 check.advanced()
@@ -329,11 +323,9 @@ def main():
             dialog = page.get_by_role(
                 "dialog", name="Dotplot from current assembly", exact=True
             )
-            sizes = dialog.get_by_label("Dotplot resolutions (bp/bin)")
-            check.advanced()
-            sizes.fill("1 50")
-            dialog.locator('input[value="1000"]').check()
-            assert sizes.input_value() == "1, 50, 1000"
+            dialog.get_by_label("Finest detail", exact=True).select_option("custom")
+            sizes = dialog.locator("#sequence-overlay-resolutions")
+            sizes.fill("1, 50, 1000")
             assert dialog.get_by_label("Analysis scope").input_value() == "selection"
             dialog.get_by_label("Show result as").select_option("above")
             check.advanced()

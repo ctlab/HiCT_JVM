@@ -162,9 +162,12 @@ class OverlayFixture { public static void main(String[] a) {
                 dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 check.advanced()
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
-                [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-                assert dialog.get_by_role('button', name='Generate', exact=True).is_disabled()
-                dialog.locator('.resolution-options input[value="100"]').check()
+                detail = dialog.get_by_label("Finest detail", exact=True)
+                detail.select_option("custom")
+                sizes = dialog.locator("#sequence-overlay-resolutions")
+                sizes.fill("")
+                assert dialog.get_by_role("button", name="Generate", exact=True).is_disabled()
+                sizes.fill("100")
                 assert page.get_by_label('Worker threads').input_value() in ('-1', '2')
                 page.get_by_label('Worker threads').fill('2')
                 page.get_by_label('k-mer length', exact=True).fill('15')
@@ -486,9 +489,12 @@ class OverlayFixture { public static void main(String[] a) {
             analysis_menu.get_by_role('menuitem', name='Dotplot of region…', exact=True).click()
             dialog=page.get_by_role('dialog',name='Dotplot from current assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
-            [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-            assert dialog.get_by_role('button', name='Generate', exact=True).is_disabled()
-            dialog.locator('.resolution-options input[value="100"]').check()
+            detail = dialog.get_by_label("Finest detail", exact=True)
+            detail.select_option("custom")
+            sizes = dialog.locator("#sequence-overlay-resolutions")
+            sizes.fill("")
+            assert dialog.get_by_role("button", name="Generate", exact=True).is_disabled()
+            sizes.fill("100")
             check.advanced()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20'),('Sample every (bp)','50'),('Alignment threads','2')]:
                 page.get_by_label(name,exact=True).fill(value)

@@ -186,10 +186,13 @@ def check_layout(page, check, args):
         submenu.get_by_role("menuitem", name="ModDotPlot of region…").click()
         dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
         expect(dialog.get_by_role("button", name="Generate", exact=True)).to_be_enabled()
-        resolutions = dialog.locator(".resolution-options input:checked").evaluate_all(
-            "inputs => inputs.map(input => Number(input.value))"
+        detail = dialog.get_by_label("Finest detail", exact=True)
+        sizes = detail.locator("option:not([value=custom])").evaluate_all(
+            "options => options.map(option => Number(option.value))"
         )
-        assert resolutions == [21, 25, 50, 100, 200], resolutions
+        assert sizes == [21, 25, 50, 100, 200], sizes
+        bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+        assert int(detail.input_value()) == min(sizes, key=lambda size: abs(size - bp))
         assert_dialog_fits(dialog)
         page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()

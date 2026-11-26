@@ -101,8 +101,7 @@ def main():
             results["checks"].append({"openingMinimap": mini_pixels()})
             page.evaluate("""()=>{
                 const v=window.__hictBenchmark.manager().viewAndLayersManager;
-                v.currentViewState.selectionBorders.leftBP=[880000,880000];
-                v.currentViewState.selectionBorders.rightBP=[1080000,1080000];
+                v.setRegionBounds({rowStart:880000,rowEnd:1080000,columnStart:880000,columnEnd:1080000});
             }""")
             check.menu("Tools", "ModDotPlot…")
             dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
@@ -112,10 +111,13 @@ def main():
             dialog.get_by_label("Worker threads", exact=True).fill("2")
             generate = dialog.get_by_role("button", name="Generate", exact=True)
             fit = dialog.get_by_role("button", name="Use sizes that fit", exact=True)
-            generate.and_(dialog.locator("button:enabled")).or_(fit).first.wait_for()
+            warning = dialog.get_by_role("checkbox", name="Generate anyway", exact=True)
+            generate.and_(dialog.locator("button:enabled")).or_(fit).or_(warning).first.wait_for()
             if fit.is_visible():
-                assert generate.get_attribute("title").startswith("Budget exceeded")
+                assert dialog.get_by_text("This size cannot run here.", exact=True).is_visible()
                 fit.click()
+            if warning.is_visible():
+                warning.check()
             generate.click()
             dialog.locator("footer").get_by_role(
                 "button", name="Close", exact=True

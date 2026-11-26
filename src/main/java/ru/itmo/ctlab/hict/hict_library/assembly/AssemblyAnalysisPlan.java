@@ -21,7 +21,20 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
   public record Level(long resolution, List<Window> rows, List<Window> columns) {
     public Level { rows = List.copyOf(rows); columns = List.copyOf(columns); }
   }
-  public record ResourceEstimate(long windows, long cells, long outputBytes) { }
+  public record ResourceEstimate(long windows, long cells, long expectedBytes, long worstCaseBytes) {
+    public long outputBytes() { return worstCaseBytes; }
+  }
+
+  public static final class ResourceLimitException extends IllegalArgumentException {
+    private final long resolution;
+
+    ResourceLimitException(long resolution, String message) {
+      super(message);
+      this.resolution = resolution;
+    }
+
+    public long resolution() { return resolution; }
+  }
   public AssemblyAnalysisPlan { levels = List.copyOf(levels); }
 
   public static List<Long> pyramidLevels(List<Long> requested, long[] primaryLevels) {
@@ -48,17 +61,15 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
    * across successive rewrites, with a 64-entry minimum per physical block.
    */
   public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns) {
-    return estimate(map, resolutions, rows, columns, (bp, estimate) -> {});
+    return estimate(map, resolutions, rows, columns, 0, false, (bp, estimate) -> {});
   }
 
   public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns,
-      java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
+      long fastaBytes, boolean includesPaf, java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
     final var tuples = map.getAssemblyInfo().contigs();
     final long length = tuples.stream().mapToLong(t -> t.descriptor().getLengthBp()).reduce(0, Math::addExact);
     if (rows.end > length || columns.end > length) throw new IllegalArgumentException("Selection outside active assembly");
-    long windows = 0;
-    long cells = 0;
-    long outputBytes = 0;
+    var estimate = initialEstimate(fastaBytes, includesPaf);
     long syntheticStripes = 0;
     for (long bp : resolutions) {
       final var order = map.getResolutionToIndex().get(bp);
@@ -68,28 +79,60 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
         final long bins = map.getOriginalDescriptors().values().stream()
           .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
         stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
-        if (stripes > 1_000_000L) throw new IllegalArgumentException("Fine resolution exceeds the overlay stripe limit. Select a coarser level.");
         syntheticStripes = Math.addExact(syntheticStripes,stripes);
-        if (Math.multiplyExact(syntheticStripes,ESTIMATED_BYTES_PER_STRIPE) > Runtime.getRuntime().maxMemory()/4)
-          throw new IllegalArgumentException("The fine-resolution overlay metadata exceeds the available heap. Select fewer fine levels.");
-        outputBytes = Math.addExact(outputBytes, Math.multiplyExact(stripes, 4096L));
+        checkStripes(bp, stripes, syntheticStripes);
       } else {
         stripes = map.getStripeCount()[order];
       }
       final long rowBins = estimateAxis(tuples, rows, order, bp);
       final long colBins = rows.equals(columns) ? rowBins : estimateAxis(tuples, columns, order, bp);
-      final long levelCells = Math.multiplyExact(rowBins, colBins);
       final long rowStripes = Math.min(stripes, estimateStripes(tuples, rows, order, bp));
       final long colStripes = rows.equals(columns) ? rowStripes : Math.min(stripes, estimateStripes(tuples, columns, order, bp));
-      final long maxBlocks = Math.multiplyExact(rowStripes, colStripes);
-      final long bytes = Math.addExact(Math.multiplyExact(levelCells, 4L * 3 * Long.BYTES),
-        Math.multiplyExact(maxBlocks, (64L * 3 + 2) * Long.BYTES));
-      windows = Math.addExact(windows, Math.addExact(rowBins, colBins));
-      cells = Math.addExact(cells, levelCells);
-      outputBytes = Math.addExact(outputBytes, bytes);
-      levelEstimate.accept(bp, new ResourceEstimate(windows, cells, outputBytes));
+      estimate = addLevel(estimate, rowBins, colBins, rowStripes, colStripes, stripes, order == null);
+      levelEstimate.accept(bp, estimate);
     }
-    return new ResourceEstimate(windows, cells, outputBytes);
+    return estimate;
+  }
+
+  public static ResourceEstimate estimateFasta(List<Long> contigLengths, List<Long> resolutions,
+      long fastaBytes, boolean includesPaf, java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
+    var estimate = initialEstimate(fastaBytes, includesPaf);
+    long totalStripes = 0;
+    for (long bp : resolutions) {
+      long bins = contigLengths.stream().mapToLong(length -> Math.ceilDiv(length, bp)).reduce(0, Math::addExact);
+      long stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
+      totalStripes = Math.addExact(totalStripes, stripes);
+      checkStripes(bp, stripes, totalStripes);
+      estimate = addLevel(estimate, bins, bins, stripes, stripes, stripes, true);
+      levelEstimate.accept(bp, estimate);
+    }
+    return estimate;
+  }
+
+  private static ResourceEstimate initialEstimate(long fastaBytes, boolean includesPaf) {
+    long scratch = Math.addExact(Math.multiplyExact(3L, fastaBytes), includesPaf ? fastaBytes / 8 : 0);
+    return new ResourceEstimate(0, 0, scratch, 0);
+  }
+
+  private static void checkStripes(long bp, long stripes, long totalStripes) {
+    if (stripes > 1_000_000L)
+      throw new ResourceLimitException(bp, "Fine resolution exceeds the overlay stripe limit. Select a coarser level.");
+    if (Math.multiplyExact(totalStripes, ESTIMATED_BYTES_PER_STRIPE) > Runtime.getRuntime().maxMemory() / 4)
+      throw new ResourceLimitException(bp, "The fine-resolution overlay metadata exceeds the available heap. Select fewer fine levels.");
+  }
+
+  private static ResourceEstimate addLevel(ResourceEstimate cumulative, long rowBins, long colBins,
+      long rowStripes, long colStripes, long stripes, boolean synthetic) {
+    long windows = Math.addExact(rowBins, colBins);
+    long cells = Math.multiplyExact(rowBins, colBins);
+    long stripeBytes = Math.multiplyExact(stripes, 4096L);
+    long expected = Math.addExact(Math.multiplyExact(windows, 1024L), stripeBytes);
+    long blocks = Math.multiplyExact(rowStripes, colStripes);
+    long worstCase = Math.addExact(Math.multiplyExact(cells, 96L),
+      Math.multiplyExact(blocks, (64L * 3 + 2) * Long.BYTES));
+    if (synthetic) worstCase = Math.addExact(worstCase, stripeBytes);
+    return new ResourceEstimate(Math.addExact(cumulative.windows(), windows), Math.addExact(cumulative.cells(), cells),
+      Math.addExact(cumulative.expectedBytes(), expected), Math.addExact(cumulative.worstCaseBytes(), worstCase));
   }
 
   private static long estimateStripes(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {

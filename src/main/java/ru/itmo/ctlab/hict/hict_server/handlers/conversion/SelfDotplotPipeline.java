@@ -4,7 +4,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
+import ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
+import ru.itmo.ctlab.hict.hict_server.dto.response.sequence.SequenceAnalysisEstimateResponseDTO;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -101,7 +103,7 @@ public final class SelfDotplotPipeline {
 
       emitStage(logger, "zoomify", 0.0d, 0.70d, "Building multi-resolution .mcool with hictk");
       runCommand(
-        buildZoomifyCommand(hictk, cool, mcool, resolveZoomResolutions(options, layout, logger), options),
+        buildZoomifyCommand(hictk, cool, mcool, resolveZoomResolutions(options, layout.chromosomes().stream().mapToLong(Chromosome::length).sum(), logger), options),
         options.outputDirectory(),
         logger,
         processSink,
@@ -860,8 +862,21 @@ public final class SelfDotplotPipeline {
     return sampled;
   }
 
+  static SequenceAnalysisEstimateResponseDTO estimate(
+      Options options, long usableBytes) throws IOException {
+    var scan = FastaOnlyAssembly.scan(options.fastaPath(), Integer.MAX_VALUE, Thread.currentThread()::isInterrupted, null);
+    var lengths = options.assemblyAgpPath() == null
+      ? scan.records().stream().map(FastaOnlyAssembly.Record::length).toList()
+      : parseAgpSegments(options.assemblyAgpPath()).values().stream()
+        .map(parts -> parts.getLast().objectEnd()).toList();
+    var total = lengths.stream().mapToLong(Long::longValue).reduce(0, Math::addExact);
+    var overview = resolveZoomResolutions(options, total, ignored -> { });
+    return SequenceAnalysisHandlersHolder.estimateFastaLengths(lengths, List.of((long) options.binSize()),
+      overview, Math.max(Math.max(scan.totalBases(), total), Files.size(options.fastaPath())), true, 256L, usableBytes);
+  }
+
   private static @NotNull List<Long> resolveZoomResolutions(final @NotNull Options options,
-                                                            final @NotNull GeneratedLayout layout,
+                                                            final long genomeLength,
                                                             final @NotNull Consumer<String> logger) {
     if (!options.resolutions().isBlank()) {
       if (options.referenceMapPath() != null) {
@@ -880,7 +895,6 @@ public final class SelfDotplotPipeline {
       return resolveReferenceZoomResolutions(options, logger);
     }
     final var out = new ArrayList<Long>();
-    final long genomeLength = layout.chromosomes().stream().mapToLong(Chromosome::length).sum();
     long resolution = options.binSize();
     while ((genomeLength + resolution - 1L) / resolution > 500L) {
       resolution = nextNiceResolution(resolution);

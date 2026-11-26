@@ -98,8 +98,9 @@ def main():
             page.evaluate("""() => {window.frameGaps=[];let last=performance.now();
                 window.frameTimer=setInterval(()=>{const now=performance.now();window.frameGaps.push(now-last);last=now;},50);}""")
             for iteration in range(2):
-                page.evaluate("""i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
-                    s.leftBP=[1000000+i*40000,1000000+i*40000];s.rightBP=[1040000+i*40000,1040000+i*40000];}""", iteration)
+                page.evaluate("""i => {const start=1000000+i*40000,end=start+40000;
+                    window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds(
+                      {rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});}""", iteration)
                 page.get_by_role("link", name="Tools", exact=True).click()
                 page.get_by_role("button", name="ModDotPlot…", exact=True).click()
                 dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
@@ -107,9 +108,7 @@ def main():
                 # This check isolates the primary triangle; selection analyses
                 # otherwise default to an intentional overlay on both halves.
                 dialog.get_by_label("Show result as", exact=True).select_option("below")
-                for checkbox in dialog.locator(".resolution-options input").all():
-                    checkbox.uncheck()
-                dialog.locator('.resolution-options input[value="5000"]').check()
+                dialog.get_by_label("Finest detail", exact=True).select_option("5000")
                 if not dialog.get_by_label("Worker threads", exact=True).is_visible():
                     dialog.locator("details.hict-advanced:not([open]) > summary").click()
                 page.get_by_label("Worker threads").fill("4")

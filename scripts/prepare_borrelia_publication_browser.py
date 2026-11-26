@@ -140,10 +140,9 @@ def main():
                 generate = page.get_by_role("dialog", name="ModDotPlot", exact=True)
                 check.advanced()
                 generate.get_by_label("Worker threads", exact=True).fill("2")
-                for box in generate.locator(".resolution-options input").all():
-                    box.uncheck()
-                generate.locator(f'.resolution-options input[value="{args.resolution}"]').check()
-                generate.get_by_label("Display completed result").select_option("below")
+                generate.get_by_label("Finest detail", exact=True).select_option("custom")
+                generate.locator("#sequence-overlay-resolutions").fill(str(args.resolution))
+                generate.get_by_label("Show result as").select_option("below")
                 generate.get_by_role("button", name="Generate", exact=True).click()
                 generate.locator("footer").get_by_role("button", name="Close", exact=True).click()
                 deadline = time.monotonic() + 600

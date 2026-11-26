@@ -65,7 +65,8 @@ def main():
         page.route("**/sequence/moddotplot/estimate", lambda route: route.fulfill(json={
             "requestedLevels": route.request.post_data_json["resolutions"],
             "overviewLevels": [], "rowBp": 3_000, "columnBp": 3_000,
-            "estimatedBytes": 1_000_000,
+            "estimatedBytes": 1_000_000, "expectedBytes": 1_000_000,
+            "worstCaseBytes": 2_000_000, "diskBudgetBytes": 10_000_000,
         }))
         page.route("**/sequence/moddotplot/jobs", lambda route:
             route.fulfill(json={**job, "status": "submitted"}))
