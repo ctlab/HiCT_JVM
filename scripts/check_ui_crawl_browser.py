@@ -131,13 +131,37 @@ def main():
                        return node?.scrollHeight > node?.clientHeight;
                     }""")
                     read_zoom = "() => window.__hictBenchmark.manager().getView().getResolution()"
+                    view_menu = page.get_by_role("link", name="View", exact=True)
+                    wheel_scroll = view_menu.locator("..").locator("button[role=menuitemcheckbox]").filter(
+                        has_text="Scroll 1D tracks with mouse wheel"
+                    )
+                    view_menu.click()
+                    expect(view_menu).to_have_attribute("aria-expanded", "true")
+                    can_choose_wheel_mode = wheel_scroll.count() > 0
+                    if can_choose_wheel_mode:
+                        expect(wheel_scroll).to_have_attribute("aria-checked", "false")
+                        wheel_scroll.click()
+                        expect(wheel_scroll).to_have_attribute("aria-checked", "true")
+                    else:
+                        page.keyboard.press("Escape")
+
                     zoom = page.evaluate(read_zoom)
                     track.hover()
                     page.mouse.wheel(0, 120)
                     page.wait_for_function("document.querySelector('.horizontal-track-canvas-host .track-scroll').scrollTop > 0")
                     assert page.evaluate(read_zoom) == zoom
 
-                check.step("wheel-scrolls-feature-lanes", wheel_track)
+                    if can_choose_wheel_mode:
+                        view_menu.click()
+                        wheel_scroll.click()
+                        expect(wheel_scroll).to_have_attribute("aria-checked", "false")
+                        track.evaluate("lane => { lane.scrollTop = 0; }")
+                        track.hover()
+                        page.mouse.wheel(0, -120)
+                        page.wait_for_function(f"before => ({read_zoom})() < before", arg=zoom)
+                        assert track.evaluate("lane => lane.scrollTop") == 0
+
+                check.step("wheel-zooms-or-scrolls-feature-lanes", wheel_track)
         finally:
             (output / "crawl.json").write_text(json.dumps({
                 "checks": check.rows, "errors": check.errors

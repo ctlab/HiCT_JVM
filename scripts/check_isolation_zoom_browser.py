@@ -6,6 +6,7 @@ from io import BytesIO
 from itertools import groupby
 import json
 from pathlib import Path
+from time import monotonic
 from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image
@@ -69,20 +70,26 @@ def main():
             side = 64
             center_x = viewport["x"] + viewport["width"] / 2
             center_y = viewport["y"] + viewport["height"] / 2
-            image = Image.open(BytesIO(page.screenshot(clip={
+            clip = {
                 "x": round(center_x) - side // 2, "y": round(center_y) - side // 2,
                 "width": side, "height": side,
-            }, scale="css"))).convert("RGB")
+            }
+            # The tile can finish loading before the compositor presents it.
+            # Inspect the painted diagonal without issuing another zoom action.
+            deadline = monotonic() + 3
+            while True:
+                image = Image.open(BytesIO(page.screenshot(clip=clip, scale="css"))).convert("RGB")
+                diagonals = [
+                    [image.getpixel((x, x + offset)) for x in range(side)
+                     if 0 <= x + offset < side]
+                    for offset in range(1 - side, side)
+                ]
+                background = image.getpixel((side - 1, 0))
+                signal = max(diagonals, key=lambda pixels: len(set(pixels) - {background}))
+                if len(set(signal) - {background}) >= 6 or monotonic() >= deadline:
+                    break
+                page.wait_for_timeout(50)
             image.save(output / f"{name}-fine-raster.png")
-            # The fixture paints a varying one-bin-wide contact diagonal. The
-            # blank off-diagonal cells are deliberately excluded.
-            diagonals = [
-                [image.getpixel((x, x + offset)) for x in range(side)
-                 if 0 <= x + offset < side]
-                for offset in range(1 - side, side)
-            ]
-            background = image.getpixel((side - 1, 0))
-            signal = max(diagonals, key=lambda pixels: len(set(pixels) - {background}))
             lengths = [len(list(run)) for color, run in groupby(signal) if color != background]
             assert len(set(signal) - {background}) >= 6, (name, "insufficient raster signal")
             assert max(lengths) <= 2, (name, "finest raster run in CSS pixels", max(lengths))
