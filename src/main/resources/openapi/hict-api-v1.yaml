@@ -395,6 +395,66 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
 
+  /storage/processed:
+    get:
+      tags: [Files]
+      summary: List managed processed files with sizes, locations, and cleanup eligibility
+      operationId: listProcessedStorage
+      responses:
+        '200':
+          description: Storage folders, files, and current cleanup availability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [roots, files, oldDays, jobsActive, unreadable]
+                properties:
+                  roots:
+                    type: array
+                    items: { type: string }
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, path, category, bytes, modifiedAtMs, action, protectedReason]
+                      properties:
+                        id: { type: string, description: File selection ID valid for the listed file state }
+                        path: { type: string }
+                        category: { type: string, enum: [cache, maps, scratch, sequence, metadata, other] }
+                        bytes: { type: integer, format: int64 }
+                        modifiedAtMs: { type: integer, format: int64 }
+                        action: { type: string, nullable: true, enum: [cache, old, maps, null] }
+                        protectedReason: { type: string, nullable: true }
+                  oldDays: { type: integer }
+                  jobsActive: { type: boolean }
+                  unreadable: { type: integer }
+  /storage/processed/cleanup:
+    post:
+      tags: [Files]
+      summary: Remove eligible files from an explicit processed-storage selection
+      operationId: cleanupProcessedStorage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action: { type: string, enum: [cache, old, maps] }
+                ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string }
+      responses:
+        '200':
+          description: Counts and bytes removed, and files skipped after rechecking eligibility
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: A background job is active
+
   /open:
     post:
       tags: [Files]

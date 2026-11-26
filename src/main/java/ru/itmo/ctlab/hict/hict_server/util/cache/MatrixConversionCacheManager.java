@@ -257,6 +257,27 @@ public final class MatrixConversionCacheManager {
     return this.processedDirectory.resolve("matrix_conversion_cache");
   }
 
+  public record RecordedMap(Path path, FileFingerprint fingerprint, boolean sourceAvailable) {}
+
+  public RecordedMap recordedMap(Path receipt) {
+    final var metadata = readMetadata(receipt);
+    if (metadata.outputFilename().isBlank() || metadata.sourceFilename().isBlank()
+        || metadata.outputFingerprint() == null) {
+      return null;
+    }
+    final var source = dataDirectory.resolve(metadata.sourceFilename()).normalize();
+    final var output = dataDirectory.resolve(metadata.outputFilename()).normalize();
+    if (!source.startsWith(dataDirectory) || !output.startsWith(dataDirectory)
+        || !output.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".hict.hdf5")) {
+      return null;
+    }
+    final var direction = ConversionDirection.fromRequestOrSource(metadata.conversionDirection(), source);
+    if (!direction.outputExtension().equals(".hict.hdf5") || metadata.conversionDirection().isBlank()) {
+      return null;
+    }
+    return new RecordedMap(output, metadata.outputFingerprint(), Files.isRegularFile(source) && Files.isReadable(source));
+  }
+
   private @NotNull Path metadataPath(final @NotNull Path sourcePath,
                                      final @NotNull ConversionDirection direction) {
     return metadataDirectory().resolve(sha256Hex(

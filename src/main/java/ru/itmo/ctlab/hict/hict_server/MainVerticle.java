@@ -56,6 +56,7 @@ import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.files.ProcessedStorageHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
@@ -483,6 +484,8 @@ public class MainVerticle extends AbstractVerticle {
         "download", examples::backgroundJobs, examples::cancelBackgroundJob, examples::close)
     ));
     handlersHolders.add(this.backgroundJobs);
+    handlersHolders.add(new ProcessedStorageHandlersHolder(vertx, requestTaskScheduler,
+      () -> backgroundJobs.snapshot().stream().anyMatch(ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob::canCancel)));
 
     router.route().failureHandler(MainVerticle::respondFailure);
 
