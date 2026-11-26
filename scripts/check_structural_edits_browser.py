@@ -8,8 +8,8 @@ from pathlib import Path
 from sequence_browser_harness import BrowserCheck
 
 
-def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200)):
-    """Build an independent four-contig map through the real converter."""
+def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200), contigs=None):
+    """Build an independent map through the real converter."""
     import subprocess
     import cooler
     import numpy as np
@@ -22,16 +22,22 @@ def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200
     target = directory / "structural.hict.hdf5"
     if matrix.exists() or target.exists():
         raise ValueError("Fixture generation requires fresh output paths")
+    if contigs is None:
+        contigs = dict.fromkeys((first_contig, "two", "three", "four"), 400000)
     for resolution in resolutions:
-        bins_per_contig = 400000 // resolution
-        count = bins_per_contig * 4
-        bins = pd.DataFrame(
-            {
-                "chrom": np.repeat([first_contig, "two", "three", "four"], bins_per_contig),
-                "start": np.tile(np.arange(bins_per_contig) * resolution, 4),
-                "end": np.tile(np.arange(1, bins_per_contig + 1) * resolution, 4),
-            }
+        starts = {name: np.arange(0, length, resolution) for name, length in contigs.items()}
+        bins = pd.concat(
+            [
+                pd.DataFrame({
+                    "chrom": name,
+                    "start": starts[name],
+                    "end": np.minimum(starts[name] + resolution, length),
+                })
+                for name, length in contigs.items()
+            ],
+            ignore_index=True,
         )
+        count = len(bins)
         pixels = pd.DataFrame(
             {
                 "bin1_id": np.arange(count),

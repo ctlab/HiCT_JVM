@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Selecting a scaffold followed by short hidden contigs now highlights and edits exactly that scaffold at every zoom level.
 - Keep BED feature labels beside their blocks when there is room.
 
 - Put exact operating-system downloads, startup guidance, and a short changelog in each portable release.

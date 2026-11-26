@@ -57,6 +57,7 @@ def main():
         "check_diagonal_mask_browser.py": True,
         "check_responsive_workspace_browser.py": True,
         "check_selection_modes_browser.py": True,
+        "check_hidden_contig_selection_browser.py": True,
         "check_expected_figure_browser.py": False,
     }
     failures = []
