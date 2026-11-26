@@ -319,7 +319,8 @@ public class FSHandlersHolder extends HandlersHolder {
       // A configured data root may itself be a symlink. Resolve that root
       // without following directory symlinks inside it during discovery.
       final var discoveryRoot = dataDirectory.toRealPath();
-      final var exclusions = new DiscoveryExclusions(discoveryRoot);
+      final var exclusions = new DiscoveryExclusions(discoveryRoot,
+        discoveryRoot.resolve(UPLOAD_DIRECTORY_NAME), realPathIfAvailable(configuredRuntimeDirectory()));
       Files.walkFileTree(discoveryRoot, new SimpleFileVisitor<>() {
         @Override
         public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
@@ -408,11 +409,23 @@ public class FSHandlersHolder extends HandlersHolder {
     return entries;
   }
 
+  private static Path configuredRuntimeDirectory() {
+    return Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+  }
+
+  private static Path realPathIfAvailable(Path path) {
+    try {
+      return path.toRealPath();
+    } catch (IOException unavailable) {
+      return path;
+    }
+  }
+
   private record DiscoveryExclusions(Path root, Path uploadDirectory, Path runtimeDirectory) {
     private DiscoveryExclusions(Path root) {
       this(root.toAbsolutePath().normalize(),
         root.toAbsolutePath().normalize().resolve(UPLOAD_DIRECTORY_NAME),
-        Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize());
+        configuredRuntimeDirectory());
     }
 
     boolean contains(Path path) {

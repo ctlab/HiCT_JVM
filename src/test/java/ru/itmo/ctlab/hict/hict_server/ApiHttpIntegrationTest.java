@@ -599,6 +599,8 @@ class ApiHttpIntegrationTest {
     final var real = Files.createDirectory(tempDataDir.resolve("data-target"));
     Files.createDirectory(real.resolve("nested"));
     Files.writeString(real.resolve("nested/assembly.fasta.gz"), "fixture", StandardCharsets.UTF_8);
+    final var runtime = Files.createDirectories(real.resolve("runtime/hict-jhdf5-native-328"));
+    Files.writeString(runtime.resolve("internal.fasta.gz"), "runtime artifact", StandardCharsets.UTF_8);
     final var link = tempDataDir.resolve("data-link");
     try {
       Files.createSymbolicLink(link, real);
@@ -608,10 +610,16 @@ class ApiHttpIntegrationTest {
     startServerWithInfoAndFileHandlers();
     vertx.sharedData().getLocalMap("hict_server")
       .put("dataDirectory", new ShareableWrappers.PathWrapper(link));
-    final var response = post("/list_fasta_files", "{}");
-    assertEquals(200, response.statusCode(), response.body());
-    assertEquals(Path.of("nested", "assembly.fasta.gz").toString(),
-      new io.vertx.core.json.JsonArray(response.body()).getString(0));
+    final var savedTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", link.resolve("runtime").toString());
+      final var response = post("/list_fasta_files", "{}");
+      assertEquals(200, response.statusCode(), response.body());
+      final var files = new io.vertx.core.json.JsonArray(response.body());
+      assertEquals(List.of(Path.of("nested", "assembly.fasta.gz").toString()), files.getList());
+    } finally {
+      System.setProperty("java.io.tmpdir", savedTemp);
+    }
   }
 
   @Test
