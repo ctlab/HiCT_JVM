@@ -344,46 +344,50 @@ public class MatrixQueries {
     final long[] starts = stripeStartBins(resolutionOrder);
     final int denseBlockSize = this.chunkedFile.getDenseBlockSize();
     final var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
-    HDF5FileDatasetsBundle dsBundle = null;
     try {
-      dsBundle = pool.borrowObject();
-      final var reader = dsBundle.getReader();
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         if (cancelled.getAsBoolean()) {
           throw new ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException();
         }
-        final long rowOffset = ((long) rowStripe) * stripeCount;
-        final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
-        final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
-        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
-          final long length = lengths[colStripe];
-          if (length <= 0L) {
-            continue;
-          }
-          final long offset = offsets[colStripe];
-          final long rowBase = starts[rowStripe];
-          final long colBase = starts[colStripe];
-          if (offset >= 0L) {
-            final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
-            final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
-            final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
-            for (int i = 0; i < values.length; i++) {
-              visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+        // The view shares this reader pool. Yield the bundle after each stripe.
+        final var dsBundle = pool.borrowObject();
+        try {
+          final var reader = dsBundle.getReader();
+          final long rowOffset = ((long) rowStripe) * stripeCount;
+          final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+          final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+          for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+            final long length = lengths[colStripe];
+            if (length <= 0L) {
+              continue;
             }
-          } else {
-            final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
-            final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
-            final boolean diagonal = rowStripe == colStripe;
-            for (int r = 0; r < block.length; r++) {
-              final var line = block[r];
-              for (int c = diagonal ? r : 0; c < line.length; c++) {
-                final double v = line[c];
-                if (v != 0.0d) {
-                  visitor.accept(rowBase + r, colBase + c, v);
+            final long offset = offsets[colStripe];
+            final long rowBase = starts[rowStripe];
+            final long colBase = starts[colStripe];
+            if (offset >= 0L) {
+              final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
+              final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
+              final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
+              for (int i = 0; i < values.length; i++) {
+                visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+              }
+            } else {
+              final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
+              final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
+              final boolean diagonal = rowStripe == colStripe;
+              for (int r = 0; r < block.length; r++) {
+                final var line = block[r];
+                for (int c = diagonal ? r : 0; c < line.length; c++) {
+                  final double v = line[c];
+                  if (v != 0.0d) {
+                    visitor.accept(rowBase + r, colBase + c, v);
+                  }
                 }
               }
             }
           }
+        } finally {
+          pool.returnObject(dsBundle);
         }
         if (progress != null && (rowStripe & 15) == 0) {
           progress.accept((rowStripe + 1) / (double) stripeCount);
@@ -398,14 +402,6 @@ public class MatrixQueries {
       throw e;
     } catch (final Exception ex) {
       throw new RuntimeException("Scanning contacts failed", ex);
-    } finally {
-      if (dsBundle != null) {
-        try {
-          pool.returnObject(dsBundle);
-        } catch (final Exception ignored) {
-          // The pool is closed together with the file.
-        }
-      }
     }
   }
 

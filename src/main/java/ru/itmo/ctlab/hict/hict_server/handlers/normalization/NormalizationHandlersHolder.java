@@ -86,6 +86,7 @@ public class NormalizationHandlersHolder extends HandlersHolder {
   private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
     final var thread = new Thread(runnable, "hict-coverage-normalization");
     thread.setDaemon(true);
+    thread.setPriority(Thread.MIN_PRIORITY);
     return thread;
   });
   private final CoverageNormalizationService primary = new CoverageNormalizationService(executor, "Primary");
@@ -129,7 +130,8 @@ public class NormalizationHandlersHolder extends HandlersHolder {
         }
         final var service = service(source);
         try {
-          final var status = service.start(file, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES);
+          final var processed = ((ShareableWrappers.PathWrapper) map.get("processedDirectory")).getPath();
+          final var status = service.start(file, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES, processed);
           ctx.json(describe(status, source, file));
         } catch (CoverageNormalizationService.AlreadyRunningException conflict) {
           throw new HttpException(409, conflict.getMessage());

@@ -178,12 +178,14 @@ public final class ProcessedStorageHandlersHolder extends HandlersHolder {
     final var sequence = data.resolve("processed/sequence-analysis");
     final var fastaOnly = data.resolve("fasta-only");
     final var trackCache = processed.resolve("track_precompute");
+    final var coverageCache = processed.resolve("coverage");
     final var receipts = cache.metadataDirectory();
     final var roots = new ArrayList<Path>();
     if (!data.startsWith(processed) && processed.getParent() != null) {
       roots.add(processed);
     } else {
       roots.add(trackCache);
+      roots.add(coverageCache);
       roots.add(receipts);
     }
     if (roots.stream().noneMatch(sequence::startsWith)) roots.add(sequence);
@@ -208,7 +210,9 @@ public final class ProcessedStorageHandlersHolder extends HandlersHolder {
             final var parent = path.getParent();
             final var name = path.getFileName().toString();
             Entry entry = new Entry(path, attributes, "other", null, null);
-            if (parent.equals(trackCache) && CACHE_FILE.matcher(name).matches()
+            if (parent.equals(coverageCache) && name.matches("[0-9a-f]{64}\\.bin")) {
+              entry = new Entry(path, attributes, "coverage", "cache", null);
+            } else if (parent.equals(trackCache) && CACHE_FILE.matcher(name).matches()
                 || parent.equals(sequence) && OVERVIEW.matcher(name).matches()) {
               entry = new Entry(path, attributes, "cache", "cache", null);
             } else if (parent.equals(receipts) && RECEIPT.matcher(name).matches()) {

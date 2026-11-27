@@ -420,7 +420,7 @@ paths:
                       properties:
                         id: { type: string, description: File selection ID valid for the listed file state }
                         path: { type: string }
-                        category: { type: string, enum: [cache, maps, scratch, sequence, metadata, other] }
+                        category: { type: string, enum: [cache, coverage, maps, scratch, sequence, metadata, other] }
                         bytes: { type: integer, format: int64 }
                         modifiedAtMs: { type: integer, format: int64 }
                         action: { type: string, nullable: true, enum: [cache, old, maps, null] }

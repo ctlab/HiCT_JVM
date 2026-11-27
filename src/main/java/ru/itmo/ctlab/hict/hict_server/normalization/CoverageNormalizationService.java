@@ -31,11 +31,16 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.CoverageWeightsBuilder;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.NormalizationWeights;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
+import java.util.function.DoubleConsumer;
 
 /** Prepares all coverage levels for one source, publishing only a complete result. */
 @Slf4j
@@ -56,10 +61,21 @@ public final class CoverageNormalizationService {
   private static final AtomicLong JOB_IDS = new AtomicLong();
   private final ExecutorService executor;
   private final String sourceLabel;
+  private final Preparation preparation;
+
+  @FunctionalInterface
+  interface Preparation {
+    NormalizationWeights.Prepared scan(ChunkedFile source, long budget, BooleanSupplier cancelled, DoubleConsumer progress);
+  }
 
   public CoverageNormalizationService(ExecutorService executor, String sourceLabel) {
+    this(executor, sourceLabel, CoverageWeightsBuilder::build);
+  }
+
+  CoverageNormalizationService(ExecutorService executor, String sourceLabel, Preparation preparation) {
     this.executor = executor;
     this.sourceLabel = sourceLabel;
+    this.preparation = preparation;
   }
 
   private final Object lock = new Object();
@@ -99,7 +115,8 @@ public final class CoverageNormalizationService {
   }
 
   /** Starts a job for the selected source. Clients can follow it through status. */
-  public @NotNull Status start(final @NotNull ChunkedFile file, final long budgetBytes) {
+  public @NotNull Status start(final @NotNull ChunkedFile file, final long budgetBytes,
+                               final @NotNull Path processedDirectory) {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
         throw new AlreadyRunningException();
@@ -108,14 +125,15 @@ public final class CoverageNormalizationService {
       finishedAtMs = 0;
       if (file.getNormalizationWeights().prepared() != null) {
         finishedAtMs = System.currentTimeMillis();
-        status = new Status(State.READY, 1.0d, "Already prepared", CoverageNormalizer.ALGORITHM_VERSION, null, JOB_IDS.incrementAndGet());
+        var message = status.state() == State.READY ? status.message() : "Already prepared";
+        status = new Status(State.READY, 1.0d, message, CoverageNormalizer.ALGORITHM_VERSION, null, JOB_IDS.incrementAndGet());
         return status;
       }
       final long jobId = JOB_IDS.incrementAndGet();
       final var cancel = new AtomicBoolean(false);
       this.cancelFlag = cancel;
       status = new Status(State.RUNNING, 0.0d, "Preparing coverage", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
-      executor.execute(() -> run(jobId, file, budgetBytes, cancel));
+      executor.execute(() -> run(jobId, file, budgetBytes, processedDirectory, cancel));
       return status;
     }
   }
@@ -141,17 +159,40 @@ public final class CoverageNormalizationService {
   }
 
   private void run(final long jobId, final @NotNull ChunkedFile file, final long budgetBytes,
-                   final @NotNull AtomicBoolean cancel) {
+                   final @NotNull Path processedDirectory, final @NotNull AtomicBoolean cancel) {
     try {
       if (cancel.get()) throw new CoverageNormalizer.CancelledException();
-      final var prepared = CoverageWeightsBuilder.build(file, budgetBytes, cancel::get,
-        fraction -> update(jobId, fraction, "Reading contacts"));
+      CoverageWeightsBuilder.requireWithinBudget(file, budgetBytes);
+      String cacheKey = null;
+      NormalizationWeights.Prepared prepared = null;
+      try {
+        cacheKey = CoverageCache.key(file);
+        prepared = CoverageCache.read(processedDirectory, cacheKey, CoverageCache.expectedBins(file));
+      } catch (IOException invalid) {
+        log.warn("Ignoring saved coverage for {}: {}", file.getHdfFilePath().getFileName(), invalid.getMessage());
+      }
+      final boolean loaded = prepared != null;
+      boolean saved = loaded;
+      if (!loaded) {
+        prepared = preparation.scan(file, budgetBytes, cancel::get, fraction -> update(jobId, fraction, "Reading contacts"));
+        if (cancel.get()) throw new CoverageNormalizer.CancelledException();
+        try {
+          if (cacheKey != null && cacheKey.equals(CoverageCache.key(file))) {
+            CoverageCache.write(processedDirectory, cacheKey, prepared);
+            saved = true;
+          }
+        } catch (IOException unavailable) {
+          log.warn("Could not save coverage for {}: {}", file.getHdfFilePath().getFileName(), unavailable.getMessage());
+        }
+      }
       synchronized (lock) {
         if (status.jobId() != jobId) return;
         if (cancel.get()) throw new CoverageNormalizer.CancelledException();
         file.getNormalizationWeights().publish(prepared);
         finishedAtMs = System.currentTimeMillis();
-        status = new Status(State.READY, 1.0d, "Ready", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
+        var message = loaded ? "Loaded saved coverage" : saved ? "Saved coverage" : "Ready";
+        if (loaded) log.info("Loaded saved coverage for {}", file.getHdfFilePath().getFileName());
+        status = new Status(State.READY, 1.0d, message, CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     } catch (final CoverageNormalizer.CancelledException cancelled) {
       synchronized (lock) {
