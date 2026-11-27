@@ -298,7 +298,7 @@ def main():
                 ).click()
             assert submitted.value.ok, submitted.value.text()
             assert submitted.value.request.post_data_json["resolutions"] == [37, 50]
-            dialog.wait_for(state="hidden", timeout=180000)
+            dialog.get_by_role("button", name="Generate another region", exact=True).click(timeout=180000)
             checks.append({"job": submitted.value.json()["jobId"], "generationAndAttachmentSeconds": time.monotonic()-cold_start})
             native = request("/secondary/status", {})["compatibility"]["primaryResolutions"]
             def pyramid(requested):
@@ -345,7 +345,7 @@ def main():
                 50,
                 1000,
             ]
-            dialog.wait_for(state="hidden", timeout=180000)
+            dialog.get_by_role("button", name="Generate another region", exact=True).click(timeout=180000)
             checks.append({"job": submitted.value.json()["jobId"], "generationAndAttachmentSeconds": time.monotonic()-cold_start})
             levels = pyramid([1, 50, 1000])
             for mode in ("above", "overlay", "below"):

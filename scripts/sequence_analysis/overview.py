@@ -106,7 +106,7 @@ def entries(source, index, n, diagonal):
             yield r+start,c,block[r,c]
 
 
-def summarize(writer, source_bp, target_bp, updates=None):
+def summarize(writer, source_bp, target_bp, updates=None, patch_only=False):
     handle = writer.handle
     fine = BinLayout(handle[f'resolutions/{source_bp}'])
     coarse = BinLayout(handle[f'resolutions/{target_bp}'])
@@ -116,15 +116,44 @@ def summarize(writer, source_bp, target_bp, updates=None):
     presence = writer.unit in ('alignment_sample_count', 'alignment_presence')
     counts = writer.unit == 'counts'
     reduction = 'overlap_fraction_sum' if counts else 'any_alignment' if presence else 'positive_identity_area_mean'
+    patch_axes = None
+    source_axes = None
     for update in [writer.update] if updates is None else updates:
         if str(source_bp) not in update:
             continue
         coverage = update[str(source_bp)]
-        axes = [project_axis(coverage[name][:], project, coarse.width) for name in ('row_bins', 'column_bins')]
+        native = [coverage[name][:] for name in ('row_bins', 'column_bins')]
+        axes = [project_axis(axis, project, coarse.width) for axis in native]
         writer.record_coverage(target_bp, *axes, dict(method=reduction, sourceResolution=source_bp), update=update)
+        if patch_only:
+            patch_axes = tuple(axis[:, 0] * coarse.width + axis[:, 1] for axis in axes)
+            source_axes = tuple(axis[:, 0] * fine.width + axis[:, 1] for axis in native)
+    if patch_only and patch_axes is None:
+        return
     level = target.parent
-    level.attrs.update(method=reduction, source_resolution=source_bp)
+    if not patch_only or level.attrs.get('method') != 'direct':
+        level.attrs.update(method=reduction, source_resolution=source_bp)
+    else:
+        level.attrs['source_resolution'] = source_bp
     shape = coarse.width, int(target.attrs['stripes_count'])
+
+    def matches(axes, row_keys, column_keys):
+        rows, columns = axes
+        return ((np.isin(row_keys, rows) & np.isin(column_keys, columns)) |
+                (np.isin(row_keys, columns) & np.isin(column_keys, rows)))
+
+    def in_patch(block, cells):
+        if patch_axes is None:
+            return np.ones(len(cells), dtype=bool)
+        width, stripes = shape
+        row_stripe, col_stripe = divmod(block, stripes)
+        return matches(patch_axes, row_stripe * width + cells // width, col_stripe * width + cells % width)
+
+    def stored(block):
+        n, offset = int(target['block_length'][block]), int(target['block_offset'][block])
+        area = slice(offset, offset + n)
+        return (target['block_rows'][area] * coarse.width + target['block_cols'][area],
+                target['block_vals'][area])
     # SQLite's private temporary database bounds the accumulator independently of map area.
     with closing(sqlite3.connect('')) as db:
         db.execute('CREATE TABLE totals(block INTEGER,cell INTEGER,total REAL,weight REAL,'
@@ -133,6 +162,8 @@ def summarize(writer, source_bp, target_bp, updates=None):
             a, b = divmod(index, int(source.attrs['stripes_count']))
             for rows, cols, scores in entries(source, index, n, a == b):
                 valid = np.isfinite(scores) & ((scores != 0) if counts else (scores > 0))
+                if source_axes is not None:
+                    valid &= matches(source_axes, a * fine.width + rows, b * fine.width + cols)
                 rows, cols, scores = rows[valid], cols[valid], scores[valid]
                 rk, rw = project(a)
                 ck, cw = project(b)
@@ -145,19 +176,36 @@ def summarize(writer, source_bp, target_bp, updates=None):
                             area /= rw[rows].sum(axis=1) * cw[cols].sum(axis=1, dtype=float)
                         add_entries(db, left, right, area, scores, shape, presence)
                         add_entries(db, right[distinct], left[distinct], area[distinct], scores[distinct], shape, presence)
-        # Re-read final direct scores after each update. This includes the old portion
-        # of a partially overwritten coarse bin and clears bins whose last hit disappeared.
+        # A newer result replaces touched overview cells, including with zero.
+        # Leave all cells outside this region's overview patch alone.
         for index, n in occupied(target):
             writer.capacities[target.name,index] = n
-            target['block_length'][index] = 0
+            if patch_axes is None:
+                target['block_length'][index] = 0
+            else:
+                cells, scores = stored(index)
+                keep = ~in_patch(index, cells)
+                if not np.all(keep):
+                    cells, scores = cells[keep], scores[keep]
+                    writer._write_entries(target, index, cells // coarse.width, cells % coarse.width, scores)
         expression = 'total' if counts else 'total/weight'
         cells_cursor = db.execute(f'SELECT block,cell,{expression} FROM totals ORDER BY block,cell')
         for block, group in groupby(cells_cursor, key=lambda entry: entry[0]):
             values = list(group)
             cells = np.array([entry[1] for entry in values])
             scores = np.array([entry[2] for entry in values])
+            keep = in_patch(block, cells)
+            cells, scores = cells[keep], scores[keep]
+            if not len(cells):
+                continue
             if target["block_vals"].dtype.kind != "f":
                 scores = np.rint(scores).astype(np.int64)
+            if patch_axes is not None:
+                previous_cells, previous_scores = stored(block)
+                cells = np.concatenate((previous_cells, cells))
+                scores = np.concatenate((previous_scores, scores))
+                order = np.argsort(cells)
+                cells, scores = cells[order], scores[order]
             writer._write_entries(target, block, cells // coarse.width, cells % coarse.width, scores)
 
 

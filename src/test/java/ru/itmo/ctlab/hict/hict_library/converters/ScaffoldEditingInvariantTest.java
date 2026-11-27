@@ -278,7 +278,7 @@ class ScaffoldEditingInvariantTest {
       try (var compressed = new java.util.zip.GZIPOutputStream(java.nio.file.Files.newOutputStream(gzip))) {
         java.nio.file.Files.copy(fasta, compressed);
       }
-      var standalone = initialRequest.copy().put("scope", "assembly").put("mergeCompatible", false)
+      var standalone = initialRequest.copy().put("scope", "assembly")
         .put("sourceFastaFilename", gzip.getFileName().toString())
         .put("resolutions", new io.vertx.core.json.JsonArray(List.of(1000L, 2000L)));
       var standaloneRequest = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/moddotplot/jobs"))
@@ -299,6 +299,7 @@ class ScaffoldEditingInvariantTest {
       }
       assertNotNull(status);
       assertEquals("finished", status.getString("status"), status.encode());
+      assertNull(status.getJsonObject("resultSet"));
       var result = handler.backgroundJobs().stream().filter(entry -> id.equals(entry.id())).findFirst().orElseThrow();
       assertEquals("open_map", result.outputs().getFirst().action());
       assertEquals(gzip.getFileName().toString(), result.outputs().getFirst().fastaFilename());

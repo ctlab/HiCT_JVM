@@ -114,7 +114,7 @@ def main():
                 page.get_by_label("Worker threads").fill("4")
                 start = time.monotonic()
                 dialog.get_by_role("button", name="Generate", exact=True).click()
-                dialog.wait_for(state="hidden", timeout=180000)
+                dialog.get_by_role("button", name="Generate another region", exact=True).click(timeout=180000)
                 set_view(5000, 16)
                 current = snapshot(f"generated-{iteration + 1}")
                 assert graph()["upperExpression"] == original_primary

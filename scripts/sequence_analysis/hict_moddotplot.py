@@ -29,7 +29,9 @@ def run(plan_path):
     resolutions = [level['resolution'] for level in plan['levels']]
     source = PreparedFasta(plan['input'], plan['inputLength'])
     try:
-        with OverlayWriter(plan['template'], plan['output'], resolutions, settings, overviews=plan.get('overviewLevels', ()), previous=plan.get('previous')) as writer:
+        with OverlayWriter(plan['template'], plan['output'], resolutions, settings,
+                           overviews=plan.get('overviewLevels', ()), previous=plan.get('previous'),
+                           template_name=plan.get('templateName'), job_id=plan.get('jobId')) as writer:
             for level in plan['levels']:
                 r, c = np.asarray(level['rows'], dtype=np.int64), np.asarray(level['columns'], dtype=np.int64)
                 if r.ndim != 2 or c.ndim != 2 or r.shape[1] not in (4, 6) or c.shape[1] != r.shape[1]:

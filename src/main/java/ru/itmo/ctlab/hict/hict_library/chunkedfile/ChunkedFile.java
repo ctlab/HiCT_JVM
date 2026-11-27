@@ -80,6 +80,12 @@ public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
   private final @NotNull SourceMetadata sourceMetadata;
+  @Getter(lombok.AccessLevel.PACKAGE)
+  private final @org.jetbrains.annotations.Nullable SequenceCoverage sequenceCoverage;
+
+  public boolean hasComputedSequenceCoverage() {
+    return sequenceCoverage != null;
+  }
   private final java.util.Set<Long> alignmentPresenceLevels;
   private final @org.jetbrains.annotations.Nullable ApproximationProvenance.Summary approximationProvenance;
   //  private final long[] blockCount;
@@ -168,6 +174,7 @@ public class ChunkedFile implements AutoCloseable {
         return reader.object().hasAttribute(root, "method") && "any_alignment".equals(reader.string().getAttr(root, "method"));
       }).collect(java.util.stream.Collectors.toUnmodifiableSet());
       this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
+      this.sequenceCoverage = SequenceCoverage.read(reader, effectiveResolutions);
       this.approximationProvenance = ApproximationProvenance.read(reader, effectiveResolutions);
 
       this.denseBlockSize = (int) effectiveResolutions.stream()

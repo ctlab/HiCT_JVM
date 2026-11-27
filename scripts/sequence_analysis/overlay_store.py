@@ -88,7 +88,8 @@ def _sequence_grid(source, base, resolution):
 
 
 def _create_empty(source, dest, resolutions):
-    source.copy('contig_info', dest)
+    if 'contig_info' not in dest:
+        source.copy('contig_info', dest)
     for resolution in resolutions:
         name = f'resolutions/{resolution}'
         base = dest.require_group(name)
@@ -120,7 +121,8 @@ def _create_empty(source, dest, resolutions):
 
 class OverlayWriter:
     """Append bounded physical-block patches to a never-before-existing file."""
-    def __init__(self, source_path, output_path, resolutions, settings, previous=None, unit='identity_percent', scale=SCALE, overviews=()):
+    def __init__(self, source_path, output_path, resolutions, settings, previous=None,
+                 unit='identity_percent', scale=SCALE, overviews=(), template_name=None, job_id=None):
         self.path = Path(output_path)
         self.handle = None
         if unit not in ('identity_percent', 'alignment_sample_count') or scale < 1:
@@ -128,40 +130,64 @@ class OverlayWriter:
         self.unit, self.scale = unit, scale
         self.direct = sorted(set(map(int, resolutions)))
         self.overviews = sorted(set(overviews) - set(self.direct))
-        self.resolutions = sorted(self.direct + self.overviews)
-        if not self.resolutions or any(r <= 0 for r in self.resolutions):
+        run_levels = sorted(self.direct + self.overviews)
+        if not run_levels or any(r <= 0 for r in run_levels):
             raise ValueError('Choose positive map resolutions')
         # h5py mode x makes accidental overwrite impossible, even after a race.
         with h5py.File(source_path, 'r') as source:
-            identity = _metadata_digest(source, self.resolutions)
+            native_levels = sorted(map(int, source.get('resolutions', ())))
+            identity = _metadata_digest(source, native_levels)
             compatibility = dict(schema=SCHEMA, sourceMetadataSha256=identity,
-                                 resolutions=self.resolutions, settings=settings, scale=scale, unit=unit)
-            if self.overviews:
-                compatibility["analysisLevels"] = self.direct
+                                 settings=settings, scale=scale, unit=unit)
             self.compatibility = canonical_json(compatibility)
             if previous:
                 with h5py.File(previous, 'r') as old:
-                    if not old['sequence_analysis'].attrs.get('complete', False):
+                    old_meta = old['sequence_analysis']
+                    if not old_meta.attrs.get('complete', False):
                         raise ValueError('Cannot accumulate an incomplete overlay')
-                    if old['sequence_analysis'].attrs.get('compatibility') != self.compatibility:
+                    old_compatibility = json.loads(old_meta.attrs.get('compatibility', '{}'))
+                    if 'resolutions' in old_compatibility:
+                        # Older files hashed only the selected levels. Verify that
+                        # hash against this template before adopting the new key.
+                        old_levels = old_compatibility.pop('resolutions')
+                        old_compatibility.pop('analysisLevels', None)
+                        if old_compatibility.get('sourceMetadataSha256') == _metadata_digest(source, old_levels):
+                            old_compatibility['sourceMetadataSha256'] = identity
+                        previous_settings = old_compatibility.get('settings', {})
+                        if previous_settings.get('kind') == 'alignment-dotplot':
+                            previous_settings.get('parameters', {}).pop('threads', None)
+                    if old_compatibility != compatibility:
                         raise ValueError('Overlay settings/source differ; create a separate overlay')
+                    previous_levels = set(map(int, old['resolutions']))
                     with h5py.File(self.path, 'x') as out:
                         for key in old:
                             old.copy(key, out)
                         for key, value in old.attrs.items():
                             out.attrs[key] = value
+                        _create_empty(source, out, sorted(set(run_levels) - previous_levels))
             else:
                 with h5py.File(self.path, 'x') as out:
-                    _create_empty(source, out, self.resolutions)
+                    _create_empty(source, out, run_levels)
                     meta = out.create_group('sequence_analysis')
-                    meta.attrs['compatibility'] = self.compatibility
                     meta.attrs['score_unit'] = unit
                     meta.attrs['score_scale'] = scale
                     meta.attrs['kind'] = settings.get('kind', 'moddotplot')
                     meta.create_group('updates')
         self.handle = h5py.File(self.path, 'r+')
-        self.handle['sequence_analysis'].attrs['complete'] = False
-        self.update = self.handle['sequence_analysis/updates'].create_group(str(uuid.uuid4()))
+        self.resolutions = sorted(map(int, self.handle['resolutions']))
+        meta = self.handle['sequence_analysis']
+        meta.attrs['complete'] = False
+        meta.attrs['compatibility'] = self.compatibility
+        meta.attrs['resolutions'] = self.resolutions
+        meta.attrs['explicit_coverage'] = True
+        self.handle.attrs['template_name'] = template_name or Path(source_path).name
+        updates = meta['updates']
+        self.update = updates.create_group(str(uuid.uuid4()))
+        self.update.attrs['ordinal'] = len(updates)
+        self.update.attrs['analysis_levels'] = self.direct
+        self.update.attrs['overview_levels'] = np.asarray(self.overviews, dtype=np.int64)
+        if job_id:
+            self.update.attrs['job_id'] = job_id
         for bp in self.direct:
             self.handle[f"resolutions/{bp}"].attrs["method"] = "direct"
         self.capacities = {}
@@ -287,7 +313,7 @@ class OverlayWriter:
                 for bp in self.overviews:
                     source = max(r for r in self.direct if r < bp)
                     print(f'Building {bp} bp overview from {source} bp scores', flush=True)
-                    summarize(self, source, bp)
+                    summarize(self, source, bp, patch_only=True)
         except BaseException:
             self.close(success=False)
             raise

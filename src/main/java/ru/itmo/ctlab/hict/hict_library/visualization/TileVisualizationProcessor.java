@@ -300,25 +300,32 @@ public class TileVisualizationProcessor {
                                               final @NotNull SimpleVisualizationOptions options,
                                               final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
                                               final @Nullable java.util.function.Consumer<double[][]> signalObserver) {
-    final var input = rawTile.matrix();
-    final var rowCount = input.rows();
-    final var columnCount = input.cols();
     final var normalized = processDisplaySignal(rawTile, options, expectedProfile);
     if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {
       if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED_OVER_EXPECTED) {
-        return createRgbaImage(mapObservedOverExpectedRgba(normalized.values(), gradient), columnCount, rowCount);
+        return createTileImage(mapObservedOverExpectedRgba(normalized.values(), gradient), rawTile);
       }
       final var nativeRgbaValues = NativeProcessingService.getInstance().tryMapLinearGradientRgba(
         normalized.values(),
         gradient
       );
       if (nativeRgbaValues != null) {
-        return createRgbaImage(nativeRgbaValues, columnCount, rowCount);
+        return createTileImage(nativeRgbaValues, rawTile);
       }
     }
-    return createRgbaImage(mapJavaRgba(normalized.values(), colormap), columnCount, rowCount);
+    return createTileImage(mapJavaRgba(normalized.values(), colormap), rawTile);
+  }
+
+  private static BufferedImage createTileImage(byte[] rgba, MatrixQueries.MatrixWithWeights tile) {
+    var coverage = tile.computedCells();
+    if (coverage != null) {
+      for (int offset = coverage.nextClearBit(0); offset < rgba.length / 4; offset = coverage.nextClearBit(offset + 1)) {
+        rgba[4 * offset + 3] = 0;
+      }
+    }
+    return createRgbaImage(rgba, tile.matrix().cols(), tile.matrix().rows());
   }
 
   static byte[] mapObservedOverExpectedRgba(double[][] ratios, SimpleLinearGradient gradient) {

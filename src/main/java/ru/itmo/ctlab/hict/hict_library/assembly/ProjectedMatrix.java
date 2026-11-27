@@ -6,6 +6,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescript
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -67,6 +68,7 @@ public final class ProjectedMatrix {
 
     final var values = new double[rows][cols];
     final var scoreAreas = reducer == Reducer.IDENTITY ? new double[rows][cols] : null;
+    final var coverage = nativeFile.hasComputedSequenceCoverage() ? new BitSet() : null;
     final var rowWeights = new double[rows];
     final var colWeights = new double[cols];
     final var rowLengths = new long[rows];
@@ -77,10 +79,10 @@ public final class ProjectedMatrix {
         checkCancelled();
         final var colBlock = colBlocks.get(c);
         final var nativeMatrix = nativeFile.matrixQueries().getSubmatrix(nativeResolution,
-          rowBlock.start, colBlock.start, rowBlock.end, colBlock.end, visibleOnly);
+          rowBlock.start, colBlock.start, rowBlock.end, colBlock.end, visibleOnly, coverage != null);
         if (c == 0) addWeights(rowBlock, nativeMatrix.rowWeights(), rowWeights, rowLengths);
         if (r == 0) addWeights(colBlock, nativeMatrix.colWeights(), colWeights, colLengths);
-        accumulate(nativeMatrix.matrix(), rowBlock, colBlock, reducer, values, scoreAreas);
+        accumulate(nativeMatrix, rowBlock, colBlock, reducer, values, scoreAreas, coverage, cols);
       }
     }
     if (scoreAreas != null) {
@@ -93,7 +95,8 @@ public final class ProjectedMatrix {
     finishWeights(rowWeights, rowLengths);
     finishWeights(colWeights, colLengths);
     return new MatrixQueries.MatrixWithWeights(new MatrixQueries.DoubleMatrix(values), rowWeights, colWeights,
-      rowStart, colStart, rowEnd, colEnd, visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, primaryResolution);
+      rowStart, colStart, rowEnd, colEnd, visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, primaryResolution,
+      coverage);
   }
 
   private static List<AxisBlock> axis(AssemblyBinGrid primary, AssemblyBinGrid nativeGrid, long start, int size, int factor) {
@@ -123,18 +126,21 @@ public final class ProjectedMatrix {
     return blocks;
   }
 
-  private static void accumulate(MatrixQueries.RawMatrix matrix, AxisBlock rows, AxisBlock cols,
-                                 Reducer reducer, double[][] values, double[][] scoreAreas) {
+  private static void accumulate(MatrixQueries.MatrixWithWeights matrix, AxisBlock rows, AxisBlock cols,
+                                 Reducer reducer, double[][] values, double[][] scoreAreas,
+                                 BitSet coverage, int columnCount) {
     for (var row : rows.bins.entrySet()) {
       final int nativeRow = Math.toIntExact(row.getKey() - rows.start);
       for (var col : cols.bins.entrySet()) {
         final int nativeCol = Math.toIntExact(col.getKey() - cols.start);
-        final double value = matrix.getAsDouble(nativeRow, nativeCol);
-        if (!Double.isFinite(value) || value == 0) continue;
+        if (!matrix.isComputed(nativeRow, nativeCol)) continue;
+        final double value = matrix.matrix().getAsDouble(nativeRow, nativeCol);
+        if (!Double.isFinite(value) || (coverage == null && value == 0)) continue;
         for (var targetRow : row.getValue()) {
           for (var targetCol : col.getValue()) {
             final int r = targetRow.index;
             final int c = targetCol.index;
+            if (coverage != null) coverage.set(r * columnCount + c);
             switch (reducer) {
               case COUNTS -> values[r][c] += value * ((double) targetRow.overlap / targetRow.binLength)
                 * ((double) targetCol.overlap / targetCol.binLength);

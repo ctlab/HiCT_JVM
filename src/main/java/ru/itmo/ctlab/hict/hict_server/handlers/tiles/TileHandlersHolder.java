@@ -877,7 +877,8 @@ public class TileHandlersHolder extends HandlersHolder {
       final var mask = diagonalGrid(options.getDiagonalMask(), gridFile, selectedMatrixWithWeights,
         QueryLengthUnit.PIXELS, sampleFactor);
       for (int r = 0; r < raw.rows(); r++) for (int c = 0; c < raw.cols(); c++)
-        if (mask == null || !mask.contains(r, c)) tileSignals.raw.accept(raw.getAsDouble(r, c));
+        if (selectedMatrixWithWeights.isComputed(r, c) && (mask == null || !mask.contains(r, c)))
+          tileSignals.raw.accept(raw.getAsDouble(r, c));
       final BufferedImage sourceImage;
       // Expected views bypass only the PRIMARY graph. Identity percentages and
       // custom secondary processing remain unchanged, and OBSERVED reuses the graph.
@@ -904,7 +905,9 @@ public class TileHandlersHolder extends HandlersHolder {
           selectedMatrixWithWeights,
           options,
           selectedExpectedProfile,
-          values -> tileSignals.traditional(values, mask == null ? null : mask::contains)
+          values -> tileSignals.traditional(values,
+            (rowIndex, columnIndex) -> !selectedMatrixWithWeights.isComputed(rowIndex, columnIndex) ||
+              (mask != null && mask.contains(rowIndex, columnIndex)))
         );
         if (mask != null) mask.clear(sourceImage);
       }
@@ -2579,7 +2582,7 @@ public class TileHandlersHolder extends HandlersHolder {
           rowPx < 0L || rowPx / sampleFactor >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
         final var colOutside =
           colPx < 0L || colPx / sampleFactor >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
-        if (rowOutside || colOutside || (mask != null && mask.contains(row, col))) {
+        if (rowOutside || colOutside || !matrixWithWeights.isComputed(row, col) || (mask != null && mask.contains(row, col))) {
           rgba[pixelIndex++] = 0x00000000;
           continue;
         }
@@ -2752,6 +2755,7 @@ public class TileHandlersHolder extends HandlersHolder {
         clampedStartCol,
         clampedEndRow,
         clampedEndCol,
+        true,
         true
       );
     } catch (final RuntimeException ex) {

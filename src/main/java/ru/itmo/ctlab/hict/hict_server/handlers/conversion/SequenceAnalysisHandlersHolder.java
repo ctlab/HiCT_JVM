@@ -777,8 +777,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         request.put("requestedThreads", selected.requested()).put("effectiveThreads", selected.effective()).put("threadMode", selected.mode());
         settings = new JsonObject().put("k", integer(request, "k", 15, 1, 28))
           .put("window", integer(request, "window", 10, 1, 255)).put("chainScore", integer(request, "chainScore", 40, 1, 1_000_000))
-          .put("sampleBp", integer(request, "sampleBp", 100, 1, 1_000_000)).put("minAlignmentLength", integer(request, "minAlignmentLength", 100, 1, 100_000_000))
-          .put("threads", selected.effective());
+          .put("sampleBp", integer(request, "sampleBp", 100, 1, 1_000_000)).put("minAlignmentLength", integer(request, "minAlignmentLength", 100, 1, 100_000_000));
       } else {
         settings = new JsonObject().put("k", integer(request, "k", 21, 1, 65535))
           .put("identity", request.getDouble("identity", 80.0)).put("sketch_size", integer(request, "sketchSize", 1000, 1, 1_000_000))
@@ -795,7 +794,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         throw new IllegalArgumentException("Each ModDotPlot window must be at least as long as its k-mer size");
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
     if (request.containsKey("sourceFastaFilename")) {
-      if (alignment || !request.getString("scope").equals("assembly") || request.getBoolean("mergeCompatible"))
+      if (alignment || !request.getString("scope").equals("assembly"))
         throw new HttpException(400, "A FASTA ModDotPlot uses the full file and creates a separate map.");
       return submitFastaModDotPlot(request, settings, resolutions, preview, budgetRequest.acceptLargeOutput());
     }
@@ -1086,20 +1085,19 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         execution.put("threads", selected.effective()).put("mode", selected.mode());
         job.log("ModDotPlot threads: requested=" + selected.requested() + ", effective=" + selected.effective()
           + ", mode=" + selected.mode() + ", allocatedCPUs=" + ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.available());
+      } else {
+        execution.put("threads", job.request.getInteger("effectiveThreads"));
       }
 
-      var keyText = template + "|" + templateStamp + "|" + sourceIdentity + "|" + settings.encode()
-        + "|" + gapPolicy + "|" + job.request.getJsonArray("overviewLevels").encode() + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
-      String key = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(keyText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-      var registry = job.directory.getParent().resolve("overlay-" + key + ".json");
-      Path previous = null;
-      if (job.request.getBoolean("mergeCompatible") && Files.isRegularFile(registry)) {
-        var index = new JsonObject(Files.readString(registry));
-        var candidate = job.data.resolve(index.getString("outputFile")).normalize();
-        if (!candidate.startsWith(job.directory.getParent()) || !Files.isRegularFile(candidate))
-          throw new IOException("Previous overlay is unavailable; its index was retained. Generate a separate overlay or restore the file.");
-        previous = candidate;
-      }
+      var root = job.directory.getParent();
+      final var standalone = job.request.containsKey("sourceFastaFilename");
+      final var key = standalone ? null : DotplotResultRegistry.key(template, templateStamp, sourceIdentity,
+        job.kind, settings, gapPolicy, job.toolSha256, aligner == null ? "" : sha256(aligner));
+      final var compatible = key != null && job.request.getBoolean("mergeCompatible")
+        ? DotplotResultRegistry.latest(job.data, root, key) : null;
+      final var previous = compatible == null ? null : compatible.file();
+      final var setId = compatible == null ? job.id : compatible.setId();
+      final int regionCount = compatible == null ? 1 : Math.addExact(compatible.regionCount(), 1);
       final long usable = freeDiskSpace.usableBytes(job.directory);
       final long previousBytes = previous == null ? 0L : Files.size(previous);
       if (previousBytes > usable || estimatedOutputBytes > usable - previousBytes) {
@@ -1108,6 +1106,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var published = job.directory.resolve(job.kind + ".hict.hdf5");
       var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings)
         .put("execution", execution).put("template", template.toString()).put("output", output.toString())
+        .put("templateName", standalone ? fasta.getFileName().toString() : template.getFileName().toString())
+        .put("jobId", job.id)
         .put("gapPolicy", gapPolicy)
         .put("input", input.toString()).put("inputOffset", layout.padded(start, true)).put("inputLength", layout.padded(end, false) - layout.padded(start, true))
         .put("sequenceLength", layout.length()).put("sourceFastaIdentity", sourceIdentity)
@@ -1134,11 +1134,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var delivered = publishRequestedOutput(published, job, ".hict.hdf5");
       job.output = job.data.relativize(delivered).toString().replace('\\', '/');
       var managedOutput = job.data.relativize(published).toString().replace('\\', '/');
-      if (!job.request.containsKey("sourceFastaFilename"))
-        atomicJson(registry, new JsonObject().put("outputFile", managedOutput).put("jobId", job.id).put("settings", settings));
+      if (!standalone) {
+        var result = new JsonObject().put("id", setId).put("name", DotplotResultRegistry.name(settings, aligner))
+          .put("regionCount", regionCount).put("bytes", Files.size(published));
+        var manifest = result.copy().put("setId", setId).put("outputFile", managedOutput)
+          .put("mapFilename", job.mapFilename).put("kind", job.kind).put("jobId", job.id)
+          .put("updatedAtMs", System.currentTimeMillis()).put("settings", settings);
+        atomicJson(DotplotResultRegistry.manifest(root, key, setId), manifest);
+        job.resultSet = result;
+      }
       job.log("Saved overlay: " + job.output + ". Generation is complete; display attachment is a separate step.");
-      if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
-        new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
+      if (previous != null) {
+        try {
+          atomicJson(root.resolve("superseded-" + job.id + ".json"),
+            new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
+        } catch (IOException failure) {
+          job.log("Previous version was retained: " + failure.getMessage());
+        }
+      }
     } catch (Exception | OutOfMemoryError failure) {
       if (failure instanceof OutOfMemoryError) job.stopReason = MEMORY_ERROR;
       terminal = job.stopReason == null && (job.cancelled.get() || failure instanceof InterruptedException
@@ -1337,7 +1350,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     final ArrayDeque<String> logs = new ArrayDeque<>();
     volatile String state = "submitted", output, error, stopReason;
     volatile String sourceFasta, sourceStamp, toolCommand, toolSha256, inputSha256;
-    volatile JsonObject alignmentDetail, repeatPeriod;
+    volatile JsonObject alignmentDetail, repeatPeriod, resultSet;
     volatile long finished, hits, fragments, elapsedNs;
     volatile Process process; volatile Thread thread; volatile BufferedWriter logWriter;
     volatile Runnable removeQueuedWork;
@@ -1390,6 +1403,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("requestedThreads", request.getInteger("requestedThreads", request.getInteger("threads", -1)))
         .put("effectiveThreads", request.getInteger("effectiveThreads"))
         .put("threadMode", request.getString("threadMode"))
+        .put("resultSet", resultSet)
         .put("logs", new JsonArray(new ArrayList<>(logs)));
     }
     void save() throws IOException {

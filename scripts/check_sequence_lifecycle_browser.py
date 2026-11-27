@@ -184,7 +184,7 @@ class OverlayFixture { public static void main(String[] a) {
                     page.get_by_label('Save a reusable copy in the data folder').check()
                     page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
                 page.get_by_label('Show result as').select_option('overlay' if iteration else 'below')
-                assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
+                assert page.get_by_label('Add to compatible results').is_checked()
                 if iteration == 0:
                     page.screenshot(path=str(out / 'moddotplot-dialog.png'))
                 def review_once(route):
@@ -201,6 +201,7 @@ class OverlayFixture { public static void main(String[] a) {
                     dialog.get_by_text('Review overlay compatibility', exact=True).wait_for()
                     page.screenshot(path=str(out/'inline-overlay-confirmation.png'))
                     dialog.get_by_role('button', name='Attach despite differences', exact=True).click()
+                dialog.get_by_role('button', name='Generate another region', exact=True).click()
                 dialog.wait_for(state='hidden')
                 check.settle()
                 pipeline = json.loads(app.http('/render_pipeline/get', {}))
@@ -476,7 +477,8 @@ class OverlayFixture { public static void main(String[] a) {
             assert response.value.status == 202, response.value.text()
             request = response.value.request.post_data_json
             assert request['scope'] == 'selection' and request['region']['rowEnd'] < 4000, request
-            page.get_by_role('dialog', name='ModDotPlot', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='ModDotPlot', exact=True).get_by_role(
+                'button', name='Generate another region', exact=True).click()
             check.settle()
             assert json.loads(app.http('/render_pipeline/get', {})) == previous_pipeline, 'Do not link now must retain the current display'
         def alignment_dotplot():
@@ -503,6 +505,7 @@ class OverlayFixture { public static void main(String[] a) {
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
                 dialog.get_by_role('button',name='Generate',exact=True).click()
             assert response.value.status==202,response.value.text()
+            dialog.get_by_role('button', name='Generate another region', exact=True).click()
             dialog.wait_for(state='hidden');check.settle()
             jobs=[j for j in json.loads(app.http('/sequence/jobs/list',{})) if j['kind']=='dotplot']
             assert len(jobs)==1 and jobs[0]['status']=='finished',jobs

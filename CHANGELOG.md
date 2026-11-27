@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Add Dotplot and ModDotPlot regions to compatible results across different levels of detail. Missing regions remain transparent and computed regions follow assembly edits.
 - Save square-root coverage once per map and reuse colour limits when returning to a zoom level. Manage saved coverage under Processed data.
 - See elapsed time, an estimated time left, and a timestamped log for each conversion. Open a converted map automatically or from the finished job.
 - Keep the contact map workspace white when the operating system uses a dark theme.

@@ -53,6 +53,12 @@ public class MatrixQueries {
   private final BlockDataCache blockDataCache = new BlockDataCache(Long.getLong("HICT_BLOCK_DATA_CACHE_BYTES", 128L * 1024L * 1024L));
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
+    return getSubmatrix(resolutionDescriptor, startRowIncl, startColIncl, endRowExcl, endColExcl, excludeHiddenContigs, false);
+  }
+
+  public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor,
+      final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl,
+      final boolean excludeHiddenContigs, final boolean includeSequenceCoverage) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
     final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
@@ -83,6 +89,7 @@ public class MatrixQueries {
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
+    final var coverage = includeSequenceCoverage ? this.chunkedFile.getSequenceCoverage() : null;
 
     if (startCol < totalAssemblyLength && startRow < totalAssemblyLength && endRow > 0 && endCol > 0) {
 
@@ -126,7 +133,10 @@ public class MatrixQueries {
           startColIncl,
           blockMetaCache
         );
-        return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+        var computedCells = coverage == null ? null : coverage.mask(this.chunkedFile.getResolutions()[resolutionOrder],
+          rowATUs, colATUs, deltaRow, deltaCol, queryCols);
+        return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol,
+          endRow, endCol, units, resolutionDescriptor, computedCells);
       } catch (final Exception ex) {
         throw new RuntimeException("Dense matrix fetch failed", ex);
       } finally {
@@ -141,7 +151,9 @@ public class MatrixQueries {
     }
 
 
-    return new MatrixQueries.MatrixWithWeights(new LongMatrix(new long[queryRows][queryCols]), paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+    return new MatrixQueries.MatrixWithWeights(new LongMatrix(new long[queryRows][queryCols]), paddedRowWeights,
+      paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor,
+      coverage == null ? null : new java.util.BitSet());
   }
 
   private @NotNull RawMatrix fillSubmatrixAsLongs(
@@ -1359,7 +1371,16 @@ public class MatrixQueries {
   public record MatrixWithWeights(@NotNull RawMatrix matrix, double @NotNull [] rowWeights,
                                   double @NotNull [] colWeights, long startRowIncl, long startColIncl, long endRowExcl,
                                   long endColExcl, @NotNull QueryLengthUnit units,
-                                  @NotNull ResolutionDescriptor resolutionDescriptor) {
+                                  @NotNull ResolutionDescriptor resolutionDescriptor,
+                                  @Nullable java.util.BitSet computedCells) {
+    public MatrixWithWeights(RawMatrix matrix, double[] rowWeights, double[] colWeights, long startRowIncl,
+        long startColIncl, long endRowExcl, long endColExcl, QueryLengthUnit units, ResolutionDescriptor resolutionDescriptor) {
+      this(matrix, rowWeights, colWeights, startRowIncl, startColIncl, endRowExcl, endColExcl, units, resolutionDescriptor, null);
+    }
+
+    public boolean isComputed(int row, int column) {
+      return computedCells == null || computedCells.get(row * matrix.cols() + column);
+    }
   }
 
 }

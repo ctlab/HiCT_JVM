@@ -2590,7 +2590,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/ConversionJob' }
+                items: { $ref: '#/components/schemas/SequenceAnalysisJob' }
   /sequence/jobs/{jobId}/stop:
     post:
       tags: [Conversion]
@@ -3585,6 +3585,26 @@ components:
         endBP: { type: integer, format: int64 }
       required: [bpResolution, widthPx]
 
+    SequenceAnalysisJob:
+      type: object
+      required: [jobId, kind, status, logs]
+      properties:
+        jobId: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        outputFile: { type: string, nullable: true }
+        mapFilename: { type: string }
+        logs: { type: array, items: { type: string } }
+        resultSet:
+          type: object
+          nullable: true
+          description: Accumulated result identity for a finished assembly dotplot.
+          required: [id, name, regionCount, bytes]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            regionCount: { type: integer, minimum: 1 }
+            bytes: { type: integer, format: int64 }
     ConversionJob:
       type: object
       properties:
