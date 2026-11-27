@@ -12,6 +12,7 @@
 - Add section links to the bundled user guide and keep notifications behind active dialogs.
 - Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
 - Verify late alignment responses, exact histogram scans and fine dotplot rendering against the packaged browser workspace.
+- Check the legacy fine-only overview using the current dotplot result metadata.
 
 ### Select and edit assemblies
 

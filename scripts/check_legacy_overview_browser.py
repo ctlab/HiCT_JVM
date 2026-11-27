@@ -18,9 +18,10 @@ def make_legacy_file(source, target):
         current.copy("sequence_analysis", legacy)
         analysis = legacy["sequence_analysis"]
         settings = json.loads(analysis.attrs["compatibility"])
-        del settings["analysisLevels"]
+        settings.pop("analysisLevels", None)
         settings["resolutions"] = [1]
         analysis.attrs.modify("compatibility", json.dumps(settings))
+        analysis.attrs["resolutions"] = [1]
         for update in analysis["updates"].values():
             for level in list(update):
                 if level != "1":
