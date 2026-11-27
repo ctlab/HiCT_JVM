@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Keep the contact map workspace white when the operating system uses a dark theme.
 - Recover from failed FASTA searches and stale export previews. On Windows, handle Unicode paths, shorten deep tool paths, and report failures before server readiness.
 - Show new bookmarks first in Entities and highlight them briefly. Pan the focused, unlocked contact map with arrow keys or Shift+arrows.
 - Choose one finest detail or enter custom sizes for Dotplot and ModDotPlot. Review expected storage and acknowledge large worst cases before generating. Jobs stop if free disk space runs low.
