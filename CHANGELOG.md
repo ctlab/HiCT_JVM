@@ -96,6 +96,7 @@
 ### Set the histogram view
 
 - Zoom, pan or type a histogram view range independently of the map colours.
+- Keep the histogram in place when you grab a colour-curve endpoint.
 - Put Slider scale beside Fit levels below the histogram and label the map's value transform Displayed signal.
 
 ### Use bookmarks and keyboard controls
