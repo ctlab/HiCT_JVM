@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from browser_review_helpers import expand_slider_limits, link_fasta, select_visualization_source
+from browser_review_helpers import expand_signal_advanced, link_fasta, select_visualization_source
 
 
 def main():
@@ -122,10 +122,10 @@ def main():
                 results.append({"test": "real 5K generation preserves primary pixels", "iteration": iteration + 1,
                                 "seconds": time.monotonic() - start, "comparedPixels": int(upper.sum())})
             select_visualization_source(page, "SECONDARY")
-            expand_slider_limits(page, edit=True)
+            expand_signal_advanced(page)
             page.wait_for_function("document.querySelector('[data-testid=exact-range-status]')?.textContent.includes('Percentage scale')")
-            assert float(page.get_by_label("Slider minimum signal", exact=True).input_value()) == 0
-            assert float(page.get_by_label("Slider maximum signal", exact=True).input_value()) == 100
+            assert float(page.get_by_label("Histogram view from", exact=True).input_value()) == 0
+            assert float(page.get_by_label("Histogram view to", exact=True).input_value()) == 100
             page.locator(".threshold-number-input").first.fill("90")
             page.locator(".threshold-number-input").first.press("Enter")
             page.wait_for_timeout(500)

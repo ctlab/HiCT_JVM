@@ -192,14 +192,15 @@ def main():
                 scale.get_by_role("button", name=mode, exact=True).click()
                 assert [lower.input_value(), upper.input_value()] == thresholds
                 assert pipeline() == graph
-            page.get_by_role("button", name="Focus range", exact=True).click()
-            page.get_by_role("button", name="Edit slider limits", exact=True).click()
-            minimum = page.get_by_label("Slider minimum signal", exact=True
+            page.get_by_role("button", name="Fit view to colour range", exact=True).click()
+            minimum = page.get_by_label("Histogram view from", exact=True
             )
-            maximum = page.get_by_label("Slider maximum signal", exact=True
+            maximum = page.get_by_label("Histogram view to", exact=True
             )
-            assert float(minimum.input_value()) == float(thresholds[0])
-            assert float(maximum.input_value()) == float(thresholds[1])
+            lo, hi = map(float, thresholds)
+            margin = (hi - lo) * 0.05
+            assert math.isclose(float(minimum.input_value()), lo - margin, abs_tol=0.001)
+            assert math.isclose(float(maximum.input_value()), hi + margin, abs_tol=0.001)
             minimum.fill("-5")
             minimum.press("Tab")
             maximum.fill("20")
@@ -207,9 +208,12 @@ def main():
             assert pipeline() == graph
             maximum.fill("-10")
             maximum.press("Tab")
-            assert float(maximum.input_value()) == float(minimum.input_value()) + 1
+            expect(maximum).to_have_value("20")
+            expect(maximum).to_have_attribute("aria-invalid", "true")
             assert pipeline() == graph
             page.get_by_role("button", name="Use full loaded range", exact=True).click()
+            assert [float(minimum.input_value()), float(maximum.input_value())] == [-5, 20]
+            page.get_by_role("button", name="Whole data", exact=True).click()
             assert (
                 float(minimum.input_value()) == 0 and float(maximum.input_value()) == 11
             )
@@ -223,7 +227,7 @@ def main():
             assert pipeline() == graph and query() == known
             results.append(
                 {
-                    "test": "Slider Linear/Log, Focus, domain repair, loaded range and exact scan preserve graph and exact contacts"
+                    "test": "Slider Linear/Log, fitted and validated view bounds, loaded range and exact scan preserve graph and exact contacts"
                 }
             )
             page.locator("#signal-transform-log").click()

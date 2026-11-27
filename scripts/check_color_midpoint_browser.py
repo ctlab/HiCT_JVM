@@ -5,7 +5,7 @@ import argparse, functools, hashlib, http.server, io, json, math, shutil, subpro
 from pathlib import Path
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from browser_review_helpers import expand_slider_limits
+from browser_review_helpers import expand_signal_advanced
 from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 from browser_review_helpers import select_visualization_source
 
@@ -227,7 +227,7 @@ def main():
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
                 assert gamma() == saved_gamma
-                expand_slider_limits(page)
+                expand_signal_advanced(page)
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Log", exact=True
                 ).click()
@@ -250,8 +250,7 @@ def main():
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Linear", exact=True
                 ).click()
-                page.get_by_role("button", name="Edit slider limits", exact=True).click()
-                maximum = page.get_by_label("Slider maximum signal", exact=True
+                maximum = page.get_by_label("Histogram view to", exact=True
                 )
                 maximum.fill("10000")
                 maximum.press("Tab")
@@ -269,7 +268,7 @@ def main():
                 record(
                     "close-thresholds-leave-the-midpoint-visible-and-keyboard-accessible"
                 )
-                page.get_by_role("button", name="Focus range", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
                 key("ArrowRight")
                 observed_gamma = gamma()
                 observed_graph = graph()
@@ -423,7 +422,7 @@ def main():
                 page.get_by_role("button", name="Apply", exact=True).click()
                 scale = page.get_by_role("group", name="Slider scale", exact=True)
                 scale.get_by_role("button", name="Log", exact=True).click()
-                page.get_by_role("button", name="Focus range", exact=True).click()
+                page.get_by_role("button", name="Whole data", exact=True).click()
                 wait()
                 editor = page.locator(".curve-editor")
                 editor.scroll_into_view_if_needed()
@@ -479,7 +478,7 @@ def main():
                 page.get_by_role("button", name="Reset curve", exact=True).click()
                 page.get_by_label("Upper signal threshold", exact=True).fill("11")
                 page.get_by_role("button", name="Apply", exact=True).click()
-                page.get_by_role("button", name="Focus range", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
                 wait()
                 box = editor.bounding_box()
                 for count, (x, y) in enumerate([(0.22, 0.68), (0.77, 0.18)], 1):
@@ -499,7 +498,7 @@ def main():
                 record("histogram-points-and-slider-projections-edit-the-rendered-curve")
                 page.get_by_label("Upper signal threshold", exact=True).fill("5")
                 page.get_by_role("button", name="Apply", exact=True).click()
-                page.get_by_role("button", name="Focus range", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
                 wait()
                 lower_end = page.get_by_role("slider", name="At and below Lower")
                 upper_end = page.get_by_role("slider", name="At and above Upper")

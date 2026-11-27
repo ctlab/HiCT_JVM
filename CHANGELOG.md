@@ -1,6 +1,7 @@
 # HiCT Changelog
 
 ## Unreleased
+- Zoom, pan or type a histogram view range independently of the map colours.
 - Draw and render smooth colour curves in the scale used to create them. Existing curves retain their colours.
 - List dotplot result sets, jump to their regions, and save or reopen complete result files. Region outlines follow assembly edits.
 - Add Dotplot and ModDotPlot regions to compatible results across different levels of detail. Missing regions remain transparent and computed regions follow assembly edits.

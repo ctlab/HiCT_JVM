@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from browser_review_helpers import expand_slider_limits, select_visualization_source
+from browser_review_helpers import expand_signal_advanced, select_visualization_source
 
 
 def main():
@@ -44,7 +44,7 @@ def main():
                 upperExpression:color('PRIMARY'),lowerExpression:color('SECONDARY')});
             await m.reloadTilesFromBackend();m.viewAndLayersManager.fitViewToActiveExtent();
         }""")
-        expand_slider_limits(page)
+        expand_signal_advanced(page)
         page.get_by_role("button", name="Scan whole map", exact=True).click()
         page.wait_for_function("""() => {
             const t=document.querySelector('[data-testid="exact-range-status"]')?.textContent ?? '';
