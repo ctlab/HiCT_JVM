@@ -2107,7 +2107,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/GenericMap' }
+                items: { $ref: '#/components/schemas/ConversionJob' }
   /convert/jobs/list:
     post:
       tags: [Conversion]
@@ -2121,7 +2121,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/GenericMap' }
+                items: { $ref: '#/components/schemas/ConversionJob' }
   /convert/jobs/batch:
     post:
       tags: [Conversion]
@@ -2150,7 +2150,7 @@ paths:
           description: Job status
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/GenericMap' }
+              schema: { $ref: '#/components/schemas/ConversionJob' }
     post:
       tags: [Conversion]
       summary: Get conversion job details (POST variant)
@@ -2163,7 +2163,7 @@ paths:
           description: Job status
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/GenericMap' }
+              schema: { $ref: '#/components/schemas/ConversionJob' }
   /convert/jobs/{jobId}/stop:
     post:
       tags: [Conversion]
@@ -2590,7 +2590,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/GenericMap' }
+                items: { $ref: '#/components/schemas/ConversionJob' }
   /sequence/jobs/{jobId}/stop:
     post:
       tags: [Conversion]
@@ -2650,7 +2650,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/GenericMap' }
+                items: { $ref: '#/components/schemas/ConversionJob' }
   /dotplot/jobs/{jobId}/stop:
     post:
       tags: [Conversion]
@@ -3585,6 +3585,36 @@ components:
         endBP: { type: integer, format: int64 }
       required: [bpResolution, widthPx]
 
+    ConversionJob:
+      type: object
+      properties:
+        jobId: { type: string }
+        status: { type: string }
+        sourceFilename: { type: string }
+        outputFilename: { type: string }
+        direction: { type: string }
+        overallProgress: { type: number }
+        stageProgress: { type: number }
+        currentStage: { type: string }
+        currentStageLabel: { type: string }
+        stageDetail: { type: string }
+        currentResolution: { type: integer, format: int64 }
+        resolutionProgress: { type: number }
+        stageIndex: { type: integer, minimum: 1, description: Current step when the converter knows the step list. }
+        stageCount: { type: integer, minimum: 1, description: Number of planned steps when known. }
+        elapsedMillis: { type: integer, format: int64, minimum: 0, description: Server-clock elapsed time. }
+        etaMillis: { type: integer, format: int64, minimum: -1, description: Estimated milliseconds remaining or -1 if unknown. }
+        resolutionElapsedMillis: { type: integer, format: int64, minimum: 0, description: Elapsed time in the current stage. }
+        resolutionEtaMillis: { type: integer, format: int64, minimum: -1, description: Stage time remaining or -1 if unknown. }
+        inputSizeBytes: { type: integer, format: int64 }
+        outputSizeBytes: { type: integer, format: int64 }
+        toolchainSource: { type: string }
+        toolchainSummary: { type: string }
+        toolchainNotices: { type: array, items: { type: string } }
+        toolchainCitations: { type: array, items: { type: string } }
+        logs: { type: array, items: { type: string }, description: Recent conversion log lines with server timestamps. }
+        error: { type: string }
+      required: [jobId, status, sourceFilename, outputFilename, elapsedMillis, etaMillis, resolutionElapsedMillis, resolutionEtaMillis]
     StartConversionJobRequest:
       type: object
       properties:

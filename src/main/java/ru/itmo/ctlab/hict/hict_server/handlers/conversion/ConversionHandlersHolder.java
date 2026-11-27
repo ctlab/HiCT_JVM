@@ -12,7 +12,6 @@ import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyLayoutConverter;
@@ -30,7 +29,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
+import java.time.Clock;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -47,7 +47,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@RequiredArgsConstructor
 @Slf4j
 public class ConversionHandlersHolder extends HandlersHolder implements AutoCloseable {
 
@@ -60,12 +59,24 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
     }
 
     private final Vertx vertx;
+    private final Clock clock;
+
+    public ConversionHandlersHolder(Vertx vertx) {
+        this(vertx, Clock.systemDefaultZone());
+    }
+
+    ConversionHandlersHolder(Vertx vertx, Clock clock) {
+        this.vertx = vertx;
+        this.clock = clock;
+    }
+
     public static final String UPLOAD_DIRECTORY_NAME = ".hict-uploads";
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
     private static final long JOB_TTL_MS = 60 * 60 * 1000;
     private static final int MAX_CONVERSION_LOG_LINES = 1_000;
+    private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final Pattern STAGE_PROGRESS_PATTERN = Pattern.compile(
-      "HICT_STAGE stage=(\\S+) progress=([0-9.]+) overall=([0-9.]+) detail=(.*)"
+      "HICT_STAGE stage=(\\S+) progress=([0-9.]+) overall=([0-9.]+)(?: step=(\\d+)/(\\d+))? detail=(.*)"
     );
     private static final Pattern TOOLCHAIN_PATTERN = Pattern.compile(
       "HICT_TOOLCHAIN source=(\\S+) platform=(\\S+)"
@@ -77,6 +88,8 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
     private static final Pattern RESOLUTION_PROGRESS_PATTERN = Pattern.compile(
       "Resolution (\\d+) (?:write|[^:]+): (\\d+)% \\((\\d+)/(\\d+)(?: stripes)?\\), elapsed=([0-9:]+), eta=([0-9:]+)"
     );
+    private static final Pattern STAGE_RESOLUTION = Pattern.compile("(?i)\\bresolution (\\d+)\\b");
+    private static final Pattern HICTK_VERSION = Pattern.compile("\\bv?(\\d+\\.\\d+\\.\\d+(?:[-+][a-zA-Z0-9.-]+)?)\\b");
 
     private final ConcurrentHashMap<String, ConversionJob> jobs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConversionJobGroup> groups = new ConcurrentHashMap<>();
@@ -801,7 +814,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                                     final boolean deleteOutputOnCleanup,
                                     final @NotNull HictkLoadOptions loadOptions) throws IOException {
         final var jobId = UUID.randomUUID().toString();
-        final var job = new ConversionJob(jobId, sourcePath, outputPath, dataDirectory, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup, loadOptions);
+        final var job = new ConversionJob(clock, jobId, sourcePath, outputPath, dataDirectory, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup, loadOptions);
         job.inputSizeBytes = Files.exists(sourcePath) ? Files.size(sourcePath) : 0L;
         jobs.put(jobId, job);
         return job;
@@ -822,8 +835,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             group.onJobFinished();
             return;
         }
-        job.status = "running";
-        job.startedAtMs = Instant.now().toEpochMilli();
+        job.start();
         final java.util.function.Consumer<String> conversionLogger = message -> {
             synchronized (System.out) {
                 System.out.println(message);
@@ -834,6 +846,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         };
 
         Path staging = null;
+        String finalStatus = "failed";
         try {
             job.workerThread = Thread.currentThread();
             staging = JobArtifacts.stage(job.outputPath.getParent(), job.jobId);
@@ -867,7 +880,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     }
                     if (toolchain != null) {
                         job.toolchainSource = toolchain.source();
-                        job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand() + " to prepare Cooler import";
+                        setHictkSummary(job, toolchain, conversionLogger);
                         job.toolchainNotices.clear();
                         job.toolchainNotices.addAll(toolchain.notices());
                         job.toolchainCitations.clear();
@@ -889,7 +902,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             } else if (job.direction.requiresExternalHicToolchain()) {
                 final var toolchain = this.hictkConversionPipeline.requireToolchain();
                 job.toolchainSource = toolchain.source();
-                job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand();
+                setHictkSummary(job, toolchain, conversionLogger);
                 job.toolchainNotices.clear();
                 job.toolchainNotices.addAll(toolchain.notices());
                 job.toolchainCitations.clear();
@@ -914,13 +927,12 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             recordSuccessfulConversionIfPossible(job, requestedOptions);
             job.overallProgress = 1.0d;
             job.stageProgress = 1.0d;
-            job.status = job.cancelRequested.get() ? "cancelled" : "finished";
+            finalStatus = job.cancelRequested.get() ? "cancelled" : "finished";
         } catch (Exception e) {
             if (job.cancelRequested.get()) {
-                job.status = "cancelled";
+                finalStatus = "cancelled";
                 job.error = "Cancelled";
             } else {
-                job.status = "failed";
                 job.error = e.getMessage() == null ? e.toString() : e.getMessage();
                 job.appendLog("ERROR: " + job.error);
             }
@@ -931,7 +943,8 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             try { JobArtifacts.remove(staging); }
             catch (IOException cleanup) { log.warn("Could not remove incomplete conversion outputs", cleanup); }
             if (job.deleteSourceOnCleanup) deleteTemporaryFile(job.sourcePath);
-            job.finishedAtMs = Instant.now().toEpochMilli();
+            job.updateOutputSize();
+            job.finish(finalStatus);
             group.onJobFinished();
         }
     }
@@ -961,41 +974,79 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         );
     }
 
-    private void parseProgress(final @NotNull ConversionJob job, final @NotNull String message) {
+    private static void setHictkSummary(ConversionJob job, ExternalToolchainManager.ResolvedToolchain toolchain,
+                                       java.util.function.Consumer<String> conversionLogger) {
+        final var summary = "Using " + (toolchain.source().equals("bundled") ? "bundled " : "") + "hictk";
+        job.toolchainSummary = summary;
+        Process process = null;
+        try {
+            process = new ProcessBuilder(toolchain.hictkCommand().toString(), "--version")
+              .redirectErrorStream(true).start();
+            if (process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0) {
+                try (var stream = process.getInputStream()) {
+                    final var version = HICTK_VERSION.matcher(new String(stream.readNBytes(256), StandardCharsets.UTF_8));
+                    if (version.find()) job.toolchainSummary = summary + " " + version.group(1);
+                }
+            }
+        } catch (IOException ignored) {
+            // A missing version string does not prevent the conversion.
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } finally {
+            if (process != null && process.isAlive()) ProcessTree.stop(process);
+        }
+        conversionLogger.accept(job.toolchainSummary + " (" + toolchain.hictkCommand() + ")");
+    }
+
+    static void parseProgress(final @NotNull ConversionJob job, final @NotNull String message) {
+        synchronized (job) {
+            updateProgress(job, message);
+        }
+    }
+
+    private static void updateProgress(final @NotNull ConversionJob job, final @NotNull String message) {
         Matcher stageMatcher = STAGE_PROGRESS_PATTERN.matcher(message);
         if (stageMatcher.find()) {
-            job.currentStage = stageMatcher.group(1);
-            job.currentStageLabel = humanizeStageName(job.currentStage);
+            job.enterStage(stageMatcher.group(1));
+            job.stageIndex = stageMatcher.group(4) == null ? null : Integer.valueOf(stageMatcher.group(4));
+            job.stageCount = stageMatcher.group(5) == null ? null : Integer.valueOf(stageMatcher.group(5));
             job.stageProgress = clampUnit(stageMatcher.group(2));
             job.overallProgress = clampUnit(stageMatcher.group(3));
-            job.stageDetail = stageMatcher.group(4) == null ? "" : stageMatcher.group(4).trim();
+            job.stageDetail = stageMatcher.group(6).trim();
+            var resolution = STAGE_RESOLUTION.matcher(job.stageDetail);
+            if (resolution.find()) job.currentResolution = Long.parseLong(resolution.group(1));
             return;
         }
         Matcher toolchainMatcher = TOOLCHAIN_PATTERN.matcher(message);
         if (toolchainMatcher.find()) {
             job.toolchainSource = toolchainMatcher.group(1);
             if (job.toolchainSummary == null || job.toolchainSummary.isBlank()) {
-                job.toolchainSummary = "Resolved external toolchain for platform " + toolchainMatcher.group(2);
+                job.toolchainSummary = "Using " + (job.toolchainSource.equals("bundled") ? "bundled " : "") + "hictk";
             }
             return;
         }
         Matcher overall = OVERALL_PROGRESS_PATTERN.matcher(message);
         if (overall.find()) {
-            job.overallProgress = clampPercent(overall.group(1));
-            job.elapsedMillis = parseDurationMillis(overall.group(4));
-            job.etaMillis = parseDurationMillis(overall.group(5));
+            if (job.stageCount == null) {
+                job.overallProgress = clampPercent(overall.group(1));
+                job.reportedEtaMillis = parseDurationMillis(overall.group(5));
+            } else {
+                // Lines from the tool describe only the current stage of an enclosing pipeline.
+                job.reportedStageEtaMillis = parseDurationMillis(overall.group(5));
+            }
             return;
         }
         Matcher res = RESOLUTION_PROGRESS_PATTERN.matcher(message);
         if (res.find()) {
             if (job.currentStage == null || job.currentStage.isBlank()) {
-                job.currentStage = "export_mcool";
-                job.currentStageLabel = "Export .mcool";
+                job.enterStage(job.direction == ConversionDirection.HICT_TO_MCOOL ? "export_mcool" : "import_hict");
             }
             job.currentResolution = Long.parseLong(res.group(1));
             job.resolutionProgress = clampPercent(res.group(2));
-            job.resolutionElapsedMillis = parseDurationMillis(res.group(5));
-            job.resolutionEtaMillis = parseDurationMillis(res.group(6));
+            if (job.stageCount == null) {
+                job.stageProgress = job.resolutionProgress;
+                job.reportedStageEtaMillis = parseDurationMillis(res.group(6));
+            }
         }
     }
 
@@ -1015,11 +1066,15 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
 
     private static @NotNull String humanizeStageName(final @NotNull String stageName) {
         return switch (stageName) {
-            case "metadata" -> "Metadata";
+            case "metadata" -> "Reading metadata";
             case "convert_base" -> "Base .cool conversion";
             case "zoomify" -> "Zoomify";
             case "balance" -> "Balancing";
             case "import_hict" -> "HiCT import";
+            case "export_mcool" -> "Export .mcool";
+            case "extract_base" -> "Preparing base .cool";
+            case "prepare_load" -> "Preparing inputs";
+            case "load_base" -> "Loading interactions";
             case "approximate_grid" -> "Preparing export grid";
             case "approximate_scan" -> "Estimating contacts";
             case "approximate_merge" -> "Writing approximate Cooler";
@@ -1049,7 +1104,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
 
     private static long parseDurationMillis(final String value) {
         if (value == null || value.isBlank()) {
-            return 0L;
+            return -1L;
         }
         final var parts = value.split(":");
         if (parts.length == 2) {
@@ -1063,7 +1118,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             final long seconds = Long.parseLong(parts[2]);
             return (hours * 3600 + minutes * 60 + seconds) * 1000L;
         }
-        return 0L;
+        return -1L;
     }
 
     private static void deleteTemporaryFile(Path path) {
@@ -1076,7 +1131,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
     }
 
     private void cleanupOldJobs() {
-        final var now = Instant.now().toEpochMilli();
+        final var now = clock.millis();
         jobs.values().removeIf(job -> {
             final boolean expired = isExpired(job.finishedAtMs, now);
             if (expired) {
@@ -1127,9 +1182,10 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         }
     }
 
-    private static class ConversionJob {
+    static class ConversionJob {
+        private final Clock clock;
         private final String jobId;
-        private final long createdAtMs = System.currentTimeMillis();
+        private final long createdAtMs;
         private final Path sourcePath;
         private final Path outputPath;
         private final Path dataDirectory;
@@ -1150,10 +1206,11 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         private volatile double overallProgress = 0.0d;
         private volatile double resolutionProgress = 0.0d;
         private volatile long currentResolution = 0L;
-        private volatile long elapsedMillis = 0L;
-        private volatile long etaMillis = 0L;
-        private volatile long resolutionElapsedMillis = 0L;
-        private volatile long resolutionEtaMillis = 0L;
+        private volatile Integer stageIndex;
+        private volatile Integer stageCount;
+        private volatile long reportedEtaMillis = -1L;
+        private volatile long reportedStageEtaMillis = -1L;
+        private volatile long stageStartedAtMs;
         private volatile long inputSizeBytes = 0L;
         private volatile long outputSizeBytes = 0L;
         private volatile long startedAtMs = 0L;
@@ -1168,7 +1225,9 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         private final CopyOnWriteArrayList<String> toolchainCitations = new CopyOnWriteArrayList<>();
         private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
-        private ConversionJob(String jobId, Path sourcePath, Path outputPath, Path dataDirectory, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup, HictkLoadOptions loadOptions) {
+        ConversionJob(Clock clock, String jobId, Path sourcePath, Path outputPath, Path dataDirectory, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup, HictkLoadOptions loadOptions) {
+            this.clock = clock;
+            this.createdAtMs = clock.millis();
             this.jobId = jobId;
             this.sourcePath = sourcePath;
             this.outputPath = outputPath;
@@ -1178,6 +1237,33 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             this.deleteSourceOnCleanup = deleteSourceOnCleanup;
             this.deleteOutputOnCleanup = deleteOutputOnCleanup;
             this.loadOptions = loadOptions == null ? HictkLoadOptions.EMPTY : loadOptions;
+        }
+
+        synchronized void start() {
+            startedAtMs = clock.millis();
+            status = "running";
+        }
+
+        synchronized void finish(String finalStatus) {
+            finishedAtMs = clock.millis();
+            status = finalStatus;
+        }
+
+        private void enterStage(String stage) {
+            if (stage.equals(currentStage)) return;
+            currentStage = stage;
+            currentStageLabel = humanizeStageName(stage);
+            stageStartedAtMs = clock.millis();
+            reportedStageEtaMillis = -1L;
+            currentResolution = 0L;
+            resolutionProgress = 0.0;
+        }
+
+        private static long timeLeft(boolean running, long reported, long elapsed, double progress) {
+            if (!running) return -1L;
+            if (reported >= 0) return reported;
+            if (elapsed < 5_000 || progress < 0.02 || progress >= 1.0) return -1L;
+            return Math.round(elapsed * (1.0 - progress) / progress);
         }
 
         private void updateOutputSize() {
@@ -1190,11 +1276,14 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         }
 
         private synchronized void appendLog(final @NotNull String message) {
-            while (logs.size() >= MAX_CONVERSION_LOG_LINES) {
-                logs.removeFirst();
-                omittedLogLines++;
+            final var timestamp = LOG_TIME.withZone(clock.getZone()).format(clock.instant());
+            for (var line : message.lines().toList()) {
+                if (logs.size() >= MAX_CONVERSION_LOG_LINES) {
+                    logs.removeFirst();
+                    omittedLogLines++;
+                }
+                logs.addLast(timestamp + " " + line);
             }
-            logs.addLast(message);
         }
 
         private synchronized List<String> snapshotLogs() {
@@ -1216,8 +1305,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             if (finishedAtMs > 0) return;
             cancelRequested.set(true);
             if (workerThread == null) {
-                status = "cancelled";
-                finishedAtMs = System.currentTimeMillis();
+                finish("cancelled");
             }
             if (activeProcess != null) {
                 ProcessTree.stop(activeProcess);
@@ -1227,7 +1315,11 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             }
         }
 
-        private ConversionJobDTO toDto() {
+        synchronized ConversionJobDTO toDto() {
+            final boolean running = status.equals("running");
+            final long end = running ? clock.millis() : finishedAtMs;
+            final long elapsed = startedAtMs == 0L ? 0L : Math.max(0L, end - startedAtMs);
+            final long stageElapsed = stageStartedAtMs == 0L ? 0L : Math.max(0L, end - stageStartedAtMs);
             return new ConversionJobDTO(
                     jobId,
                     status,
@@ -1241,10 +1333,10 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     overallProgress,
                     resolutionProgress,
                     currentResolution,
-                    elapsedMillis,
-                    etaMillis,
-                    resolutionElapsedMillis,
-                    resolutionEtaMillis,
+                    elapsed,
+                    timeLeft(running, reportedEtaMillis, elapsed, overallProgress),
+                    stageElapsed,
+                    timeLeft(running, reportedStageEtaMillis, stageElapsed, stageProgress),
                     inputSizeBytes,
                     outputSizeBytes,
                     toolchainSource == null ? "" : toolchainSource,
@@ -1252,7 +1344,9 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     List.copyOf(toolchainNotices),
                     List.copyOf(toolchainCitations),
                     snapshotLogs(),
-                    error == null ? "" : error
+                    error == null ? "" : error,
+                    stageIndex,
+                    stageCount
             );
         }
     }

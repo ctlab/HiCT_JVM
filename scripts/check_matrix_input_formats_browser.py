@@ -78,6 +78,9 @@ def main():
                             "checkbox", name="Select " + filename, exact=True
                         )
                     ).to_be_checked()
+                    converter.get_by_role(
+                        "checkbox", name="Open the map when it is ready"
+                    ).uncheck()
                     threads = converter.locator(
                         'input[title="-1: automatic server CPU allocation"]'
                     )
@@ -105,8 +108,8 @@ def main():
                     converted = filename.removesuffix(".hic") + ".hict.hdf5"
                     assert (data / converted).is_file()
                     expect(
-                        converter.locator(".overall-status .status-pill")
-                    ).to_have_text("Finished")
+                        converter.locator(".conversion-job .status-pill")
+                    ).to_have_text("finished")
                     converter.get_by_role("button", name="Close", exact=True).last.click()
                     pick(converted)
                     page.wait_for_function(

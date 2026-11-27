@@ -585,7 +585,9 @@ public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseab
         List.copyOf(toolchainNotices),
         List.copyOf(toolchainCitations),
         List.copyOf(logs),
-        error
+        error,
+        null,
+        null
       );
     }
 

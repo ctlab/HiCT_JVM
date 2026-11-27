@@ -1224,18 +1224,22 @@ public final class HictkConversionPipeline {
     double completedWeight = 0.0d;
     final double totalWeight = stagePlan.stream().mapToDouble(StageDefinition::weight).sum();
     double currentWeight = 0.0d;
+    int stageIndex = 1;
     for (final var stage : stagePlan) {
       if (stage.id().equals(stageId)) {
         currentWeight = stage.weight();
         break;
       }
       completedWeight += stage.weight();
+      stageIndex++;
     }
     final var overall = totalWeight <= 0.0d ? boundedStageProgress : (completedWeight + currentWeight * boundedStageProgress) / totalWeight;
+    final var step = stageIndex <= stagePlan.size() ? " step=" + stageIndex + "/" + stagePlan.size() : "";
     logger.accept(
       "HICT_STAGE stage=" + stageId
         + " progress=" + String.format(Locale.ROOT, "%.4f", boundedStageProgress)
         + " overall=" + String.format(Locale.ROOT, "%.4f", overall)
+        + step
         + " detail=" + sanitizeDetail(detail)
     );
   }
