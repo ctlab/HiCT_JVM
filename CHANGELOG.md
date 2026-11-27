@@ -5,6 +5,7 @@
 ### Start HiCT and connect
 
 - Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session. Set distinct `VXPORT` and `WEBUI_PORT` values to keep the legacy two-port layout.
+- Show the single-port SSH forwarding example in the portable release notes.
 - Keep Launcher console logs available after a manual stop or startup failure.
 - Show the packaged version and WebUI revision in About.
 - Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.

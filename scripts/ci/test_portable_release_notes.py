@@ -35,6 +35,8 @@ class PortableReleaseNotesTest(unittest.TestCase):
         self.assertIn("from `123abcd" + "0" * 33 + "`", text)
         self.assertIn("**More info**, then **Run anyway**", text)
         self.assertIn("**Open Anyway**", text)
+        self.assertIn("`ssh -L 8765:127.0.0.1:8765 user@cluster.example.org`", text)
+        self.assertIn("`HICT_PORT=8765`", text)
 
     def test_optional_package_links_are_only_shown_for_available_files(self):
         text = self.render(["windows-x86_64-portable.zip", "linux-x86_64.run"])

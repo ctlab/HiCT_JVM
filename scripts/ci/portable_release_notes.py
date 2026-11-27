@@ -117,9 +117,10 @@ def notes(repo, tag, version, source, run_id, assets, changes):
             ]
         lines += [
             "- Add `start-server` after the package name to run without the desktop launcher.",
-            "- For an SSH cluster, forward the web and API ports with "
-            "`ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org`. "
-            "Run HiCT on the remote host and open `http://localhost:8080` locally.",
+            "- For an SSH cluster, forward one port with "
+            "`ssh -L 8765:127.0.0.1:8765 user@cluster.example.org`. "
+            "Start HiCT on the remote host with `HICT_PORT=8765` and open "
+            "`http://localhost:8765` locally.",
         ]
     lines += ["", "### Changelog", "", *(f"- {change}" for change in changes), ""]
     lines += [
