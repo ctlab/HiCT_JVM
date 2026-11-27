@@ -10,6 +10,7 @@
 - Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.
 - Add section links to the bundled user guide and keep notifications behind active dialogs.
 - Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
+- Verify late alignment responses, exact histogram scans and fine dotplot rendering against the packaged browser workspace.
 
 ### Select and edit assemblies
 

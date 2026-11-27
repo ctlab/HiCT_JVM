@@ -109,6 +109,7 @@ def configure_test_api(target, address):
     endpoint = json.dumps(address)
     target.add_init_script(f"""(() => {{
         if (window !== window.top || !/^https?:$/.test(location.protocol)) return;
+        if (location.origin === new URL({endpoint}).origin) return;
         const url = new URL(location.href);
         url.searchParams.set('api', {endpoint});
         history.replaceState(history.state, '', url);

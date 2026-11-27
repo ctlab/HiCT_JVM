@@ -247,54 +247,42 @@ with sync_playwright() as pw:
     )
     check_marker("after-undo-reverse", 1100, 100)
     print("Exact substitution follows Split, Reverse and Undo", flush=True)
-    held = {}
-
-    def hold_detail(route):
-        if "jobId" in route.request.post_data_json:
-            route.continue_()
-            return
-        response = route.fetch().json()
-        deadline = time.monotonic() + 20
-        while (
-            response["status"] in ("submitted", "running")
-            and time.monotonic() < deadline
-        ):
-            time.sleep(0.02)
-            response = page.request.post(
-                a.api + "/sequence/alignment_detail", data={"jobId": response["jobId"]}
-            ).json()
-        held["route"] = route
-        held["response"] = response
-
-    page.route("**/sequence/alignment_detail", hold_detail)
-    page.evaluate(
-        "window.__hictBenchmark.manager().networkManager.requestManager.bumpSequenceRevision()"
-    )
-    page.wait_for_timeout(300)
-    assert held, "No alignment request was intercepted"
+    page.evaluate("""()=>{
+      const api = window.__hictBenchmark.manager().networkManager.requestManager;
+      const query = api.queryAlignmentDetail.bind(api);
+      let captured = false;
+      api.queryAlignmentDetail = async (options, signal) => {
+        if (captured || "jobId" in options) return query(options, signal);
+        captured = true;
+        let response = await query(options, signal);
+        while (response.status === "submitted" || response.status === "running") {
+          await new Promise(resolve => setTimeout(resolve, 20));
+          response = await query({jobId: response.jobId});
+        }
+        return new Promise(resolve => {
+          window.releaseOldAlignment = () => {
+            api.queryAlignmentDetail = query;
+            resolve(response);
+          };
+          window.oldAlignmentResult = response.result ?? null;
+        });
+      };
+      api.bumpSequenceRevision();
+    }""")
+    page.wait_for_function("typeof window.releaseOldAlignment === 'function'")
+    assert page.evaluate("window.oldAlignmentResult?.segments.length > 0")
     page.evaluate("""()=>{
       const m=window.__hictBenchmark.manager(),d=m.viewAndLayersManager.getActiveVectorResolutionDescriptor();
       m.getView().setCenter([m.contigDimensionHolder.getFractionalPxOfBp(7050,d.bpResolution)*d.pixelResolution,
         -m.contigDimensionHolder.getFractionalPxOfBp(50,d.bpResolution)*d.pixelResolution]);
     }""")
-    page.unroute("**/sequence/alignment_detail", hold_detail)
-    try:
-        held["route"].fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps(held["response"]),
-        )
-    except Exception as failed_fulfil:
-        assert (
-            "Target" in str(failed_fulfil) or "abort" in str(failed_fulfil).lower()
-        ), failed_fulfil
-    page.wait_for_function(
-        """()=>{
+    no_alignment_in_view = """()=>{
       const l=window.__hictBenchmark.manager().alignmentDetail;
       return l.source.getFeatures().length===0 && l.state.message.value.startsWith('No alignment reported for these visible regions.');
-    }""",
-        timeout=30000,
-    )
+    }"""
+    page.wait_for_function(no_alignment_in_view, timeout=30000)
+    page.evaluate("async () => { window.releaseOldAlignment(); await Promise.resolve(); }")
+    assert page.evaluate(no_alignment_in_view), "Late alignment replaced the current view"
     print(
         "Stale alignment response discarded and no-alignment message shown", flush=True
     )

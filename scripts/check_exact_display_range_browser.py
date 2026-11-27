@@ -134,6 +134,20 @@ def main():
                     field.blur()
                 return values
 
+            def assert_auto_bounds(minimum, maximum):
+                thresholds = []
+                for side in ("Lower", "Upper"):
+                    field = page.get_by_label(f"{side} signal threshold", exact=True)
+                    field.focus()
+                    thresholds.append(float(field.input_value()))
+                    field.blur()
+                current = list(map(float, bounds()))
+                assert math.isclose(current[0], min(minimum, *thresholds), abs_tol=1e-10), current
+                assert math.isclose(current[1], max(maximum, *thresholds), rel_tol=1e-10), current
+                expect(page.get_by_test_id("exact-range-status")).to_contain_text(
+                    f"{minimum:.3g} – {maximum:.3g}"
+                )
+
             try:
                 page.goto(f"http://127.0.0.1:{web.server_port}/")
                 page.wait_for_function("window.__hictBenchmark")
@@ -162,7 +176,7 @@ def main():
                 expect(page.get_by_test_id("exact-range-status")).to_contain_text(
                     "263169 finite cells"
                 )
-                assert list(map(float, bounds())) == [0, 8], bounds()
+                assert_auto_bounds(0, 8)
                 assert all(
                     r.get("signalMode") == "PIPELINE_SIGNAL" for r in requests[start:]
                 )
@@ -192,7 +206,7 @@ def main():
                     status = page.get_by_test_id("exact-range-status")
                     expect(status).to_contain_text("whole-map")
                     expect(status).to_contain_text(str(count) + " finite cells")
-                    assert list(map(float, bounds())) == [0, maximum], bounds()
+                    assert_auto_bounds(0, maximum)
                     blocks = [r for r in requests[start:] if not r.get("metadataOnly")]
                     assert len(blocks) == 4 and all(
                         r.get("signalMode") == "TRADITIONAL_NORMALIZED"
@@ -289,7 +303,7 @@ def main():
                 page.locator("#signal-transform-log").click()
                 scan()
                 assert options()["postLogBase"] == 2
-                assert abs(float(bounds()[1]) - math.log2(9)) < 1e-10, bounds()
+                assert_auto_bounds(0, math.log2(9))
                 record("scan-waits-for-the-new-processing-draft-before-reading-limits")
                 page.set_viewport_size({"width": 640, "height": 800})
                 check.settle()

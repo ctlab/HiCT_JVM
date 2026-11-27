@@ -47,7 +47,9 @@ def main():
 
         def snapshot(name):
             settled()
-            raw = page.locator("#hic-contact-map").screenshot()
+            raw = page.locator("#hic-contact-map").screenshot(style="""
+                .dotplot-region-outlines, [data-sonner-toaster] { visibility: hidden !important; }
+            """)
             (output / f"{name}.png").write_bytes(raw)
             return np.array(Image.open(io.BytesIO(raw)).convert("RGB"))
 
@@ -115,6 +117,7 @@ def main():
                 start = time.monotonic()
                 dialog.get_by_role("button", name="Generate", exact=True).click()
                 dialog.get_by_role("button", name="Generate another region", exact=True).click(timeout=180000)
+                page.evaluate("window.__hictBenchmark.manager().eventManager.resetSelection()")
                 set_view(5000, 16)
                 current = snapshot(f"generated-{iteration + 1}")
                 assert graph()["upperExpression"] == original_primary

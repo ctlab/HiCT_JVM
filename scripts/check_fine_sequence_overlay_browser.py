@@ -267,7 +267,9 @@ def main():
             )
             generate = dialog.get_by_role("button", name="Generate", exact=True)
             expect(generate).to_be_disabled()
-            sizes.fill("37, 50")
+            # The full assembly at 37 bp hits the separate memory guard with
+            # the 2 GiB test JVM. Use 100 bp to exercise the soft disk warning.
+            sizes.fill("100")
             scope = dialog.get_by_label("Analysis scope", exact=True)
             scope.select_option("assembly")
             warning = dialog.get_by_role("checkbox", name="Generate anyway", exact=True)
@@ -281,6 +283,7 @@ def main():
             expect(warning).to_be_visible()
             expect(warning).not_to_be_checked()
             scope.select_option("selection")
+            sizes.fill("37, 50")
             assert sizes.input_value() == "37, 50"
             expect(generate).to_be_enabled()
             dialog.get_by_label("Show result as").select_option("below")
