@@ -420,7 +420,7 @@ paths:
                       properties:
                         id: { type: string, description: File selection ID valid for the listed file state }
                         path: { type: string }
-                        category: { type: string, enum: [cache, coverage, maps, scratch, sequence, metadata, other] }
+                        category: { type: string, enum: [cache, coverage, maps, dotplots, scratch, sequence, metadata, other] }
                         bytes: { type: integer, format: int64 }
                         modifiedAtMs: { type: integer, format: int64 }
                         action: { type: string, nullable: true, enum: [cache, old, maps, null] }
@@ -2578,6 +2578,100 @@ paths:
         '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
         '413': {description: Overlay estimate exceeds the memory or disk budget. Select a smaller region or fewer resolutions.}
         '429': {description: Analysis queue is full}
+  /sequence/overlays/list:
+    post:
+      tags: [Conversion]
+      summary: List dotplot result sets and their regions in the current assembly
+      operationId: listDotplotResults
+      responses:
+        '200':
+          description: Registered result sets for the open map
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/DotplotResult'}}
+        '409': {description: No open map}
+  /sequence/overlays/download:
+    get:
+      tags: [Conversion]
+      summary: Download a registered dotplot file
+      operationId: downloadDotplotResult
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The HDF5 file for this result set
+          headers:
+            Content-Disposition: {schema: {type: string}}
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {description: Unknown result set}
+  /sequence/overlays/open:
+    post:
+      tags: [Conversion]
+      summary: Register and show a complete HiCT dotplot file from the data folder
+      operationId: openDotplotResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename]
+              properties:
+                filename: {type: string}
+      responses:
+        '200':
+          description: Registered result and attached source
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DotplotResultMutation'}
+        '400': {description: Missing, incomplete or invalid dotplot file}
+        '409': {description: The file belongs to a different map, or a map is not open}
+  /sequence/overlays/show:
+    post:
+      tags: [Conversion]
+      summary: Show or hide a registered dotplot result set
+      operationId: showDotplotResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, shown]
+              properties:
+                id: {type: string}
+                shown: {type: boolean}
+      responses:
+        '200':
+          description: Result visibility and secondary source after the change
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DotplotResultMutation'}
+        '404': {description: Unknown result set}
+  /sequence/overlays/delete:
+    post:
+      tags: [Conversion]
+      summary: Detach and remove a managed dotplot result set
+      operationId: deleteDotplotResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+      responses:
+        '200':
+          description: Removed result and secondary source after the change
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DotplotResultMutation'}
+        '404': {description: Unknown result set}
+        '409': {description: A job is writing the result set}
   /sequence/jobs/list:
     post:
       tags: [Conversion]
@@ -3757,6 +3851,49 @@ components:
         warningLevel: {type: integer, format: int64, description: 'First resolution whose worst-case storage exceeds the free-space budget'}
         limitingLevel: {type: integer, format: int64, description: 'First resolution exceeding a hard limit'}
         hardLimitReason: {type: string}
+        hasResultsOfKind: {type: boolean}
+        hasCompatibleResults: {type: boolean}
+    DotplotResultMutation:
+      type: object
+      required: [id, kind, shown, displayMode]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [dotplot, moddotplot]}
+        shown: {type: boolean}
+        displayMode: {type: string, enum: [overlay, above, below]}
+        secondarySource: {type: object, nullable: true, additionalProperties: true}
+    DotplotResult:
+      type: object
+      required: [id, kind, name, settingsSummary, file, downloadFilename, sizeBytes, resolutions, shown, displayMode, regions]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [dotplot, moddotplot]}
+        name: {type: string}
+        settingsSummary: {type: string}
+        file: {type: string}
+        downloadFilename: {type: string}
+        sizeBytes: {type: integer, format: int64}
+        resolutions: {type: array, items: {type: integer, format: int64}}
+        shown: {type: boolean}
+        displayMode: {type: string, enum: [overlay, above, below]}
+        regions: {type: array, items: {$ref: '#/components/schemas/DotplotRegion'}}
+    DotplotRegion:
+      type: object
+      required: [index, rows, columns, levels, finest, addedAt, split]
+      properties:
+        index: {type: integer}
+        rows: {$ref: '#/components/schemas/DotplotBounds'}
+        columns: {$ref: '#/components/schemas/DotplotBounds'}
+        levels: {type: array, items: {type: integer, format: int64}}
+        finest: {type: integer, format: int64}
+        addedAt: {type: string, format: date-time}
+        split: {type: boolean}
+    DotplotBounds:
+      type: object
+      required: [start, end]
+      properties:
+        start: {type: integer, format: int64}
+        end: {type: integer, format: int64}
     StartDotplotJobsRequest:
       type: object
       properties:

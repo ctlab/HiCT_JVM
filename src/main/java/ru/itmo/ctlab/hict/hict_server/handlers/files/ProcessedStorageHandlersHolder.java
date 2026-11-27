@@ -267,7 +267,7 @@ public final class ProcessedStorageHandlersHolder extends HandlersHolder {
   private static Entry sequenceEntry(Entry entry, Map<Path, Boolean> historicalJobs, long cutoffMs) {
     final var name = entry.path.getFileName().toString();
     final var parent = entry.path.getParent();
-    if (SEQUENCE_MAPS.contains(name)) return new Entry(entry.path, entry.attributes, "maps", "maps", null);
+    if (SEQUENCE_MAPS.contains(name)) return new Entry(entry.path, entry.attributes, "dotplots", "maps", null);
     if (SEQUENCE_SCRATCH.contains(name)) {
       return scratch(entry, cutoffMs, historicalJobs.computeIfAbsent(parent, ProcessedStorageHandlersHolder::terminalJob));
     }

@@ -476,6 +476,7 @@ public class MainVerticle extends AbstractVerticle {
     this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange,
       this.normalization::cancelForSecondaryChange);
     handlersHolders.add(this.fileOperations);
+    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.conversion.DotplotResultsHandlers(vertx, this.fileOperations));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));

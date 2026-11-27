@@ -274,6 +274,97 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
   private record Owner(int first, int end, ContigDescriptor source, long ordinal, boolean reversed) {
     long ordinalOf(int bin) { return ordinal + (reversed ? end - 1 - bin : bin - first); }
   }
+
+  public record RegionBounds(long start, long end, boolean split) { }
+
+  /** Translate recorded physical bins into the current assembly, including split and reversed contigs. */
+  public static List<RegionBounds> currentBounds(ChunkedFile map, long resolution, List<long[]> sortedAxes) {
+    var order = map.getResolutionToIndex().get(resolution);
+    var originals = map.getOriginalDescriptors().values();
+    var nativeOwners = order == null ? null : owners(originals, order, resolution);
+    var syntheticOwners = order == null ? sequenceBins(originals, resolution) : null;
+    var bounds = sortedAxes.stream().map(axis -> new BoundsAccumulator()).toList();
+    long position = 0;
+    for (var tuple : map.getAssemblyInfo().contigs()) {
+      var active = tuple.descriptor();
+      long length = active.getLengthBp();
+      boolean reversed = tuple.direction() == ContigDirection.REVERSED;
+      if (order == null) {
+        var source = findSourceBins(syntheticOwners, active);
+        long offset = active.getOffsetInSourceFASTA() - source.contig().getOffsetInSourceFASTA();
+        long first = source.firstBin() + offset / resolution;
+        long last = source.firstBin() + (offset + length - 1) / resolution;
+        for (int axis = 0; axis < sortedAxes.size(); axis++) {
+          var keys = sortedAxes.get(axis);
+          for (int i = lowerBound(keys, sequenceBinKey(first)); i < keys.length && keys[i] <= sequenceBinKey(last); i++) {
+            long bin = (keys[i] >>> 32) * SEQUENCE_STRIPE_WIDTH + (int) keys[i];
+            long start = (bin - source.firstBin()) * resolution - offset;
+            bounds.get(axis).add(position, length, reversed, start, start + resolution);
+          }
+        }
+      } else {
+        for (var atu : active.getAtus().get(order)) {
+          int stripe = atu.getStripeDescriptor().stripeId();
+          long first = (long) stripe << 32 | atu.getStartIndexInStripeIncl();
+          long end = (long) stripe << 32 | atu.getEndIndexInStripeExcl();
+          for (int axis = 0; axis < sortedAxes.size(); axis++) {
+            var keys = sortedAxes.get(axis);
+            for (int i = lowerBound(keys, first); i < keys.length && keys[i] < end; i++) {
+              int bin = (int) keys[i];
+              var owner = ownerAt(nativeOwners.get(stripe), bin);
+              long start = owner.source().getOffsetInSourceFASTA() + owner.ordinalOf(bin) * resolution
+                - active.getOffsetInSourceFASTA();
+              bounds.get(axis).add(position, length, reversed, start, start + resolution);
+            }
+          }
+        }
+      }
+      position += length;
+    }
+    return bounds.stream().map(BoundsAccumulator::finish).toList();
+  }
+
+  private static long sequenceBinKey(long bin) {
+    return (bin / SEQUENCE_STRIPE_WIDTH) << 32 | bin % SEQUENCE_STRIPE_WIDTH;
+  }
+
+  private static int lowerBound(long[] keys, long value) {
+    int lo = 0, hi = keys.length;
+    while (lo < hi) {
+      int mid = (lo + hi) >>> 1;
+      if (keys[mid] < value) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  private static final class BoundsAccumulator {
+    private final java.util.TreeMap<Long, Long> intervals = new java.util.TreeMap<>();
+
+    void add(long position, long length, boolean reversed, long start, long end) {
+      start = Math.max(0, start);
+      end = Math.min(length, end);
+      if (end <= start) return;
+      long a = position + (reversed ? length - end : start);
+      long b = position + (reversed ? length - start : end);
+      var previous = intervals.floorEntry(a);
+      if (previous != null && previous.getValue() >= a) {
+        a = previous.getKey();
+        b = Math.max(b, previous.getValue());
+        intervals.remove(a);
+      }
+      for (var next = intervals.ceilingEntry(a); next != null && next.getKey() <= b; next = intervals.ceilingEntry(a)) {
+        b = Math.max(b, next.getValue());
+        intervals.remove(next.getKey());
+      }
+      intervals.put(a, b);
+    }
+
+    RegionBounds finish() {
+      return intervals.isEmpty() ? new RegionBounds(0, 0, true)
+        : new RegionBounds(intervals.firstKey(), intervals.lastEntry().getValue(), intervals.size() > 1);
+    }
+  }
   private static Map<Integer, List<Owner>> owners(Collection<ContigDescriptor> originals, int order, long resolution) {
     var result = new HashMap<Integer, List<Owner>>();
     for (var d : originals) {

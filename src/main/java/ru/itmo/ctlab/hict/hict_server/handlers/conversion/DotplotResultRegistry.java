@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeMap;
@@ -17,6 +19,9 @@ import java.util.UUID;
 
 /** Latest compatible result plus the manifest for each independently generated set. */
 final class DotplotResultRegistry {
+  // Claim the previous version before handing it to the adapter. A result cannot
+  // be deleted between that lookup and publication of the replacement.
+  static final HashSet<Path> WRITING = new HashSet<>();
   private DotplotResultRegistry() {}
 
   static String key(Path template, SequenceAnalysisHandlersHolder.Stamp templateStamp, String fastaIdentity,
@@ -32,12 +37,33 @@ final class DotplotResultRegistry {
 
   record Previous(Path file, String setId, int regionCount) {}
 
+  record Entry(Path manifest, Path file, JsonObject metadata) { }
+
+  static List<Entry> entries(Path data, Path root, String mapFilename) throws IOException {
+    if (!Files.isDirectory(root)) return List.of();
+    var entries = new ArrayList<Entry>();
+    try (var paths = Files.newDirectoryStream(root, "overlay-*.json")) {
+      for (var path : paths) {
+        if (!Files.isRegularFile(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
+        var metadata = new JsonObject(Files.readString(path, StandardCharsets.UTF_8));
+        if (metadata.getString("setId") == null || !mapFilename.equals(metadata.getString("mapFilename"))) continue;
+        var file = data.resolve(metadata.getString("outputFile")).normalize();
+        if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
+        entries.add(new Entry(path, SequenceOverlayCleanup.managed(data, root, metadata.getString("outputFile")), metadata));
+      }
+    }
+    entries.sort(java.util.Comparator.comparingLong((Entry entry) -> entry.metadata().getLong("updatedAtMs", 0L)).reversed());
+    return List.copyOf(entries);
+  }
+
   static Previous latest(Path data, Path root, String key) throws IOException {
     JsonObject index = null;
     try (var manifests = Files.newDirectoryStream(root, "overlay-" + key + "-*.json")) {
       for (var manifest : manifests) {
         if (!Files.isRegularFile(manifest, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
         var candidate = new JsonObject(Files.readString(manifest, StandardCharsets.UTF_8));
+        var output = data.resolve(candidate.getString("outputFile")).normalize();
+        if (output.startsWith(root) && Files.notExists(output, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue;
         if (index == null || candidate.getLong("updatedAtMs") > index.getLong("updatedAtMs")) index = candidate;
       }
     }

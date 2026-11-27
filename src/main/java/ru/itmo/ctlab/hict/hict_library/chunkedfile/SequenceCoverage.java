@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /** Computed sequence rectangles in original stripe/bin coordinates, including zero-valued scores. */
-final class SequenceCoverage {
+public final class SequenceCoverage {
   private static final String ROOT = "/sequence_analysis";
   private static final String UPDATES = ROOT + "/updates";
   private final Map<Long, List<Region>> levels;
@@ -41,7 +41,7 @@ final class SequenceCoverage {
     return new SequenceCoverage(levels);
   }
 
-  private static long[] readAxis(IHDF5Reader reader, String path) {
+  public static long[] readAxis(IHDF5Reader reader, String path) {
     long[] shape = reader.object().getDimensions(path);
     if (shape.length != 2 || shape[1] != 2) {
       throw new IllegalArgumentException("Invalid computed sequence coverage axis");

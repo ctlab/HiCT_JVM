@@ -833,7 +833,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       final long bytesPerWindow = 256L + (alignment ? 0L : Long.BYTES * settings.getInteger("sketch_size"));
       estimate = estimateOverlay(map, rows, columns, resolutions, overview, pyramid,
         Math.max(stamp.size(), layout.length()), alignment, bytesPerWindow, freeDiskSpace.usableBytes(root));
-      if (preview) return estimate.toJson();
+      if (preview) return estimateWithExistingSets(estimate, map, data, root, fasta, stamp,
+        alignment, settings, gapLength(request));
       requireOverlayBudget(estimate, budgetRequest.acceptLargeOutput());
       request.put("overviewLevels", new JsonArray(overview));
       analysis = AssemblyAnalysisPlan.capture(map, resolutions, rows, columns);
@@ -853,6 +854,22 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.expectedBytes())); }
     catch (RejectedExecutionException e) { jobs.remove(id); Files.delete(directory); throw new HttpException(429, "Sequence analysis queue is full"); }
     return job.statusJson();
+  }
+
+  private static JsonObject estimateWithExistingSets(SequenceAnalysisEstimateResponseDTO estimate,
+      ChunkedFile map, Path data, Path root, Path fasta, Stamp fastaStamp,
+      boolean alignment, JsonObject settings, long gapLength) throws Exception {
+    var response = estimate.toJson();
+    var template = map.getHdfFilePath().toRealPath();
+    var kind = alignment ? "dotplot" : "moddotplot";
+    boolean sameKind = DotplotResultRegistry.entries(data, root, data.relativize(template).toString().replace('\\', '/'))
+      .stream().anyMatch(entry -> kind.equals(entry.metadata().getString("kind")));
+    if (!sameKind) return response;
+    var tool = SequenceToolAvailability.require("hict-moddotplot");
+    var aligner = alignment ? SequenceToolAvailability.requireAligner() : null;
+    var key = DotplotResultRegistry.key(template, Stamp.read(template), fasta + "|" + fastaStamp, kind, settings,
+      "preserve-agp;separator=" + gapLength, sha256(tool), aligner == null ? "" : sha256(aligner));
+    return response.put("hasResultsOfKind", true).put("hasCompatibleResults", DotplotResultRegistry.latest(data, root, key) != null);
   }
 
   private static SequenceAnalysisEstimateResponseDTO estimateOverlay(
@@ -1041,6 +1058,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     job.thread = Thread.currentThread();
     var terminal = "finished";
     ScheduledFuture<?> monitoring = null;
+    Path writingSet = null;
     var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
     try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
       job.logWriter = log; job.checkCancelled(); stamp.check(fasta); templateStamp.check(template);
@@ -1093,8 +1111,15 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       final var standalone = job.request.containsKey("sourceFastaFilename");
       final var key = standalone ? null : DotplotResultRegistry.key(template, templateStamp, sourceIdentity,
         job.kind, settings, gapPolicy, job.toolSha256, aligner == null ? "" : sha256(aligner));
-      final var compatible = key != null && job.request.getBoolean("mergeCompatible")
-        ? DotplotResultRegistry.latest(job.data, root, key) : null;
+      final DotplotResultRegistry.Previous compatible;
+      synchronized (DotplotResultRegistry.WRITING) {
+        compatible = key != null && job.request.getBoolean("mergeCompatible")
+          ? DotplotResultRegistry.latest(job.data, root, key) : null;
+        if (!standalone) {
+          writingSet = root.resolve(compatible == null ? job.id : compatible.setId());
+          DotplotResultRegistry.WRITING.add(writingSet);
+        }
+      }
       final var previous = compatible == null ? null : compatible.file();
       final var setId = compatible == null ? job.id : compatible.setId();
       final int regionCount = compatible == null ? 1 : Math.addExact(compatible.regionCount(), 1);
@@ -1139,7 +1164,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
           .put("regionCount", regionCount).put("bytes", Files.size(published));
         var manifest = result.copy().put("setId", setId).put("outputFile", managedOutput)
           .put("mapFilename", job.mapFilename).put("kind", job.kind).put("jobId", job.id)
-          .put("updatedAtMs", System.currentTimeMillis()).put("settings", settings);
+          .put("updatedAtMs", System.currentTimeMillis()).put("settings", settings)
+          .put("displayMode", job.request.getString("displayMode", "below")).put("displayFile", job.output);
         atomicJson(DotplotResultRegistry.manifest(root, key, setId), manifest);
         job.resultSet = result;
       }
@@ -1173,6 +1199,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         }
       }
       job.snapshot = null; // Source path is now on disk; do not retain a genome per completed job.
+      synchronized (DotplotResultRegistry.WRITING) {
+        if (writingSet != null) DotplotResultRegistry.WRITING.remove(writingSet);
+      }
       trimCompletedJobs();
       Thread.interrupted();
     }
@@ -1318,7 +1347,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     return new JsonArray(snapshot.fragments().stream().map(f -> new JsonObject().put("source", f.source())
       .put("start", f.start()).put("end", f.end()).put("reversed", f.reversed())).toList());
   }
-  private static void atomicJson(Path path, JsonObject value) throws IOException {
+  static void atomicJson(Path path, JsonObject value) throws IOException {
     var temp = path.resolveSibling(path.getFileName() + ".pending"); Files.writeString(temp, value.encodePrettily());
     try { Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
     catch (AtomicMoveNotSupportedException e) { Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING); }

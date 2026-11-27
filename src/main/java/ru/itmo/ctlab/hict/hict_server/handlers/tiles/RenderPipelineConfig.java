@@ -205,6 +205,16 @@ public final class RenderPipelineConfig {
     return enabled && (referencesSource(upperExpressionJson, "SECONDARY") || referencesSource(lowerExpressionJson, "SECONDARY"));
   }
 
+  public java.util.Optional<String> secondaryDisplayMode() {
+    if (!enabled) return java.util.Optional.empty();
+    var upper = referencesSource(swapUpperLower ? lowerExpressionJson : upperExpressionJson, "SECONDARY");
+    var lower = referencesSource(swapUpperLower ? upperExpressionJson : lowerExpressionJson, "SECONDARY");
+    if (upper && lower) return java.util.Optional.of("overlay");
+    if (upper) return java.util.Optional.of("above");
+    if (lower) return java.util.Optional.of("below");
+    return java.util.Optional.empty();
+  }
+
   private static boolean referencesSource(final @NotNull JsonObject node,
                                           final @NotNull String sourceName) {
     final var nodeType = node.getString("type", "source").trim().toUpperCase(Locale.ROOT);

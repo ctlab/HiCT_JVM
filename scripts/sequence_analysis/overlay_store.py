@@ -8,6 +8,7 @@ coverage independently of nonzero values.
 from __future__ import annotations
 import hashlib
 import json
+import time
 import uuid
 from pathlib import Path
 import h5py
@@ -184,6 +185,7 @@ class OverlayWriter:
         updates = meta['updates']
         self.update = updates.create_group(str(uuid.uuid4()))
         self.update.attrs['ordinal'] = len(updates)
+        self.update.attrs['created_at_ms'] = time.time_ns() // 1_000_000
         self.update.attrs['analysis_levels'] = self.direct
         self.update.attrs['overview_levels'] = np.asarray(self.overviews, dtype=np.int64)
         if job_id:
