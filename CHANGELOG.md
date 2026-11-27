@@ -60,6 +60,7 @@
 ### Accumulate, save and reopen dotplot results
 
 - Add Dotplot and ModDotPlot regions to compatible results across different levels of detail. Missing regions remain transparent and computed regions follow assembly edits.
+- Pass the chosen thread count to the Dotplot aligner while keeping compatible results together across execution settings.
 - List dotplot result sets, jump to their regions, and save or reopen complete result files. Region outlines follow assembly edits.
 
 ### Follow matrix conversions

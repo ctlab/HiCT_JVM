@@ -1129,7 +1129,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         throw new IOException("The overlay output exceeds available disk space. Select a smaller region or use another data directory.");
       }
       var published = job.directory.resolve(job.kind + ".hict.hdf5");
-      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings)
+      var adapterSettings = settings.copy();
+      if (aligner != null) adapterSettings.put("threads", execution.getInteger("threads"));
+      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", adapterSettings)
         .put("execution", execution).put("template", template.toString()).put("output", output.toString())
         .put("templateName", standalone ? fasta.getFileName().toString() : template.getFileName().toString())
         .put("jobId", job.id)
