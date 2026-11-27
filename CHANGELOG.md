@@ -28,6 +28,7 @@
 
 - Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.
 - Move contigs and scaffolds to either end of the assembly using the outer translocation triangles.
+- Verify that keyboard zoom works in both directions while map zoom controls are hidden.
 - Zoom the map from 1D tracks by default, or turn on track scrolling in View. Drag the dividers to resize tracks.
 - Keep BED feature labels beside their blocks when there is room.
 - Render BED coding blocks, UTRs and directional intron chevrons on both axes and in figures, with file colors taking precedence over strand colors.
