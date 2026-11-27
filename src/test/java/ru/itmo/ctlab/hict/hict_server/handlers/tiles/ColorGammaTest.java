@@ -1,5 +1,6 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
@@ -8,12 +9,52 @@ import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLin
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.SimpleLinearGradientDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.SessionVisualizationCodec;
 import java.awt.Color;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ColorGammaTest {
   private record TransferCase(double input, List<Double> curve, double weight) {}
+
+  @Test void bothSmoothModesMatchGoldenVectorsAndFindTheInflectionAtTheKnot() throws Exception {
+    try (var vectors = getClass().getResourceAsStream("/color-curve-vectors.json")) {
+      var cases = new JsonArray(new String(vectors.readAllBytes(), StandardCharsets.UTF_8));
+      for (int i = 0; i < cases.size(); i++) {
+        var item = cases.getJsonObject(i);
+        var curve = SimpleLinearGradientDTO.readCurve(new JsonObject().put("curve", item.getJsonArray("points")));
+        String mode = item.getString("mode");
+        double gamma = item.getDouble("gamma");
+        var transfer = SimpleLinearGradient.prepareTransfer(gamma, curve, mode);
+        for (int s = 0; s < item.getJsonArray("samples").size(); s++) {
+          var sample = item.getJsonArray("samples").getJsonArray(s);
+          double input = sample.getDouble(0);
+          double output = transfer.applyAsDouble(input);
+          assertEquals(sample.getDouble(1), output, 1e-9, mode + " " + item.getString("name") + " at " + input);
+          if (mode == null) assertEquals(SimpleLinearGradient.transfer(input, gamma, curve), output);
+        }
+      }
+    }
+    for (var mode : List.of("smooth-value", "smooth-log")) {
+      java.util.function.DoubleUnaryOperator coordinate = mode.equals("smooth-log")
+        ? x -> x <= 0 ? 0 : Math.pow(10, -10 + 10 * x) : x -> x;
+      var transfer = SimpleLinearGradient.prepareTransfer(1, List.of(0.66, 0.38), mode);
+      java.util.function.DoubleUnaryOperator f = x -> transfer.applyAsDouble(coordinate.applyAsDouble(x));
+      double h = 1e-7;
+      java.util.function.DoubleUnaryOperator secondDifference = x -> f.applyAsDouble(x + h) - 2 * f.applyAsDouble(x) + f.applyAsDouble(x - h);
+      assertTrue(secondDifference.applyAsDouble(0.66 - 1e-6) > 0, mode);
+      assertTrue(secondDifference.applyAsDouble(0.66 + 1e-6) < 0, mode);
+      var knots = List.of(0.0, 0.17, 0.15, 0.73, 0.53, 0.33, 0.8, 0.37, 1.0, 0.2);
+      var spline = SimpleLinearGradient.prepareTransfer(1, knots, mode);
+      for (int i = 2; i < knots.size(); i += 2) {
+        double start = knots.get(i - 2), end = knots.get(i), a = knots.get(i - 1), b = knots.get(i + 1);
+        for (int j = 0; j <= 100; j++) {
+          double y = spline.applyAsDouble(coordinate.applyAsDouble(start + (end - start) * j / 100));
+          assertTrue(y >= Math.min(a, b) - 1e-12 && y <= Math.max(a, b) + 1e-12, mode);
+        }
+      }
+    }
+  }
 
   @Test void explicitEndpointsSetColorWeightsAtAndBeyondTheBounds() {
     final var right = List.of(0.85, 1.0, 1.0, 0.0);
@@ -126,6 +167,28 @@ class ColorGammaTest {
     assertThrows(IllegalArgumentException.class,()->SimpleLinearGradient.validateCurve(java.util.List.of(0.7,1.0,0.5,0.1)));
   }
 
+  @Test void smoothModeRoundTripsAndColorsTheSameSignalThroughEveryRenderer() {
+    var palette = new JsonObject().put("startColorRGBAString", "rgba(255,255,255,1)")
+      .put("endColorRGBAString", "rgba(255,0,0,1)").put("minSignal", 0).put("maxSignal", 100)
+      .put("curve", new JsonArray(List.of(0.66, 0.38))).put("curveMode", "smooth-log");
+    var dto = SimpleLinearGradientDTO.fromJSONObject(palette);
+    var gradient = dto.toEntity();
+    assertEquals("smooth-log", JsonObject.mapFrom(dto).getString("curveMode"));
+    var options = new SimpleVisualizationOptions(-1,-1,false,false,false,gradient);
+    var restored = (SimpleLinearGradient) SessionVisualizationCodec.decode(SessionVisualizationCodec.encode(options)).getColormap();
+    assertEquals(gradient.getCurveMode(), restored.getCurveMode());
+    var expr = new JsonObject().put("type","colormap").put("mode","LINEAR")
+      .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#ffffffff").put("endColor", "#ff0000ff").put("minSignal", 0).put("maxSignal", 100)
+      .put("curveMode", "smooth-log").put("curve", palette.getJsonArray("curve"));
+    var graph = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+      .put("upperExpression", expr).put("lowerExpression", expr.copy()));
+    var context = new RenderPipelineConfig.MutablePixelContext();
+    context.primaryValue = 0.02;
+    assertEquals(restored.mapSignal(0.02).getGreen(), new Color(graph.evaluateArgb(true, context, options), true).getGreen());
+    assertThrows(IllegalArgumentException.class, () -> SimpleLinearGradientDTO.fromJSONObject(palette.copy().put("curveMode", "linear")));
+  }
+
   @Test void identityCurveChangesColorWhilePreservingThePercentageThreshold() {
     var expr = new JsonObject().put("type", "colormap").put("mode", "MODDOTPLOT_IDENTITY")
       .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
@@ -158,14 +221,16 @@ class ColorGammaTest {
           assertEquals(expected.getAlpha(), Byte.toUnsignedInt(rgba[index*4+3]),1);
         }
       }
-      final var endpoints = new SimpleLinearGradient(32, new Color(255,255,255,0), Color.BLACK,
-        10, 75, 1, List.of(0.0, 0.25, 0.85, 1.0, 1.0, 0.0));
-      final var mapped = service.tryMapLinearGradientRgba(values, endpoints);
-      assertNotNull(mapped);
-      for (int index = 0; index < values[0].length; index++) {
-        final var expected = endpoints.mapSignal(values[0][index]);
-        assertEquals(expected.getRed(), Byte.toUnsignedInt(mapped[index * 4]), 1);
-        assertEquals(expected.getAlpha(), Byte.toUnsignedInt(mapped[index * 4 + 3]), 1);
+      for (String mode : new String[]{null, "smooth-value", "smooth-log"}) {
+        final var endpoints = new SimpleLinearGradient(32, new Color(255,255,255,0), Color.BLACK,
+          10, 75, 1, List.of(0.0, 0.25, 0.85, 1.0, 1.0, 0.0), mode);
+        final var mapped = service.tryMapLinearGradientRgba(values, endpoints);
+        assertNotNull(mapped);
+        for (int index = 0; index < values[0].length; index++) {
+          final var expected = endpoints.mapSignal(values[0][index]);
+          assertEquals(expected.getRed(), Byte.toUnsignedInt(mapped[index * 4]), 1);
+          assertEquals(expected.getAlpha(), Byte.toUnsignedInt(mapped[index * 4 + 3]), 1);
+        }
       }
       assertArrayEquals(new double[]{0,1,25,50,75,100},values[0]);
     } finally { service.setRequestedEnabled(false); }

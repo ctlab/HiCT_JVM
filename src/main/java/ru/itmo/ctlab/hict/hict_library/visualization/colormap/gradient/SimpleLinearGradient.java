@@ -40,6 +40,9 @@ public class SimpleLinearGradient extends DoubleColormap {
   private final double maxSignal;
   private final double gamma;
   private final java.util.List<Double> curve;
+  private final String curveMode;
+  @Getter(AccessLevel.NONE)
+  private final java.util.function.DoubleUnaryOperator colorTransfer;
   private final double signalRange;
   private final double[] deltaComponents;
   private final int componentCount;
@@ -56,10 +59,17 @@ public class SimpleLinearGradient extends DoubleColormap {
 
   public SimpleLinearGradient(int bitDepth, Color startColor, Color endColor, double minSignal,
                               double maxSignal, double gamma, java.util.List<Double> curve) {
+    this(bitDepth, startColor, endColor, minSignal, maxSignal, gamma, curve, null);
+  }
+
+  public SimpleLinearGradient(int bitDepth, Color startColor, Color endColor, double minSignal,
+                              double maxSignal, double gamma, java.util.List<Double> curve, String curveMode) {
     super(bitDepth);
     validateGamma(gamma);
     this.gamma = gamma;
     this.curve = validateCurve(curve);
+    this.curveMode = validateCurveMode(curveMode);
+    this.colorTransfer = prepareTransfer(gamma, this.curve, this.curveMode);
     this.startColor = startColor;
     this.endColor = endColor;
     this.minSignal = minSignal;
@@ -111,6 +121,20 @@ public class SimpleLinearGradient extends DoubleColormap {
     return lower + (1-lower)*(x-left)/(1-left);
   }
 
+  public static String validateCurveMode(Object mode) {
+    if (mode == null) return null;
+    if ("smooth-value".equals(mode) || "smooth-log".equals(mode)) return (String) mode;
+    throw new IllegalArgumentException("Invalid color curve mode");
+  }
+
+  public static java.util.function.DoubleUnaryOperator prepareTransfer(double gamma, java.util.List<Double> points, String mode) {
+    return mode == null ? fraction -> transfer(fraction, gamma, points) : SmoothColorCurve.prepare(points, validateCurveMode(mode));
+  }
+
+  public double transferFraction(double fraction) {
+    return colorTransfer.applyAsDouble(fraction);
+  }
+
   public static void validateGamma(double gamma) {
     if (!Double.isFinite(gamma) || gamma < 0.05d || gamma > 100.0d)
       throw new IllegalArgumentException("Color gamma must be finite and between 0.05 and 100");
@@ -119,7 +143,7 @@ public class SimpleLinearGradient extends DoubleColormap {
   @Override
   public @NotNull Color mapSignal(final double value) {
     final var linear = Math.max(0.0d, Math.min((value - this.minSignal) / this.signalRange, 1.0d));
-    final var standardized = transfer(linear,gamma,curve);
+    final var standardized = transferFraction(linear);
     final var components = new float[componentCount];
     for (int i = 0; i < componentCount; i++) {
       components[i] = (float) (Double.max(0, ((double) startComponents[i] + this.deltaComponents[i] * standardized)));

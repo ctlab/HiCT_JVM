@@ -3194,10 +3194,17 @@ components:
         A curve is an array of up to 64 input/output pairs in [0,1], with strictly
         increasing inputs. Optional inputs 0 and 1 set the color weights at and
         beyond the limits. Omitted endpoints use weights 0 and 1. An explicit
-        curve replaces gamma. These settings only affect RGBA. O/E retains its
+        curve replaces gamma. An optional curveMode selects smooth interpolation
+        in the normalized value or log coordinate. Its absence keeps straight
+        segments in the value coordinate. These settings only affect RGBA. O/E retains its
         neutral-at-1 ratio palette. Legacy payloads keep their appearance.
       additionalProperties: true
       properties:
+        colormap:
+          type: object
+          additionalProperties: true
+          properties:
+            curveMode: { $ref: '#/components/schemas/ColorCurveMode' }
         diagonalMask:
           type: object
           description: Display-only mask and exclusion from viewport and exact signal statistics.
@@ -3213,6 +3220,10 @@ components:
           description: Publish this pipeline together with the visualization options.
           allOf:
             - $ref: '#/components/schemas/RenderPipelineConfig'
+    ColorCurveMode:
+      type: string
+      enum: [smooth-value, smooth-log]
+      description: Smooth interpolation between the color limits. Omit for legacy straight segments.
     ExpectedProfileViewportRequest:
       type: object
       required: [bpResolution, startRowPx, endRowPx, startColPx, endColPx]
@@ -3237,6 +3248,7 @@ components:
         applying the same color-only power curve as ordinary gradient options.
         LINEAR and MODDOTPLOT_IDENTITY accept up to 64 normalized curve pairs,
         with optional endpoint inputs 0 and 1 and strictly increasing inputs.
+        Each may specify curveMode smooth-value or smooth-log just like gradient options.
         Color curves change RGBA only, including the weight at and beyond the
         limits. Identity cells without an alignment remain transparent.
         The O/E palette keeps its neutral at 1.

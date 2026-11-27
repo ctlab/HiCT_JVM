@@ -22,6 +22,7 @@ public final class SessionVisualizationCodec {
       .put("startColor", color(gradient.getStartColor())).put("endColor", color(gradient.getEndColor()))
       .put("minSignal", gradient.getMinSignal()).put("maxSignal", gradient.getMaxSignal());
     if (gradient.getCurve() != null) palette.put("curve",new JsonArray(gradient.getCurve()));
+    if (gradient.getCurveMode() != null) palette.put("curveMode", gradient.getCurveMode());
     if (gradient.getGamma() != 1.0d) palette.put("gamma", gradient.getGamma());
     final var encoded = new JsonObject().put("preLogBase", options.getPreLogBase()).put("postLogBase", options.getPostLogBase())
       .put("applyCoolerWeights", options.isApplyCoolerWeights()).put("resolutionScaling", options.isResolutionScaling())
@@ -52,7 +53,8 @@ public final class SessionVisualizationCodec {
     return new SimpleVisualizationOptions(pre, post, bool(json, "applyCoolerWeights"), bool(json, "resolutionScaling"),
       bool(json, "resolutionLinearScaling"), bool(json, "autoThresholdEnabled"), quantile, mode, policy,
       new SimpleLinearGradient((int)bits, color(gradient, "startColor"), color(gradient, "endColor"), min, max,
-        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d, SimpleLinearGradientDTO.readCurve(gradient)),
+        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d, SimpleLinearGradientDTO.readCurve(gradient),
+        SimpleLinearGradient.validateCurveMode(gradient.getValue("curveMode"))),
       VisualizationOptionsDTO.readDiagonalMask(json));
   }
 
