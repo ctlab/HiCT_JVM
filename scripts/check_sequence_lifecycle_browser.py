@@ -4,7 +4,7 @@ import argparse, functools, http.server, json, os, random, shutil, sys, threadin
 from pathlib import Path
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, install_download_picker, configure_test_api
 
 
 def main():
@@ -55,8 +55,9 @@ class OverlayFixture { public static void main(String[] a) {
     with HictTestServer(args.jar, data, out / 'server.log') as app, sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, env={**os.environ, 'FONTCONFIG_FILE': str(font)})
         page = browser.new_page(viewport=dict(width=1440, height=1000)); page.set_default_timeout(60000)
+        install_download_picker(page)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(url=app.url + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, app.url)
         check = BrowserCheck(page, out); success = False
         def load_file(menu, action, name, endpoint):
             check.menu(menu, action); check.choose_file(name)
@@ -69,8 +70,8 @@ class OverlayFixture { public static void main(String[] a) {
             assert settings['mapOpen'] and not settings['fastaLinked'], settings
             assert all(settings['tools'][name]['available'] for name in ('seqkit','blastn','dotplot','moddotplot','hict-moddotplot')), settings
             for action, title, button in (
-                ('Generate ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
-                ('Generate dotplot from active assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
+                ('ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
+                ('Dotplot from current assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
                 ('Find sequences in linked FASTA…', 'Find sequences in the linked FASTA', 'Find sequences')):
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name=action, exact=True).click()
@@ -98,9 +99,9 @@ class OverlayFixture { public static void main(String[] a) {
             try:
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
-                dialog=page.get_by_role('dialog',name='Find sequences in the linked FASTA',exact=True)
+                dialog=page.get_by_role('dialog',name='Find sequences',exact=True)
                 dialog.get_by_text('This installation is missing seqkit.',exact=False).wait_for()
-                assert dialog.get_by_role('button',name='Find sequences',exact=True).is_disabled()
+                assert dialog.get_by_role('button',name='Search',exact=True).is_disabled()
                 assert dialog.locator('#search-mode option:disabled').count()==3
                 dialog.get_by_role('button',name='Close',exact=True).last.click()
             finally: page.unroute('**/sequence/settings', unavailable)
@@ -116,16 +117,16 @@ class OverlayFixture { public static void main(String[] a) {
             assert page.get_by_label('Reverse strand color').input_value() == '#2563eb'
             page.get_by_label('Forward strand color').fill('#12ab34')
             page.get_by_label('Reverse strand color').fill('#3456ef')
-            page.get_by_label('Save reusable BED under DATA_DIR').check()
+            page.get_by_label('Save a reusable BED file in the data folder').check()
             page.get_by_label('BED output path').fill('published/search-results.bed')
             page.get_by_label('Default gap length (Ns)', exact=True).fill('0')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
-                page.get_by_role('button', name='Find sequences', exact=True).click()
+                page.get_by_role('button', name='Search', exact=True).click()
             assert response.value.status == 202, response.value.text()
             request = response.value.request.post_data_json
             assert request['forwardColor'] == '#12ab34' and request['reverseColor'] == '#3456ef', request
             assert request['outputFilename'] == 'published/search-results.bed', request
-            page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='Find sequences', exact=True).wait_for(state='hidden')
             check.settle()
             jobs = json.loads(app.http('/sequence/jobs/list', {}))
             assert len(jobs) == 1 and jobs[0]['status'] == 'finished', jobs
@@ -145,8 +146,8 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_role('button', name=f'Hide {name} horizontally', exact=True).click()
             hidden = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
             assert not hidden
-            check.menu('View', 'Tracks and layers…')
-            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            check.menu('View', '1D tracks…')
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='1D tracks', exact=True))
             dialog.get_by_role('button', name=f'Show {name} horizontally', exact=True).click()
             restored = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
             assert restored
@@ -157,13 +158,16 @@ class OverlayFixture { public static void main(String[] a) {
             versions = []
             for iteration in range(2):
                 page.get_by_role('link', name='Tools', exact=True).click()
-                page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
-                dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
+                page.get_by_role('button', name='ModDotPlot…', exact=True).click()
+                dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 check.advanced()
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
-                [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-                assert dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).is_disabled()
-                dialog.locator('.resolution-options input[value="100"]').check()
+                detail = dialog.get_by_label("Finest detail", exact=True)
+                detail.select_option("custom")
+                sizes = dialog.locator("#sequence-overlay-resolutions")
+                sizes.fill("")
+                assert dialog.get_by_role("button", name="Generate", exact=True).is_disabled()
+                sizes.fill("100")
                 assert page.get_by_label('Worker threads').input_value() in ('-1', '2')
                 page.get_by_label('Worker threads').fill('2')
                 page.get_by_label('k-mer length', exact=True).fill('15')
@@ -172,15 +176,15 @@ class OverlayFixture { public static void main(String[] a) {
                 delta.fill('0.25')
                 assert delta.evaluate('element=>element.validity.stepMismatch')
                 before_invalid = json.loads(app.http('/sequence/jobs/list', {}))
-                dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                dialog.get_by_role('button', name='Generate', exact=True).click()
                 assert json.loads(app.http('/sequence/jobs/list', {})) == before_invalid
                 delta.fill('0.2')
                 assert delta.evaluate('element=>element.checkValidity()')
                 if iteration == 0:
-                    page.get_by_label('Save a reusable copy under DATA_DIR').check()
+                    page.get_by_label('Save a reusable copy in the data folder').check()
                     page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
-                page.get_by_label('Display completed result').select_option('overlay' if iteration else 'below')
-                assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
+                page.get_by_label('Show result as').select_option('overlay' if iteration else 'below')
+                assert page.get_by_label('Add to compatible results').is_checked()
                 if iteration == 0:
                     page.screenshot(path=str(out / 'moddotplot-dialog.png'))
                 def review_once(route):
@@ -191,12 +195,13 @@ class OverlayFixture { public static void main(String[] a) {
                 if iteration:
                     page.route('**/secondary/open', review_once)
                 with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
-                    dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                    dialog.get_by_role('button', name='Generate', exact=True).click()
                 assert response.value.status == 202, response.value.text()
                 if iteration:
                     dialog.get_by_text('Review overlay compatibility', exact=True).wait_for()
                     page.screenshot(path=str(out/'inline-overlay-confirmation.png'))
                     dialog.get_by_role('button', name='Attach despite differences', exact=True).click()
+                dialog.get_by_role('button', name='Generate another region', exact=True).click()
                 dialog.wait_for(state='hidden')
                 check.settle()
                 pipeline = json.loads(app.http('/render_pipeline/get', {}))
@@ -370,7 +375,7 @@ class OverlayFixture { public static void main(String[] a) {
             assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
             # Editing and reapplying the graph must not silently downgrade it to LINEAR.
             check.menu('View', 'Rendering pipeline…')
-            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering pipeline', exact=True))
             with page.expect_response(lambda r: '/render_pipeline/set' in r.url):
                 dialog.get_by_role('button', name='Apply', exact=True).click()
             dialog.get_by_role('button', name='Close', exact=True).click()
@@ -388,7 +393,7 @@ class OverlayFixture { public static void main(String[] a) {
             preset_results = []
             for preset in ('primary_only', 'dotplot_overlay', 'moddotplot_below', 'moddotplot_overlay'):
                 check.menu('View', 'Rendering pipeline…')
-                dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+                dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering pipeline', exact=True))
                 dialog.locator('.pipeline-preset-select').select_option(preset)
                 before_load = json.loads(app.http('/render_pipeline/get', {}))
                 dialog.get_by_role('button', name='Load preset', exact=True).click()
@@ -436,12 +441,13 @@ class OverlayFixture { public static void main(String[] a) {
                 page.mouse.click(**point, button='right')
                 context = page.get_by_role('menu', name='Assembly actions')
                 context.wait_for()
-                assert 'Selection: active rectangle' in context.inner_text()
+                assert 'Region' in context.inner_text()
                 return context
             for format in ('PNG', 'SVG', 'PDF'):
                 context = menu()
                 with page.expect_download(timeout=90000) as download:
-                    context.get_by_role('menuitem', name=f'Export selection as {format}', exact=True).click()
+                    context.get_by_role('menuitem', name='Export', exact=True).click()
+                    context.get_by_role('menuitem', name=f'Image as {format}…', exact=True).click()
                 path = out / ('selection.' + format.lower())
                 download.value.save_as(path)
                 assert path.stat().st_size > 200, str(path)
@@ -460,16 +466,19 @@ class OverlayFixture { public static void main(String[] a) {
                 assert comparison['mean_channel_error']<3 and comparison['pixels_over_10']<0.06,comparison
                 text=subprocess.check_output(['pdftotext',str(out/'selection.pdf'),'-'],text=True)
                 assert len(text.strip())>15, 'PDF labels must remain editable text'
-            menu().get_by_role('menuitem', name='Generate ModDotPlot for selection…', exact=True).click()
+            analysis_menu = menu()
+            analysis_menu.get_by_role('menuitem', name='Analyse', exact=True).click()
+            analysis_menu.get_by_role('menuitem', name='ModDotPlot of region…', exact=True).click()
             assert page.get_by_label('Analysis scope').input_value() == 'selection'
-            page.get_by_label('Display completed result').select_option('none')
+            page.get_by_label('Show result as').select_option('none')
             previous_pipeline = json.loads(app.http('/render_pipeline/get', {}))
             with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
-                page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                page.get_by_role('dialog', name='ModDotPlot', exact=True).get_by_role('button', name='Generate', exact=True).click()
             assert response.value.status == 202, response.value.text()
             request = response.value.request.post_data_json
             assert request['scope'] == 'selection' and request['region']['rowEnd'] < 4000, request
-            page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='ModDotPlot', exact=True).get_by_role(
+                'button', name='Generate another region', exact=True).click()
             check.settle()
             assert json.loads(app.http('/render_pipeline/get', {})) == previous_pipeline, 'Do not link now must retain the current display'
         def alignment_dotplot():
@@ -477,20 +486,26 @@ class OverlayFixture { public static void main(String[] a) {
             check.select_range()
             box=page.locator('#hic-contact-map').bounding_box()
             page.mouse.click(x=box['x']+min(box['width']*.17,150)+40,y=box['y']+min(box['height']*.17,150)+40,button='right')
-            page.get_by_role('menu',name='Assembly actions').get_by_role('menuitem',name='Generate dotplot for selection…',exact=True).click()
-            dialog=page.get_by_role('dialog',name='Generate dotplot from active assembly',exact=True)
+            analysis_menu = page.get_by_role('menu', name='Assembly actions')
+            analysis_menu.get_by_role('menuitem', name='Analyse', exact=True).click()
+            analysis_menu.get_by_role('menuitem', name='Dotplot of region…', exact=True).click()
+            dialog=page.get_by_role('dialog',name='Dotplot from current assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
-            [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
-            assert dialog.get_by_role('button', name='Generate dotplot from active assembly', exact=True).is_disabled()
-            dialog.locator('.resolution-options input[value="100"]').check()
+            detail = dialog.get_by_label("Finest detail", exact=True)
+            detail.select_option("custom")
+            sizes = dialog.locator("#sequence-overlay-resolutions")
+            sizes.fill("")
+            assert dialog.get_by_role("button", name="Generate", exact=True).is_disabled()
+            sizes.fill("100")
             check.advanced()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20'),('Sample every (bp)','50'),('Alignment threads','2')]:
                 page.get_by_label(name,exact=True).fill(value)
-            page.get_by_label('Save a reusable copy under DATA_DIR').check()
+            page.get_by_label('Save a reusable copy in the data folder').check()
             page.get_by_label('Output path').fill('published/selection-dotplot.hict.hdf5')
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
-                dialog.get_by_role('button',name='Generate dotplot from active assembly',exact=True).click()
+                dialog.get_by_role('button',name='Generate',exact=True).click()
             assert response.value.status==202,response.value.text()
+            dialog.get_by_role('button', name='Generate another region', exact=True).click()
             dialog.wait_for(state='hidden');check.settle()
             jobs=[j for j in json.loads(app.http('/sequence/jobs/list',{})) if j['kind']=='dotplot']
             assert len(jobs)==1 and jobs[0]['status']=='finished',jobs
@@ -557,9 +572,9 @@ class OverlayFixture { public static void main(String[] a) {
             check.advanced()
             page.get_by_label('Default gap length (Ns)', exact=True).fill('1000')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
-                page.get_by_role('button', name='Find sequences', exact=True).click()
+                page.get_by_role('button', name='Search', exact=True).click()
             assert response.value.status == 202, response.value.text()
-            page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True).wait_for(state='hidden')
+            page.get_by_role('dialog', name='Find sequences', exact=True).wait_for(state='hidden')
             check.settle()
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind'] == 'search'], key=lambda j:j['createdAtMs'])[-1:]
             assert len(jobs) == 1 and jobs[0]['status'] == 'finished' and jobs[0]['hits'] >= 1, jobs
@@ -638,7 +653,7 @@ class OverlayFixture { public static void main(String[] a) {
                             expected.add((start, start + len(query), strand))
                 check.menu("Tools", "Find sequences in linked FASTA…")
                 dialog = page.get_by_role(
-                    "dialog", name="Find sequences in the linked FASTA", exact=True
+                    "dialog", name="Find sequences", exact=True
                 )
                 page.wait_for_function(
                     "!document.querySelector('#search-mode option[value=exact]').disabled"
@@ -658,13 +673,13 @@ class OverlayFixture { public static void main(String[] a) {
                         str(mismatches)
                     )
                 check.advanced()
-                dialog.get_by_label("Save reusable BED under DATA_DIR").check()
+                dialog.get_by_label("Save a reusable BED file in the data folder").check()
                 filename = "published/control-" + label + ".bed"
                 dialog.get_by_label("BED output path").fill(filename)
                 with page.expect_response(
                     lambda response: response.url.endswith("/sequence/search/jobs")
                 ) as submitted:
-                    dialog.get_by_role("button", name="Find sequences", exact=True).click()
+                    dialog.get_by_role("button", name="Search", exact=True).click()
                 assert submitted.value.status == 202, submitted.value.text()
                 settings = submitted.value.request.post_data_json
                 assert (
@@ -720,7 +735,7 @@ class OverlayFixture { public static void main(String[] a) {
         def reattach_to_original_order():
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind']=='dotplot'], key=lambda j:j['createdAtMs'])
             filename=jobs[-1]['outputFile']
-            check.menu('File','Close')
+            check.menu('File','Close map')
             page.get_by_role('alertdialog', name='Unsaved assembly edits').get_by_role('button', name='Discard edits', exact=True).click()
             page.get_by_role('heading', name='No contact map open', exact=True).wait_for()
             load_file('File','Open…','known.hict.hdf5','/open')
@@ -752,7 +767,7 @@ class OverlayFixture { public static void main(String[] a) {
                     page.goto('about:blank')
                     app.http('/reverse_selection_range', {'startBP': 0, 'endBP': 3900})
                 page.goto(f'http://127.0.0.1:{static.server_port}/')
-                check.menu('File', 'Attach')
+                check.menu('File', 'Join running session')
                 check.settle()
                 result = page.evaluate("""() => {
                     const h=window.__hictBenchmark.manager().contigDimensionHolder;

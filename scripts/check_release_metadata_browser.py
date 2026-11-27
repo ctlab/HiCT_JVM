@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the built WebUI metadata, citation and guide entry in a fresh browser."""
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 from pathlib import Path
@@ -20,6 +21,7 @@ def main():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        context.grant_permissions(["clipboard-read", "clipboard-write"], origin=args.url.rstrip("/"))
         errors = []
         page = context.new_page()
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
@@ -30,12 +32,7 @@ def main():
                 errors.append(message.text) if message.type == "error" else None
             ),
         )
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         response = context.request.get(args.api.rstrip("/") + "/version")
         assert response.ok, response.status
         api_versions = response.json()
@@ -52,10 +49,14 @@ def main():
                 "async ()=>(await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
             )
         page.get_by_role("link", name="Help", exact=True).click()
-        guide = page.get_by_role("link", name="User guide and shortcuts", exact=True)
-        guide_href = guide.get_attribute("href")
-        assert guide_href.endswith("/docs/user-guide.md")
-        page.get_by_role("link", name="About", exact=True).click()
+        page.get_by_role("link", name="User guide and shortcuts…", exact=True).click()
+        guide = page.get_by_role("dialog", name="User guide and shortcuts")
+        guide.get_by_role("heading", name="Keyboard and pointer actions", exact=True).wait_for()
+        page.screenshot(path=str(output / "user-guide.png"))
+        guide.get_by_role("button", name="Close", exact=True).click()
+        guide_href = "./docs/user-guide.md"
+        page.get_by_role("link", name="Help", exact=True).click()
+        page.get_by_role("link", name="About HiCT…", exact=True).click()
         dialog = page.get_by_role("dialog", name="About HiCT")
         dialog.get_by_role("heading", name="How to cite", exact=True).wait_for()
         page.wait_for_function("""() => {
@@ -63,12 +64,18 @@ def main():
             return text.length > 0 && !text.includes('loading');
         }""")
         versions = dialog.locator(".about-versions").inner_text()
-        assert f"WebUI: {args.webui_version}" in versions, versions
-        assert f"Commit: {args.webui_commit}" in versions.splitlines(), versions
+        assert f"WebUI revision: {args.webui_commit}" in versions.splitlines(), versions
+        assert f"WebUI: {args.webui_version}" not in versions, versions
         assert "unknown" not in versions and "loading" not in versions, versions
         citation = dialog.locator(".how-to-cite").inner_text()
-        assert args.webui_version in citation and args.webui_commit in citation
+        assert api_versions["version"] in citation and api_versions["backendRevision"] in citation and args.webui_commit in citation
         assert "Serdiukov" in citation and "Zamyatin" in citation
+        dialog.get_by_role("button", name="Copy citation", exact=True).click()
+        copied = page.evaluate("() => navigator.clipboard.readText()")
+        for part in (api_versions["version"], api_versions["backendRevision"], args.webui_commit):
+            assert part in copied, copied
+        machine = context.request.get(args.url.rstrip("/") + "/docs/CITATION.cff")
+        assert machine.ok and f"version: '{api_versions['version']}'" in machine.text()
         assert (
             dialog.get_by_role("link", name="Machine-readable software citation")
             .get_attribute("href")
@@ -107,7 +114,7 @@ def main():
                 {
                     "versions": versions,
                     "apiVersions": api_versions,
-                    "citation": citation,
+                    "citation": copied,
                     "guide": guide_href,
                     "mailTargets": mail_targets,
                     "tabs": ["About", "Attribution", "Changelog"],

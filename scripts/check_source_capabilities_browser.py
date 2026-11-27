@@ -6,6 +6,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 from browser_review_helpers import select_visualization_source
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def main():
@@ -22,9 +23,9 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
         context.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        context.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(context, args.api)
         page = context.new_page()
+        install_download_picker(page)
         page.set_default_timeout(15000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("response", lambda response: failures.append({"url": response.url, "status": response.status})
@@ -33,7 +34,7 @@ def main():
         def open_file(filename):
             page.evaluate("args=>window.__hictBenchmark.open(args.filename,args.api)", {"filename": filename, "api": args.api})
             page.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.PRIMARY")
-            prompt = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            prompt = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if prompt.is_visible():
                 prompt.click()
             details = page.locator("#signal-advanced")
@@ -64,6 +65,29 @@ def main():
             if expected:
                 reason = page.locator("#imported-weights-unavailable, #contact-normalization-unavailable").first
                 assert reason.inner_text().strip(), "Unavailable weights need a readable reason"
+
+        def post(path, body):
+            response = page.request.post(args.api + path, data=body)
+            assert response.ok, response.text()
+            return response.json()
+
+        def coverage_status(source):
+            return post("/normalization/coverage/status", {"source": source})
+
+        def choose_normalization(source, option):
+            select_visualization_source(page, source)
+            select = page.get_by_label("Normalization", exact=True)
+            select.select_option(option)
+            page.wait_for_function("""([source, mode, option]) => {
+                const m = window.__hictBenchmark.manager();
+                return m.networkManager.requestManager.getNormalizationWeightsMode(source) === mode &&
+                    document.getElementById('normalization-mode')?.value === option &&
+                    !document.getElementById('normalization-progress');
+            }""", arg=[source, "SQRT_COVERAGE" if option == "sqrt" else "FILE", option])
+            page.evaluate("""async () => {
+                await window.__hictBenchmark.manager().visualizationManager.waitForPendingOptionRequests();
+            }""")
+            assert not page.locator("#normalization-error").is_visible()
 
         try:
             page.goto(args.url)
@@ -106,23 +130,70 @@ def main():
             assert_weights_disabled(False)
             results.append({"test": "identity capability follows selected source without affecting primary controls"})
 
+            overlay_pipeline = post("/render_pipeline/get", {})["lowerExpression"]
+            choose_normalization("PRIMARY", "sqrt")
+            primary_coverage = coverage_status("PRIMARY")
+            overlay_coverage = coverage_status("SECONDARY")
+            assert primary_coverage["prepared"] and primary_coverage["mode"] == "SQRT_COVERAGE"
+            assert not overlay_coverage["prepared"] and overlay_coverage["mode"] == "FILE"
+            assert post("/render_pipeline/get", {})["lowerExpression"] == overlay_pipeline
+            rejected = page.request.post(args.api + "/normalization/coverage/prepare", data={"source": "SECONDARY"})
+            assert rejected.status == 409 and "Secondary needs contact data" in rejected.text()
+            results.append({"test": "Primary coverage works with an unchanged non-contact overlay"})
+
             # Attach uses a fresh window, not retained state from openFile().
             attached = context.new_page()
             attached.on("pageerror", lambda error: errors.append(str(error)))
             attached.goto(args.url)
             attached.get_by_role("link", name="File", exact=True).click()
-            attached.get_by_role("link", name="Attach", exact=True).click()
+            attached.get_by_role("link", name="Join running session", exact=True).click()
+            attached.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             attached.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.PRIMARY?.units==='CONTACT_COUNT'")
             attached.wait_for_function("window.__hictBenchmark.manager()?.networkManager.requestManager.sourceCapabilities.SECONDARY?.units==='IDENTITY_PERCENT'")
+            attached.wait_for_function("document.getElementById('normalization-mode')?.value === 'sqrt'")
             attached.close()
             results.append({"test": "fresh-window File Attach restores primary and secondary capabilities"})
+
+            page.evaluate("""async () => {
+                const m = window.__hictBenchmark.manager(), r = m.networkManager.requestManager;
+                const status = await r.openSecondarySource('tiny-extrema.hict.hdf5', true);
+                m.viewAndLayersManager.setSecondaryResolutionModel(status.compatibility);
+                await m.reloadTilesFromBackend();
+            }""")
+            assert coverage_status("PRIMARY")["mode"] == "SQRT_COVERAGE"
+            assert coverage_status("SECONDARY")["mode"] == "FILE"
+            choose_normalization("SECONDARY", "sqrt")
+            choose_normalization("PRIMARY", "file")
+            assert coverage_status("SECONDARY")["mode"] == "SQRT_COVERAGE"
+
+            page.get_by_role("link", name="File", exact=True).click()
+            with page.expect_download() as saved:
+                page.get_by_role("link", name="Save session…", exact=True).click()
+            path = output / "source-normalization.hict-session.json"
+            saved.value.save_as(path)
+            assert json.loads(path.read_text())["client"]["sourceNormalizationWeights"] == {
+                "PRIMARY": "FILE", "SECONDARY": "SQRT_COVERAGE"
+            }
+            page.get_by_role("link", name="File", exact=True).click()
+            page.get_by_role("link", name="Close map", exact=True).click()
+            page.get_by_role("heading", name="No contact map open", exact=True).wait_for()
+            page.get_by_role("link", name="File", exact=True).click()
+            with page.expect_file_chooser() as chooser:
+                page.get_by_role("link", name="Open session…", exact=True).click()
+            chooser.value.set_files(path)
+            page.get_by_text("Session restored. Undo history starts from the restored assembly.", exact=True).wait_for()
+            assert coverage_status("PRIMARY")["mode"] == "FILE"
+            assert coverage_status("SECONDARY")["mode"] == "SQRT_COVERAGE"
+            results.append({"test": "Two contact sources select and restore distinct modes"})
 
             open_file("tiny-identity.hict.hdf5")
             assert_disabled("#scaling-across-zoom", True)
             assert_weights_disabled(True)
             results.append({"test": "identity remains non-contact when opened as primary"})
             open_file(args.legacy_file)
-            modal = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            modal = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if modal.is_visible():
                 modal.click()
             assert_disabled("#scaling-across-zoom", False)

@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
 import io.vertx.ext.web.RoutingContext;
+import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.*;
 import java.nio.file.*;
 
@@ -17,7 +18,13 @@ final class TemporaryFastaDownload {
   Path write(Writer writer) throws IOException {
     synchronized(this) {
       if(closed)throw new InterruptedIOException("FASTA download closed");
-      path=Files.createTempFile("hict-fasta-export-", ".fa");writing=true;
+      final var map = context.vertx().sharedData().<String, Object>getLocalMap("hict_server");
+      final var directory = map.get("processedDirectory") instanceof ShareableWrappers.PathWrapper processed
+        ? processed.getPath()
+        : ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath().resolve(".hict-tmp");
+      Files.createDirectories(directory);
+      path = Files.createTempFile(directory, "hict-fasta-export-", ".fa");
+      writing = true;
     }
     boolean complete=false;
     try(var output=new BufferedOutputStream(Files.newOutputStream(path),1<<20)) {

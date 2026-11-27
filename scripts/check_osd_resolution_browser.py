@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import threading
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 parser = argparse.ArgumentParser(description=__doc__)
 for key in ("jar", "webui", "source-dir", "output", "hdf-python"):
@@ -112,12 +112,7 @@ try:
             page.on("crash", crashed)
             page.set_default_timeout(60000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             overlay = page.locator(".ol-mouse-position")
 
@@ -139,18 +134,21 @@ try:
                 expected = page.evaluate(
                     "()=>window.__hictBenchmark.manager().viewAndLayersManager.getFinestVisibleSourceResolutionDescriptor()"
                 )
+                def bin_size(bp):
+                    if bp >= 1_000_000:
+                        return f"{bp / 1_000_000:.3g} Mb"
+                    if bp >= 1_000:
+                        return f"{bp / 1_000:.4g} kb"
+                    return f"{bp} bp"
+
                 text = (
-                    (
-                        "Base scale; native bins: "
-                        + str(expected["sourceBpResolution"])
-                        + " bp"
-                    )
+                    "Base scale; native bins: " + bin_size(expected["sourceBpResolution"])
                     if expected.get("displayGrid") == "SEQUENCE_BP"
-                    else "Bin resolution: 1:" + str(expected["bpResolution"])
+                    else "Resolution: " + bin_size(expected["bpResolution"])
                 )
                 expect(overlay).to_contain_text(text)
                 expect(overlay).to_contain_text(
-                    "Guidance source: " + expected.get("sourceName", "PRIMARY")
+                    "Showing data from: " + expected.get("sourceName", "PRIMARY").lower()
                 )
                 return expected
 
@@ -215,16 +213,17 @@ try:
                 expect_current()
                 record("hiding-and-reshowing-info-keeps-the-stationary-pointer")
                 check.menu("View", "Info settings…")
-                dialog = page.get_by_role("dialog", name="On-screen display settings")
+                dialog = page.get_by_role("dialog", name="Info settings")
                 dialog.locator("#osd-position-select").select_option("bottom-left")
                 dialog.locator("#osd-field-resolution").uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 move()
-                expect(overlay).not_to_contain_text("Bin resolution:")
+                expect(overlay).not_to_contain_text("Resolution:")
+                expect(overlay).not_to_contain_text("Base scale; native bins:")
                 expect(overlay.locator("div")).to_have_css("bottom", "12px")
                 record("info-position-and-field-settings-retain-the-existing-layout")
                 check.menu("View", "Info settings…")
-                dialog = page.get_by_role("dialog", name="On-screen display settings")
+                dialog = page.get_by_role("dialog", name="Info settings")
                 dialog.locator("#osd-field-resolution").check()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 move()
@@ -268,7 +267,8 @@ try:
                 check.settle()
                 move()
                 expect_current()
-                expect(overlay).to_contain_text("Secondary 1:")
+                overlay.get_by_role("button", name="More…", exact=True).click()
+                expect(overlay).to_contain_text("Secondary ")
                 record("mixed-native-resolutions-retain-correct-source-guidance")
                 assert page.evaluate("window.__osdProbe.reads") == 0
                 assert not check.errors, check.errors
@@ -277,13 +277,7 @@ try:
                 page.on("crash", crashed)
                 page.set_default_timeout(60000)
                 page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-                page.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(page, api.url)
                 check = BrowserCheck(page, out)
                 page.goto(f"http://127.0.0.1:{web.server_port}")
                 page.evaluate(

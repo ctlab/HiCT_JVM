@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import sync_playwright
 from browser_review_helpers import link_fasta
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def first_sequence(path):
@@ -42,6 +43,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        install_download_picker(page)
         page.set_default_timeout(60000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("request", lambda request: queries.append(request.post_data_json)
@@ -61,40 +63,55 @@ def main():
                 }
                 return original.call(this,text,x,y,...args);
             };""")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             descriptor = page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0]")
             assert descriptor["contigName"] == name, descriptor
             link_fasta(page, "quad_combined_ind2.fasta")
             page.evaluate("""() => {const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
-                const p=l.currentViewState.resolutionDesciptor.pixelResolution;
-                l.selectionInteractions.contigSelectExtent.setExtent([p,-2*p,2*p,-p]);
                 const v=m.getView();v.setResolution(v.getMinResolution());v.setCenter([0.1,-0.1]);
                 m.getMap().renderSync();} """)
             for axis in ("horizontal", "vertical"):
                 page.locator(f".sequence-axis.{axis}").wait_for(state="visible")
             page.wait_for_function("document.querySelector('.sequence-axis.horizontal').__letters?.length>0")
-            before = page.evaluate("""() => {const v=window.__hictBenchmark.manager().getView();
-                return [v.getCenter(),v.getResolution(),v.getRotation()];}""")
             region = page.request.post(args.api + "/sequence/region", data={"startBp": 0, "endBp": 100}).json()
             assert region["sequence"].upper() == sequence[:100]
-            page.evaluate("document.querySelectorAll('.sequence-axis').forEach(c=>c.__letters=[])")
+            # Letter mode is read-only. Verify the edit at contact-map scale and
+            # return to the same base coordinate to check the refreshed letters.
+            page.evaluate("""length => {const m=window.__hictBenchmark.manager();
+                m.viewAndLayersManager.restoreViewPosition({centerBp:[length/2,length/2],resolution:1});}""", len(sequence))
+            page.wait_for_function("!window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale")
+            view_state = """() => {const v=window.__hictBenchmark.manager().getView();
+                return [v.getCenter(),v.getResolution(),v.getRotation()];}"""
+            page.wait_for_timeout(400)
+            before = page.evaluate(view_state)
+            page.evaluate("""length => {
+                const layers = window.__hictBenchmark.manager().viewAndLayersManager;
+                layers.selectEntityRangeByBp(0, length, 'contig');
+            }""", len(sequence))
+            page.wait_for_function(
+                "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectedContigIds.length > 0"
+            )
             with page.expect_response("**/reverse_selection_range") as edited:
                 page.evaluate("window.__hictBenchmark.manager().eventManager.onReverseSelectionClicked()")
             assert edited.value.ok, edited.value.text()
-            page.wait_for_function("document.querySelector('.sequence-axis.horizontal').__letters?.length>0")
-            page.wait_for_timeout(1000)
-            after = page.evaluate("""() => {const v=window.__hictBenchmark.manager().getView();
-                return [v.getCenter(),v.getResolution(),v.getRotation()];}""")
+            page.wait_for_timeout(400)
+            after = page.evaluate(view_state)
             assert before == after, {"before": before, "after": after}
+            page.evaluate("""() => {const m=window.__hictBenchmark.manager(),v=m.getView();
+                for (const canvas of document.querySelectorAll('.sequence-axis')) canvas.__letters=[];
+                m.viewAndLayersManager.restoreViewPosition({centerBp:[100,100],resolution:v.getMinResolution()});}""")
+            page.wait_for_function("""() => {
+                const canvases = Array.from(document.querySelectorAll('.sequence-axis'));
+                return canvases.length === 2 && canvases.every(canvas => canvas.__letters?.length > 0);
+            }""")
             complement = str.maketrans("ACGTRYMKBDHVN", "TGCAYRKMVHDBN")
             expected = sequence.translate(complement)[::-1]
             for start in (0, len(sequence) - 100):
@@ -133,12 +150,17 @@ def main():
             page.wait_for_timeout(1000)
             point = page.evaluate("""() => {const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
                 const p=l.currentViewState.resolutionDesciptor.pixelResolution;
-                l.selectionInteractions.contigSelectExtent.setExtent([10*p,-42*p,42*p,-10*p]);
+                const {bpResolution}=l.currentViewState.resolutionDesciptor;
+                const holder=m.contigDimensionHolder;
+                const start=Math.round(holder.getFractionalBpOfPx(10,bpResolution)),
+                    end=Math.round(holder.getFractionalBpOfPx(42,bpResolution));
+                l.setRegionBounds({rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});
                 return m.getMap().getPixelFromCoordinate([26*p,-26*p]);}""")
             box = page.locator("#hic-contact-map").bounding_box()
             page.mouse.click(box["x"] + point[0], box["y"] + point[1], button="right")
             queries.clear()
-            page.get_by_role("menuitem", name="Signal histogram...", exact=True).click()
+            page.get_by_role("menuitem", name="Analyse", exact=True).click()
+            page.get_by_role("menuitem", name="Signal histogram…", exact=True).click()
             dialog = page.locator(".histogram-dialog")
             for source, mode, triangle in (("PRIMARY", "RAW_COUNTS", "both"),
                                            ("PRIMARY", "RAW_COUNTS", "upper"),

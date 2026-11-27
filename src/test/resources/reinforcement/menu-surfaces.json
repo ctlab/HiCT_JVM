@@ -2,7 +2,7 @@
   {
     "id": "menu-01",
     "menu": "File",
-    "action": "Open…",
+    "action": "Open map…",
     "heading": "Open Hi-C dataset",
     "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
     "prerequisites": [
@@ -17,14 +17,14 @@
   {
     "id": "menu-02",
     "menu": "File",
-    "action": "Convert matrices",
-    "heading": "Convert matrix files for HiCT",
+    "action": "Convert matrices…",
+    "heading": "Convert matrices for HiCT",
     "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Convert matrix files for HiCT",
+    "surfaceExpected": "Visible heading: Convert matrices for HiCT",
     "functionalExpected": "Convert a tiny Cooler and verify output values, progress, cancellation and overwrite behavior.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -32,7 +32,7 @@
   {
     "id": "menu-03",
     "menu": "File",
-    "action": "Export matrix",
+    "action": "Export matrix…",
     "heading": "Export matrix to Cooler",
     "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
     "prerequisites": [
@@ -47,7 +47,7 @@
   {
     "id": "menu-04",
     "menu": "Assembly",
-    "action": "Link FASTA",
+    "action": "Link FASTA…",
     "heading": "Select FASTA file",
     "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
     "prerequisites": [
@@ -62,7 +62,7 @@
   {
     "id": "menu-05",
     "menu": "Assembly",
-    "action": "Load AGP",
+    "action": "Load AGP…",
     "heading": "Load AGP",
     "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
     "prerequisites": [
@@ -92,15 +92,30 @@
   {
     "id": "menu-07",
     "menu": "View",
-    "action": "Tracks and layers…",
-    "heading": "Tracks and layers",
+    "action": "1D tracks…",
+    "heading": "1D tracks",
     "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Tracks and layers",
+    "surfaceExpected": "Visible heading: 1D tracks",
     "functionalExpected": "Add, reorder, hide and remove tracks; compare displayed values and restore focus on close.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-19",
+    "menu": "View",
+    "action": "Sources and layers…",
+    "heading": "Sources and layers",
+    "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Sources and layers",
+    "functionalExpected": "Select an overlay source and verify its display mode and opacity.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
   },
@@ -108,13 +123,13 @@
     "id": "menu-08",
     "menu": "View",
     "action": "Rendering pipeline…",
-    "heading": "Rendering Pipeline",
+    "heading": "Rendering pipeline",
     "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Rendering Pipeline",
+    "surfaceExpected": "Visible heading: Rendering pipeline",
     "functionalExpected": "Edit and apply a custom graph, verify exact pixels and save/reopen without losing expressions.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -137,14 +152,14 @@
   {
     "id": "menu-10",
     "menu": "View",
-    "action": "Restrict Resolutions…",
-    "heading": "Restrict Resolutions",
+    "action": "Restrict resolutions…",
+    "heading": "Restrict resolutions",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Restrict Resolutions",
+    "surfaceExpected": "Visible heading: Restrict resolutions",
     "functionalExpected": "Change enabled levels and verify zoom visits only enabled levels without losing secondary layers.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -152,14 +167,14 @@
   {
     "id": "menu-11",
     "menu": "Tools",
-    "action": "Generate dotplot from FASTA files…",
-    "heading": "Generate self-alignment dotplots",
+    "action": "Dotplot from FASTA files…",
+    "heading": "Dotplots from FASTA files",
     "source": "src/app/ui/components/upper_ribbon/DotplotGenerator.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Generate self-alignment dotplots",
+    "surfaceExpected": "Visible heading: Dotplots from FASTA files",
     "functionalExpected": "Select FASTA inputs, run a job and verify alignment coordinates and non-additive overlap.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -168,13 +183,13 @@
     "id": "menu-12",
     "menu": "Tools",
     "action": "Find sequences in linked FASTA…",
-    "heading": "Find sequences in the linked FASTA",
+    "heading": "Find sequences",
     "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Find sequences in the linked FASTA",
+    "surfaceExpected": "Visible heading: Find sequences",
     "functionalExpected": "Link FASTA and compare exact and gapped search hits with fixture intervals on both strands.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -182,14 +197,14 @@
   {
     "id": "menu-13",
     "menu": "Tools",
-    "action": "Generate dotplot from active assembly…",
-    "heading": "Generate dotplot from active assembly",
+    "action": "Dotplot from current assembly…",
+    "heading": "Dotplot from current assembly",
     "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Generate dotplot from active assembly",
+    "surfaceExpected": "Visible heading: Dotplot from current assembly",
     "functionalExpected": "Compute an edited region, verify source provenance, orientation, retry and accumulation.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -197,14 +212,14 @@
   {
     "id": "menu-14",
     "menu": "Tools",
-    "action": "Generate ModDotPlot…",
-    "heading": "Generate ModDotPlot",
+    "action": "ModDotPlot…",
+    "heading": "ModDotPlot",
     "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Generate ModDotPlot",
+    "surfaceExpected": "Visible heading: ModDotPlot",
     "functionalExpected": "Compute identity and compare encoded values, coverage metadata and scale across resolutions.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -242,7 +257,7 @@
   {
     "id": "menu-17",
     "menu": "Help",
-    "action": "API docs…",
+    "action": "API documentation…",
     "heading": null,
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
@@ -257,7 +272,7 @@
   {
     "id": "menu-18",
     "menu": "Help",
-    "action": "About",
+    "action": "About HiCT…",
     "heading": "HiCT",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
@@ -268,5 +283,19 @@
     "functionalExpected": "Verify version, source links and attribution against packaged dependencies.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-20",
+    "menu": "Help",
+    "action": "User guide and shortcuts…",
+    "heading": "HiCT user guide",
+    "source": "src/app/ui/components/upper_ribbon/UserGuideModal.vue",
+    "prerequisites": [
+      "Bundled user guide"
+    ],
+    "surfaceExpected": "Visible heading: HiCT user guide",
+    "functionalExpected": "Navigate to a section and open the rendered guide in a new tab.",
+    "coverage": "pending",
+    "scope": "Surface and functional navigation checks"
   }
 ]

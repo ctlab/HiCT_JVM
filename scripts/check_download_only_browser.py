@@ -10,7 +10,7 @@ import subprocess
 import threading
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -48,11 +48,10 @@ def main():
             page = browser.new_page(viewport={'width': 1440, 'height': 1000}, accept_downloads=True)
             page.set_default_timeout(30000)
             page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=app.url + route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check = BrowserCheck(page, out, writable_picker=False)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File', 'Attach')
+            check.menu('File', 'Join running session')
             check.settle()
             capabilities = page.evaluate('({savePicker:typeof showSaveFilePicker,openPicker:typeof showOpenFilePicker,userAgent:navigator.userAgent})')
             assert capabilities['savePicker'] == 'undefined' and capabilities['openPicker'] == 'undefined', capabilities
@@ -71,7 +70,7 @@ def main():
 
             def session_download():
                 with page.expect_download() as download:
-                    check.menu('File', 'Save session')
+                    check.menu('File', 'Save session…')
                 download.value.save_as(out / 'downloaded-session.json')
                 assert json.loads((out / 'downloaded-session.json').read_text())['version'] == 4
                 page.get_by_text('Session download started.', exact=False).last.wait_for()
@@ -79,7 +78,7 @@ def main():
             check.step('session-download-keeps-unconfirmed-revision-dirty', session_download)
 
             def guarded_close():
-                check.menu('File', 'Close')
+                check.menu('File', 'Close map')
                 dialog = page.get_by_role('alertdialog', name='Unsaved assembly edits', exact=True)
                 with page.expect_download() as download:
                     dialog.get_by_role('button', name='Save session', exact=True).click()
@@ -104,7 +103,7 @@ def main():
 
             def agp():
                 with page.expect_download() as download:
-                    check.menu('Assembly', 'Export to AGP')
+                    check.menu('Assembly', 'Export AGP…')
                 download.value.save_as(out / 'assembly.agp')
                 rows = [line.split('\t') for line in (out / 'assembly.agp').read_text().splitlines() if line and not line.startswith('#')]
                 assert len(rows) == 1 and rows[0][1:3] == ['1', '17'], rows
@@ -134,7 +133,7 @@ def main():
 
             for extension in ('png', 'svg', 'pdf'):
                 def figure(extension=extension):
-                    page.get_by_role('button', name='Export', exact=True).click()
+                    page.get_by_role('button', name='Export…', exact=True).click()
                     with page.expect_download(timeout=90000) as download:
                         page.locator('#export-' + extension + '-button').click()
                     path = out / ('figure.' + extension)
@@ -165,10 +164,10 @@ def main():
             check.step('downloaded-png-opens-in-real-figure-viewer', reopen_figure)
 
             def restore_session():
-                check.menu('File', 'Close')
+                check.menu('File', 'Close map')
                 page.get_by_role('alertdialog', name='Unsaved assembly edits', exact=True).get_by_role('button', name='Discard edits', exact=True).click()
                 with page.expect_file_chooser() as chooser:
-                    check.menu('File', 'Open session')
+                    check.menu('File', 'Open session…')
                 chooser.value.set_files(out / 'downloaded-session.json')
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
                 check.settle()

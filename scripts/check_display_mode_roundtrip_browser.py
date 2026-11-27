@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -31,12 +31,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def post(path, data=None):
@@ -64,11 +59,11 @@ def main():
             return np.array(Image.open(io.BytesIO(response.body())).convert("RGBA"))
 
         def select_mode(mode):
-            control = page.locator('select[title^="Expected and O/E"]')
+            control = page.locator('select[aria-label="Signal display"]')
             control.select_option(mode)
             page.wait_for_function(
                 """mode => {
-                const control=document.querySelector('select[title^="Expected and O/E"]');
+                const control=document.querySelector('select[aria-label="Signal display"]');
                 return control && !control.disabled && control.value===mode;
             }""",
                 arg=mode,
@@ -78,13 +73,13 @@ def main():
 
         def save_session(name):
             with page.expect_download() as event:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / (name + ".json")
             event.value.save_as(path)
             return path, json.loads(path.read_text())
 
         def scaffold_boundary_signals():
-            check.menu("Assembly", "Load AGP")
+            check.menu("Assembly", "Load AGP…")
             check.choose_file("tiny-two-scaffolds.agp")
             with page.expect_response("**/load_agp") as loaded:
                 page.get_by_role("button", name="Load", exact=True).click()
@@ -155,11 +150,10 @@ def main():
             results.append({"standardRendererRoundTrip": True})
             page.get_by_role("slider", name="Upper threshold", exact=True).press("Home")
             page.wait_for_timeout(500)
-            threshold = float(
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
-                ).input_value()
-            )
+            upper = page.get_by_label("Upper signal threshold", exact=True)
+            upper.focus()
+            threshold = float(upper.input_value())
+            upper.blur()
             assert threshold > 1e-100, threshold
             results.append({"zeroHandleAvoidsSubnormalThreshold": threshold})
             scaffold_boundary_signals()
@@ -248,12 +242,10 @@ def main():
                             assert not np.array_equal(
                                 tile("PRIMARY"), baseline_primary
                             ), mode
-                        upper = page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        upper = page.get_by_label("Upper signal threshold", exact=True
                         )
                         assert float(upper.input_value()) == 100, upper.input_value()
-                        lower = page.get_by_role(
-                            "spinbutton", name="Lower signal threshold", exact=True
+                        lower = page.get_by_label("Lower signal threshold", exact=True
                         )
                         assert float(lower.input_value()) == 80, lower.input_value()
                     results.append(
@@ -272,10 +264,10 @@ def main():
                     document["snapshot"]["visualizationOptions"]["signalDisplayMode"]
                     == "OBSERVED_OVER_EXPECTED"
                 )
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 page.get_by_role("heading", name="No contact map open").wait_for()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(path)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly."
@@ -296,10 +288,10 @@ def main():
                         status=503, json={"error": "deliberate display-mode rejection"}
                     ),
                 )
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option("EXPECTED")
                 page.wait_for_function("""() => {
-                    const select=document.querySelector('select[title^="Expected and O/E"]');
+                    const select=document.querySelector('select[aria-label="Signal display"]');
                     return select && !select.disabled && select.value==='OBSERVED';
                 }""")
                 page.unroute("**/set_visualization_options")

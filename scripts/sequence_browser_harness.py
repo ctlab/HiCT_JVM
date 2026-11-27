@@ -9,6 +9,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import time
 from urllib.request import Request, urlopen
 
@@ -103,6 +104,18 @@ class HictTestServer:
             self.artifact.unlink(missing_ok=True)
 
 
+def configure_test_api(target, address):
+    """Select the disposable API when a test serves the WebUI separately."""
+    endpoint = json.dumps(address)
+    target.add_init_script(f"""(() => {{
+        if (window !== window.top || !/^https?:$/.test(location.protocol)) return;
+        if (location.origin === new URL({endpoint}).origin) return;
+        const url = new URL(location.href);
+        url.searchParams.set('api', {endpoint});
+        history.replaceState(history.state, '', url);
+    }})();""")
+
+
 def install_download_picker(page):
     """Provide a writable browser save picker backed by observable downloads."""
     page.add_init_script('''(() => {
@@ -111,7 +124,11 @@ def install_download_picker(page):
         let content;
         return {name:options.suggestedName,
           getFile:async()=>new File([content],options.suggestedName,{type:content.type}),
-          createWritable:async()=>{const chunks=[];return {write:async chunk=>{chunks.push(chunk);},close:async()=>{
+          createWritable:async()=>{const chunks=[];return {write:async chunk=>{
+            // Snapshot the bytes before resolving, as a completed file write does.
+            // The exporter can reuse or transfer a stream buffer on its next read.
+            chunks.push(chunk instanceof Blob ? chunk : new Blob([chunk]));
+          },close:async()=>{
             content=new Blob(chunks,{type:chunks[0]?.type||'text/plain'});
             const a=document.createElement('a'),url=URL.createObjectURL(content);
             a.href=url;a.download=options.suggestedName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -140,23 +157,40 @@ class BrowserCheck:
                 self.errors.append(message.text) if message.type == "error" else None
             ),
         )
+        page.on("requestfailed", lambda request: self.report_request_failure(request, request.failure))
+        page.on("response", lambda response: (
+            self.report_request_failure(response.request, f"HTTP {response.status}")
+            if response.status >= 400 else None
+        ))
+
+    @staticmethod
+    def report_request_failure(request, detail):
+        print(f"Browser request failed: {request.method} {request.url} ({detail})", file=sys.stderr, flush=True)
 
     def menu(self, menu, action):
-        self.page.get_by_role("link", name=menu, exact=True).click()
-        target = self.page.get_by_role("link", name=action, exact=True)
+        if menu == "Selection":
+            # The ribbon button also displays the active entity or region summary.
+            trigger = self.page.locator(".header-ribbon button.selection-label")
+        else:
+            trigger = self.page.get_by_role("link", name=menu, exact=True).or_(
+                self.page.get_by_role("button", name=menu, exact=True)
+            )
+        trigger.click()
+        options = trigger.locator("..")
+        target = options.get_by_role("link", name=action, exact=True)
         for role in ("button", "menuitemradio", "menuitemcheckbox"):
-            if target.count():
-                break
-            target = self.page.get_by_role(role, name=action, exact=True)
+            target = target.or_(options.get_by_role(role, name=action, exact=True))
         target.click()
+        if (menu, action) == ("File", "Join running session"):
+            self.page.get_by_role("dialog", name=action, exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
 
     def advanced(self):
-        for detail in self.page.locator('[role="dialog"]:visible details').all():
-            if (
-                detail.locator("summary").inner_text().strip() == "Advanced"
-                and detail.get_attribute("open") is None
-            ):
-                detail.locator("summary").click()
+        for toggle in self.page.locator(
+            '[role="dialog"]:visible details.hict-advanced:not([open]) > summary:visible'
+        ).all():
+            toggle.click()
 
     def choose_file(self, filename):
         dialog = self.page.locator(".modal.show").last

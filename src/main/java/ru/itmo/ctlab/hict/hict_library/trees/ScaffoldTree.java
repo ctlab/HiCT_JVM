@@ -208,11 +208,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
     try {
       this.rootLock.writeLock().lock();
-      ++this.rootScaffoldIdCounter;
+      if (this.root == null) return null;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
       final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
       final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      if (es.segment() == null) return null;
+      ++this.rootScaffoldIdCounter;
       final @NotNull ScaffoldDescriptor newScaffoldDescriptor;
       if (scaffoldGenerator == null) {
         newScaffoldDescriptor = new ScaffoldDescriptor(this.rootScaffoldIdCounter, String.format("scaffold_auto_%d", this.rootScaffoldIdCounter), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
@@ -250,11 +252,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
     try {
       this.rootLock.writeLock().lock();
-      ++this.rootScaffoldIdCounter;
+      if (this.root == null) return;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
       final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
       final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      if (es.segment() == null) return;
+      ++this.rootScaffoldIdCounter;
 
 
       final @NotNull var emptyNode = new ScaffoldTree.Node(
@@ -326,6 +330,30 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     } finally {
       this.rootLock.writeLock().unlock();
     }
+  }
+
+  /** Detaches the moved contig and preserves the descriptor of any remaining scaffold. */
+  public void moveExactContig(final long startBp, final long endBp, final long adjustedTargetBp) {
+    this.rootLock.writeLock().lock();
+    try {
+      final var source = extendBordersToScaffolds(startBp, endBp);
+      final var exposed = Node.expose(this.root, source.startBP(), source.endBP());
+      final var descriptor = getScaffoldAtBpNoLock(startBp);
+      final long length = endBp - startBp;
+      final long remaining = source.endBP() - source.startBP() - length;
+      final var remainder = remaining > 0 ? segmentNode(descriptor, remaining) : null;
+      final var prefix = Node.mergeNodes(new Node.SplitResult(exposed.less(), remainder));
+      final var shortened = Node.mergeNodes(new Node.SplitResult(prefix, exposed.greater()));
+      final var destination = shortened == null ? new Node.SplitResult(null, null)
+        : Node.splitNodeBp(shortened, adjustedTargetBp, false);
+      commitExposedSegment(new Node.ExposedSegment(destination.left(), segmentNode(null, length), destination.right()));
+    } finally {
+      this.rootLock.writeLock().unlock();
+    }
+  }
+
+  private Node segmentNode(final @Nullable ScaffoldDescriptor descriptor, final long length) {
+    return new Node(descriptor, length, rnd.nextLong(), null, null, 1, length, false);
   }
 
   public void traverse(final @NotNull Consumer<@NotNull Node> traverseFn) {

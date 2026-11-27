@@ -79,7 +79,9 @@ public class ExamplesHandlersHolder extends HandlersHolder {
       if (downloader != null) {
         downloader.close();
       }
-      downloader = new ExampleDownloader(root);
+      downloader = new ExampleDownloader(root, target ->
+        ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts.deleteClosedMap(
+          vertx.sharedData().getLocalMap("hict_server"), target));
       downloaderRoot = root;
     }
     return downloader;

@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding;
 
 import io.vertx.core.json.JsonObject;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import org.jetbrains.annotations.NotNull;
 
 public record UnscaffoldRegionRequestDTO(
@@ -34,8 +35,8 @@ public record UnscaffoldRegionRequestDTO(
 
   public static @NotNull UnscaffoldRegionRequestDTO fromJSONObject(final @NotNull JsonObject json) {
     return new UnscaffoldRegionRequestDTO(
-      json.getLong("startBP"),
-      json.getLong("endBP")
+      RequestJson.requireLong(json, "startBP"),
+      RequestJson.requireLong(json, "endBP")
     );
   }
 }

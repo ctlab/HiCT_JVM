@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
+import ru.itmo.ctlab.hict.hict_server.util.AsciiJson;
 
 import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
 
@@ -9,10 +10,14 @@ import io.vertx.core.json.*;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.HttpException;
 import ru.itmo.ctlab.hict.hict_library.assembly.*;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.AlignmentDetailRequestDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.RepeatPeriodRequestDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.SequenceAnalysisBudgetRequestDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.sequence.SequenceAnalysisEstimateResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.*;
 import java.nio.file.*;
@@ -28,21 +33,54 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   private final ConcurrentHashMap<AlignmentKey, String> alignmentJobs = new ConcurrentHashMap<>();
   private static final int MAX_ALIGNMENT_SEGMENTS = 4096;
   private static final int MAX_ALIGNMENT_RECORDS = 256;
+  static final long MINIMUM_FREE_DISK_BYTES = 1L << 30;
+  static final String LOW_DISK_ERROR = "Stopped: free disk space fell below 1 GB. Choose a coarser finest size or a smaller region.";
+  static final String MEMORY_ERROR = "Stopped: not enough memory for this size.";
   private final ThreadPoolExecutor workers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
     new ArrayBlockingQueue<>(8), runnable -> { var t = new Thread(runnable, "hict-sequence-analysis"); t.setDaemon(true); return t; });
   private final ThreadPoolExecutor remoteWorkers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
     new ArrayBlockingQueue<>(2), runnable -> { var t = new Thread(runnable, "hict-remote-blast"); t.setDaemon(true); return t; });
+  private final ScheduledExecutorService diskMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+    var thread = new Thread(runnable, "hict-sequence-disk-monitor");
+    thread.setDaemon(true);
+    return thread;
+  });
+  private final FreeDiskSpace freeDiskSpace;
 
-  public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
+  @FunctionalInterface
+  interface FreeDiskSpace { long usableBytes(Path path) throws IOException; }
+
+  public SequenceAnalysisHandlersHolder(Vertx vertx) {
+    this(vertx, path -> Files.getFileStore(path).getUsableSpace());
+  }
+
+  SequenceAnalysisHandlersHolder(Vertx vertx, FreeDiskSpace freeDiskSpace) {
+    this.vertx = vertx;
+    this.freeDiskSpace = freeDiskSpace;
+  }
 
   public List<BackgroundJob> backgroundJobs() {
     return jobs.values().stream().map(job -> {
+      if (job.kind.equals("overview-cache")) {
+        var status = job.statusJson();
+        var logs = status.getJsonArray("logs");
+        return new BackgroundJob(job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null,
+          job.created, null, job.finished, logs.isEmpty() ? job.state : logs.getString(logs.size()-1), job.error,
+          job.output == null ? List.of() : List.of(new BackgroundJob.Output(job.output, "attach_overview", null, null, job.mapFilename)),
+          new BackgroundJob.Details("Overlay overview cache", null, null, job.request.getString("sourceFilename")));
+      }
       if (job.kind.equals("remote_blast")) return new BackgroundJob(job.id, job.kind, job.state,
         job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
         job.state.equals("running") ? "Waiting for NCBI results. Cancel stops HiCT waiting; a submitted search may continue at NCBI." : job.state,
         job.error, job.state.equals("finished") && job.output != null
           ? List.of(new BackgroundJob.Output(job.id, "open_blast_results", null)) : List.of(),
         new BackgroundJob.Details("NCBI BLAST · " + job.request.getString("remoteDatabase"), null, null, null));
+      if (job.request.containsKey("sourceFastaFilename"))
+        return new BackgroundJob(job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null,
+          job.created, null, job.finished, job.state, job.error,
+          job.output == null ? List.of() : List.of(new BackgroundJob.Output(job.output, "open_map",
+            job.request.getString("sourceFastaFilename"))),
+          new BackgroundJob.Details("ModDotPlot from FASTA", null, null, job.request.getString("sourceFastaFilename")));
       return new BackgroundJob(
       job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
       job.repeatPeriod == null ? job.state : repeatSummary(job), job.error, job.output == null ? List.of() : List.of(
@@ -67,6 +105,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/overview/jobs").handler(ctx -> {
+      var shared = vertx.sharedData().getLocalMap("hict_server");
+      var scheduler = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (scheduler == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      scheduler.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
+        () -> submitOverview(ctx.body().asJsonObject()), result -> ctx.response()
+          .putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/repeat_period").handler(ctx -> {
       final var shared = vertx.sharedData().getLocalMap("hict_server");
       final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -157,13 +203,23 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         } catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
       }, result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
     });
-    for (String kind : List.of("moddotplot", "dotplot")) router.post("/sequence/" + kind + "/jobs").handler(ctx -> {
+    for (String kind : List.of("moddotplot", "dotplot")) for (String action : List.of("jobs", "estimate"))
+      router.post("/sequence/" + kind + "/" + action).handler(ctx -> {
+      var body = ctx.body().asJsonObject();
+      boolean preview = action.equals("estimate");
+      if (body != null && body.containsKey("sourceFastaFilename")) {
+        vertx.executeBlocking(() -> submitOverlay(body, kind.equals("dotplot"), preview), false)
+          .onSuccess(result -> ctx.response().putHeader("content-type", "application/json")
+            .setStatusCode(preview ? 200 : 202).end(result.encode()))
+          .onFailure(ctx::fail);
+        return;
+      }
       var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server")
         .get(RequestTaskScheduler.LOCAL_MAP_KEY);
       if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
       wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
-        () -> submitOverlay(ctx.body().asJsonObject(), kind.equals("dotplot")),
-        result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
+        () -> submitOverlay(body, kind.equals("dotplot"), preview),
+        result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(preview ? 200 : 202).end(result.encode()));
     });
     router.post("/sequence/jobs/list").handler(ctx -> ctx.response().putHeader("content-type", "application/json")
       .end(new JsonArray(jobs.values().stream().sorted(Comparator.comparingLong(j -> j.created))
@@ -622,20 +678,106 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     }
   }
 
-  private JsonObject submitOverlay(JsonObject request, boolean alignment) throws Exception {
+  private JsonObject submitOverview(JsonObject request) throws Exception {
+    var shared = vertx.sharedData().getLocalMap("hict_server");
+    var left = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFile");
+    var right = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFileSecondary");
+    if (left == null || right == null || request == null ||
+        !Objects.equals(request.getString("sourceFilename"), shared.get("openedSecondaryFilename")))
+      throw new HttpException(409, "The attached overlay changed.");
+    var secondary = right.getChunkedFile();
+    var direct = Arrays.stream(secondary.getResolutions()).filter(bp -> bp > 0).boxed().toList();
+    var extra = AssemblyAnalysisPlan.pyramidLevels(direct, left.getChunkedFile().getResolutions()).stream()
+      .filter(bp -> !direct.contains(bp)).toList();
+    if (extra.isEmpty()) throw new HttpException(409, "The attached overlay already has overview levels.");
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    var source = secondary.getHdfFilePath().toRealPath();
+    var template = left.getChunkedFile().getHdfFilePath().toRealPath();
+    var tool = SequenceToolAvailability.require("hict-moddotplot");
+    var sourceStamp = Stamp.read(source);
+    var templateStamp = Stamp.read(template);
+    var unit = switch (secondary.getSourceMetadata().units()) {
+      case IDENTITY_PERCENT -> "identity_percent";
+      case ALIGNMENT_PRESENCE, ALIGNMENT_SAMPLE_COUNT -> "alignment_presence";
+      default -> "counts";
+    };
+    var key = sequenceSha256(source + "|" + sourceStamp + "|" + template + "|" + templateStamp + "|" + extra + "|" + Stamp.read(tool));
+    var root = data.resolve("processed/sequence-analysis");
+    Files.createDirectories(root);
+    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Cache must remain inside DATA_DIR");
+    var cache = root.resolve("overview-" + key + ".hict.hdf5");
+    for (var job : jobs.values())
+      if (key.equals(job.request.getString("cacheKey")) && (job.finished == 0 ||
+          ("finished".equals(job.state) && Files.isRegularFile(cache)))) return job.statusJson();
+    var id = UUID.randomUUID().toString();
+    var dir = Files.createDirectory(root.resolve(id));
+    var job = new Job(id, dir, data, new AssemblySequenceSnapshot(List.of()), request.copy().put("cacheKey", key),
+      String.valueOf(shared.get("openedFilename")), "overview-cache");
+    jobs.put(id, job);
+    if (Files.isRegularFile(cache)) {
+      job.output = data.relativize(cache).toString().replace('\\', '/');
+      job.state = "finished"; job.finished = System.currentTimeMillis(); job.save();
+      trimCompletedJobs();
+      return job.statusJson();
+    }
+    var plan = new JsonObject().put("kind", job.kind).put("source", source.toString()).put("template", template.toString())
+      .put("unit", unit).put("directLevels", new JsonArray(direct)).put("overviewLevels", new JsonArray(extra));
+    try { workers.execute(() -> {
+      var pending = dir.resolve("overview.pending");
+      job.thread = Thread.currentThread();
+      try (var log = Files.newBufferedWriter(dir.resolve("job.log"))) {
+        job.checkCancelled(); job.logWriter = log; job.state = "running"; job.save();
+        if (Files.size(source) > Files.getFileStore(root).getUsableSpace()/2)
+          throw new IOException("Insufficient space for the overview cache");
+        sourceStamp.check(source); templateStamp.check(template);
+        var file = dir.resolve("analysis-plan.json");
+        Files.writeString(file, AsciiJson.encode(plan.put("output", pending.toString()), false));
+        runAdapter(job, tool, file);
+        sourceStamp.check(source); templateStamp.check(template);
+        verifyLevels(pending, extra);
+        synchronized (job) {
+          job.checkCancelled();
+          Files.move(pending, cache, StandardCopyOption.ATOMIC_MOVE);
+          job.output = data.relativize(cache).toString().replace('\\', '/');
+          job.state = "finished"; job.finished = System.currentTimeMillis();
+        }
+      } catch (Exception failure) {
+        job.state = job.cancelled.get() ? "cancelled" : "failed";
+        if (!job.cancelled.get()) job.error = failure.getMessage();
+      } finally {
+        job.finished = System.currentTimeMillis(); job.thread = null; job.logWriter = null;
+        try { Files.deleteIfExists(pending); job.save(); } catch (IOException e) { job.log(e.getMessage()); }
+        trimCompletedJobs(); Thread.interrupted();
+      }
+    }); } catch (RejectedExecutionException full) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
+    return job.statusJson();
+  }
+
+  private static void verifyLevels(Path output, List<Long> overviews) throws IOException {
+    if (!Files.isRegularFile(output)) throw new IOException("The adapter did not create its output");
+    if (overviews.isEmpty()) return;
+    try (var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(output.toFile())) {
+      for (long bp : overviews)
+        if (!reader.object().hasAttribute("/resolutions/" + bp, "source_resolution"))
+          throw new IOException("The adapter did not generate the " + bp + " bp overview. Check the installed sequence tool version.");
+    }
+  }
+
+  private JsonObject submitOverlay(JsonObject request, boolean alignment, boolean preview) throws Exception {
     if (request == null || !(request.getValue("scope") instanceof String) || !(request.getValue("mergeCompatible") instanceof Boolean))
       throw new HttpException(400, "Choose analysis scope and whether to accumulate compatible regions");
+    SequenceAnalysisBudgetRequestDTO budgetRequest;
     JsonObject settings;
     List<Long> resolutions;
     try {
+      budgetRequest = SequenceAnalysisBudgetRequestDTO.fromJson(request);
       if (alignment) {
         var selected = ru.itmo.ctlab.hict.hict_library.util.SequenceProcessingThreads.resolve(
           request.getInteger("threads", -1), "HICT_ALIGNMENT_THREADS", Long.MAX_VALUE);
         request.put("requestedThreads", selected.requested()).put("effectiveThreads", selected.effective()).put("threadMode", selected.mode());
         settings = new JsonObject().put("k", integer(request, "k", 15, 1, 28))
           .put("window", integer(request, "window", 10, 1, 255)).put("chainScore", integer(request, "chainScore", 40, 1, 1_000_000))
-          .put("sampleBp", integer(request, "sampleBp", 100, 1, 1_000_000)).put("minAlignmentLength", integer(request, "minAlignmentLength", 100, 1, 100_000_000))
-          .put("threads", selected.effective());
+          .put("sampleBp", integer(request, "sampleBp", 100, 1, 1_000_000)).put("minAlignmentLength", integer(request, "minAlignmentLength", 100, 1, 100_000_000));
       } else {
         settings = new JsonObject().put("k", integer(request, "k", 21, 1, 65535))
           .put("identity", request.getDouble("identity", 80.0)).put("sketch_size", integer(request, "sketchSize", 1000, 1, 1_000_000))
@@ -651,6 +793,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       if (!alignment && resolutions.getFirst() < settings.getInteger("k"))
         throw new IllegalArgumentException("Each ModDotPlot window must be at least as long as its k-mer size");
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
+    if (request.containsKey("sourceFastaFilename")) {
+      if (alignment || !request.getString("scope").equals("assembly"))
+        throw new HttpException(400, "A FASTA ModDotPlot uses the full file and creates a separate map.");
+      return submitFastaModDotPlot(request, settings, resolutions, preview, budgetRequest.acceptLargeOutput());
+    }
     var shared = vertx.sharedData().getLocalMap("hict_server");
     boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
     var wrapper = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
@@ -665,9 +812,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
     var root = data.resolve("processed/sequence-analysis"); Files.createDirectories(root);
     if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
-    final long diskBudget = Files.getFileStore(root).getUsableSpace() / 2;
-    final long memoryBudget = Runtime.getRuntime().maxMemory() / 4;
-    final AssemblyAnalysisPlan.ResourceEstimate estimate;
+    var fasta = fastaWrapper.getPath().toRealPath();
+    var stamp = Stamp.read(fasta);
+    final SequenceAnalysisEstimateResponseDTO estimate;
     AssemblyAnalysisPlan analysis;
     try {
       AssemblyAnalysisPlan.Region rows, columns;
@@ -680,13 +827,16 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         rows = new AssemblyAnalysisPlan.Region(bounds.getLong("rowStart"), bounds.getLong("rowEnd"));
         columns = new AssemblyAnalysisPlan.Region(bounds.getLong("columnStart"), bounds.getLong("columnEnd"));
       } else throw new IllegalArgumentException("Unknown analysis scope");
-      estimate = AssemblyAnalysisPlan.estimate(map, resolutions, rows, columns);
-      // Window objects and their serialized form coexist during planning. The
-      // identity worker also retains one 64-bit sketch per active window.
+      var primary = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFile");
+      var pyramid = AssemblyAnalysisPlan.pyramidLevels(resolutions, primary.getChunkedFile().getResolutions());
+      var overview = pyramid.stream().filter(bp -> !resolutions.contains(bp)).toList();
       final long bytesPerWindow = 256L + (alignment ? 0L : Long.BYTES * settings.getInteger("sketch_size"));
-      if (estimate.windows() > memoryBudget / bytesPerWindow || estimate.outputBytes() > diskBudget) {
-        throw new HttpException(413, "This analysis exceeds the memory or disk budget. Select a smaller region or fewer resolutions.");
-      }
+      estimate = estimateOverlay(map, rows, columns, resolutions, overview, pyramid,
+        Math.max(stamp.size(), layout.length()), alignment, bytesPerWindow, freeDiskSpace.usableBytes(root));
+      if (preview) return estimateWithExistingSets(estimate, map, data, root, fasta, stamp,
+        alignment, settings, gapLength(request));
+      requireOverlayBudget(estimate, budgetRequest.acceptLargeOutput());
+      request.put("overviewLevels", new JsonArray(overview));
       analysis = AssemblyAnalysisPlan.capture(map, resolutions, rows, columns);
     } catch (ArithmeticException overflow) {
       throw new HttpException(413, "This analysis is too large. Select a smaller region or fewer resolutions.");
@@ -696,23 +846,223 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     try { validateOutputRequest(request, data, ".hict.hdf5"); }
     catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
     catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
-    var fasta = fastaWrapper.getPath().toRealPath(); var stamp = Stamp.read(fasta);
     var template = map.getHdfFilePath().toRealPath(); var templateStamp = Stamp.read(template);
     var id = UUID.randomUUID().toString(); var directory = root.resolve(id); Files.createDirectory(directory);
     var job = new Job(id, directory, data, analysis.sequence(), request.copy(), data.relativize(template).toString().replace('\\', '/'), alignment ? "dotplot" : "moddotplot");
     var processor = map.getFastaProcessor();
     jobs.put(id, job);
-    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.outputBytes())); }
-    catch (RejectedExecutionException e) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
+    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.expectedBytes())); }
+    catch (RejectedExecutionException e) { jobs.remove(id); Files.delete(directory); throw new HttpException(429, "Sequence analysis queue is full"); }
     return job.statusJson();
   }
 
-  private void runOverlay(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path template,
+  private static JsonObject estimateWithExistingSets(SequenceAnalysisEstimateResponseDTO estimate,
+      ChunkedFile map, Path data, Path root, Path fasta, Stamp fastaStamp,
+      boolean alignment, JsonObject settings, long gapLength) throws Exception {
+    var response = estimate.toJson();
+    var template = map.getHdfFilePath().toRealPath();
+    var kind = alignment ? "dotplot" : "moddotplot";
+    boolean sameKind = DotplotResultRegistry.entries(data, root, data.relativize(template).toString().replace('\\', '/'))
+      .stream().anyMatch(entry -> kind.equals(entry.metadata().getString("kind")));
+    if (!sameKind) return response;
+    var tool = SequenceToolAvailability.require("hict-moddotplot");
+    var aligner = alignment ? SequenceToolAvailability.requireAligner() : null;
+    var key = DotplotResultRegistry.key(template, Stamp.read(template), fasta + "|" + fastaStamp, kind, settings,
+      "preserve-agp;separator=" + gapLength, sha256(tool), aligner == null ? "" : sha256(aligner));
+    return response.put("hasResultsOfKind", true).put("hasCompatibleResults", DotplotResultRegistry.latest(data, root, key) != null);
+  }
+
+  private static SequenceAnalysisEstimateResponseDTO estimateOverlay(
+      ChunkedFile map, AssemblyAnalysisPlan.Region rows, AssemblyAnalysisPlan.Region columns,
+      List<Long> requested, List<Long> overview, List<Long> pyramid, long fastaBytes,
+      boolean alignment, long bytesPerWindow, long usableBytes) {
+    var budget = new OverlayBudget(usableBytes, Runtime.getRuntime().maxMemory() / 4 / bytesPerWindow);
+    try {
+      AssemblyAnalysisPlan.estimate(map, pyramid, rows, columns, fastaBytes, alignment, budget::observe);
+    } catch (AssemblyAnalysisPlan.ResourceLimitException limit) {
+      budget.hardLimit(limit.resolution(), limit.getMessage());
+    }
+    return new SequenceAnalysisEstimateResponseDTO(rows.end() - rows.start(), columns.end() - columns.start(),
+      requested, overview, budget.expectedBytes, budget.worstCaseBytes, budget.diskBudgetBytes,
+      budget.warningLevel, budget.limitingLevel, budget.hardLimitReason);
+  }
+
+  static void requireOverlayBudget(SequenceAnalysisEstimateResponseDTO estimate, boolean acceptLargeOutput) {
+    if (estimate.limitingLevel() != null) throw new HttpException(413, estimate.hardLimitReason());
+    if (estimate.warningLevel() != null && !acceptLargeOutput)
+      throw new HttpException(413, levelBudgetMessage(estimate.warningLevel()));
+  }
+
+  static SequenceAnalysisEstimateResponseDTO estimateFastaLengths(List<Long> contigLengths,
+      List<Long> requested, List<Long> overview, long fastaBytes, boolean alignment,
+      long bytesPerWindow, long usableBytes) {
+    var budget = new OverlayBudget(usableBytes, Runtime.getRuntime().maxMemory() / 4 / bytesPerWindow);
+    long length = contigLengths.stream().mapToLong(Long::longValue).reduce(0, Math::addExact);
+    var pyramid = new TreeSet<>(requested);
+    pyramid.addAll(overview);
+    try {
+      AssemblyAnalysisPlan.estimateFasta(contigLengths, List.copyOf(pyramid), fastaBytes, alignment, budget::observe);
+    } catch (AssemblyAnalysisPlan.ResourceLimitException limit) {
+      budget.hardLimit(limit.resolution(), limit.getMessage());
+    }
+    return new SequenceAnalysisEstimateResponseDTO(length, length, requested, overview, budget.expectedBytes,
+      budget.worstCaseBytes, budget.diskBudgetBytes, budget.warningLevel, budget.limitingLevel, budget.hardLimitReason);
+  }
+
+  private static String levelBudgetMessage(long bp) {
+    return "The analysis exceeds the memory or disk budget at " + bp
+      + " bp. Select a smaller region or fewer resolutions.";
+  }
+
+  private static final class OverlayBudget {
+    final long usableBytes, diskBudgetBytes, maxWindows;
+    long expectedBytes, worstCaseBytes;
+    Long warningLevel, limitingLevel;
+    String hardLimitReason;
+
+    OverlayBudget(long usableBytes, long maxWindows) {
+      this.usableBytes = usableBytes;
+      this.diskBudgetBytes = usableBytes / 2;
+      this.maxWindows = maxWindows;
+    }
+
+    void observe(long bp, AssemblyAnalysisPlan.ResourceEstimate estimate) {
+      expectedBytes = estimate.expectedBytes();
+      worstCaseBytes = estimate.worstCaseBytes();
+      if (estimate.windows() > maxWindows || expectedBytes > usableBytes - MINIMUM_FREE_DISK_BYTES)
+        hardLimit(bp, levelBudgetMessage(bp));
+      if (warningLevel == null && worstCaseBytes > diskBudgetBytes) warningLevel = bp;
+    }
+
+    void hardLimit(long bp, String reason) {
+      if (limitingLevel != null) return;
+      limitingLevel = bp;
+      hardLimitReason = reason;
+    }
+  }
+
+  private JsonObject submitFastaModDotPlot(JsonObject request, JsonObject settings, List<Long> resolutions,
+      boolean preview, boolean acceptLargeOutput) throws Exception {
+    var shared = vertx.sharedData().getLocalMap("hict_server");
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    if (!(request.getValue("sourceFastaFilename") instanceof String filename) || filename.isBlank())
+      throw new HttpException(400, "Choose a FASTA file.");
+    var candidate = data.resolve(filename).normalize();
+    if (!candidate.startsWith(data) || !Files.isRegularFile(candidate))
+      throw new HttpException(400, "Choose a FASTA file inside the data directory.");
+    var fasta = candidate.toRealPath();
+    if (!fasta.startsWith(data))
+      throw new HttpException(400, "The FASTA file must remain inside the data directory.");
+    var sourceStamp = Stamp.read(fasta);
+    var root = data.resolve("processed/sequence-analysis");
+    Files.createDirectories(root);
+    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
+    final FastaOnlyAssembly.Scan scan;
+    try {
+      scan = FastaOnlyAssembly.scan(fasta, FastaOnlyAssembly.DEFAULT_MIN_N_RUN, () -> false, null);
+      var lengths = scan.records().stream().flatMap(record -> FastaOnlyAssembly.segments(record, true).stream())
+        .map(segment -> segment.end() - segment.start()).toList();
+      long bytesPerWindow = 256L + Long.BYTES * settings.getInteger("sketch_size");
+      var estimate = estimateFastaLengths(lengths, resolutions, List.of(), Math.max(sourceStamp.size(), scan.totalBases()),
+        false, bytesPerWindow, freeDiskSpace.usableBytes(root));
+      if (preview) return estimate.toJson();
+      requireOverlayBudget(estimate, acceptLargeOutput);
+    } catch (ArithmeticException overflow) {
+      throw new HttpException(413, "This analysis is too large. Select a smaller region or fewer resolutions.");
+    } catch (IllegalArgumentException invalid) {
+      throw new HttpException(400, invalid.getMessage());
+    }
+    var executable = SequenceToolAvailability.require("hict-moddotplot");
+    var options = request.copy().put("gapLengthBp", 0L).put("displayMode", "none").put("overviewLevels", new JsonArray());
+    try { validateOutputRequest(options, data, ".hict.hdf5"); }
+    catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
+    catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
+    var id = UUID.randomUUID().toString();
+    var directory = Files.createDirectory(root.resolve(id));
+    var job = new Job(id, directory, data, new AssemblySequenceSnapshot(List.of()), options, "", "moddotplot");
+    jobs.put(id, job);
+    try {
+      workers.execute(() -> prepareFastaModDotPlot(job, fasta, sourceStamp, executable, settings, resolutions, scan));
+    } catch (RejectedExecutionException e) {
+      jobs.remove(id);
+      Files.delete(directory);
+      throw new HttpException(429, "Sequence analysis queue is full");
+    }
+    return job.statusJson();
+  }
+
+  private void prepareFastaModDotPlot(Job job, Path fasta, Stamp sourceStamp, Path executable,
+                                     JsonObject settings, List<Long> resolutions, FastaOnlyAssembly.Scan scan) {
+    var template = job.directory.resolve("fasta-template.hict.hdf5");
+    job.thread = Thread.currentThread();
+    ScheduledFuture<?> monitoring = null;
+    try {
+      job.checkCancelled();
+      monitoring = startOverlayMonitoring(job);
+      job.state = "preparing";
+      job.log("Reading the FASTA and building its sequence-only assembly.");
+      sourceStamp.check(fasta);
+      scan.warnings().forEach(job::log);
+      FastaOnlyAssembly.write(scan, template, () -> job.cancelled.get() || job.stopReason != null, null);
+      sourceStamp.check(fasta);
+      stopOverlayMonitoring(job, monitoring);
+      job.checkCancelled();
+      try (var map = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(template, 1, 2))) {
+        var layout = AssemblySequenceLayout.capture(map, 0L);
+        var full = new AssemblyAnalysisPlan.Region(0, layout.sequence().length());
+        long bytesPerWindow = 256L + Long.BYTES * settings.getInteger("sketch_size");
+        var estimate = estimateOverlay(map, full, full, resolutions, List.of(), resolutions,
+          Math.max(sourceStamp.size(), scan.totalBases()),
+          false, bytesPerWindow, freeDiskSpace.usableBytes(job.directory));
+        requireOverlayBudget(estimate, SequenceAnalysisBudgetRequestDTO.fromJson(job.request).acceptLargeOutput());
+        var analysis = AssemblyAnalysisPlan.capture(map, resolutions, full, full);
+        job.snapshot = analysis.sequence();
+        job.snapshotId = job.snapshot.fingerprint();
+        job.sequenceLength = job.snapshot.length();
+        runOverlay(job, map.getFastaProcessor(), fasta, sourceStamp, template, Stamp.read(template),
+          executable, null, analysis, layout, settings, estimate.expectedBytes());
+      }
+    } catch (Exception | OutOfMemoryError failure) {
+      synchronized (job) {
+        if (job.finished == 0) {
+          job.state = job.stopReason == null && (job.cancelled.get() || failure instanceof CancellationException)
+            ? "cancelled" : "failed";
+          if (job.state.equals("failed")) {
+            job.error = job.stopReason != null ? job.stopReason : failure instanceof OutOfMemoryError ? MEMORY_ERROR
+              : failure instanceof HttpException http ? http.getPayload()
+              : Objects.toString(failure.getMessage(), failure.getClass().getSimpleName());
+            job.log(job.error);
+          }
+          job.finished = System.currentTimeMillis();
+          try { job.save(); } catch (IOException e) { job.log("Could not save job details: " + e.getMessage()); }
+          job.snapshot = null;
+        }
+      }
+    } finally {
+      stopOverlayMonitoring(job, monitoring);
+      Thread.interrupted();
+      try {
+        Files.deleteIfExists(template);
+        Files.deleteIfExists(job.directory.resolve("assembly.fasta"));
+        Files.deleteIfExists(job.directory.resolve("moddotplot.hict.hdf5.pending"));
+      } catch (IOException e) { job.log("Could not remove temporary analysis files: " + e.getMessage()); }
+      job.thread = null;
+      trimCompletedJobs();
+      Thread.interrupted();
+    }
+  }
+
+  void runOverlay(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path template,
                              Stamp templateStamp, Path executable, Path aligner, AssemblyAnalysisPlan analysis,
                              AssemblySequenceLayout layout, JsonObject settings, long estimatedOutputBytes) {
-    job.thread = Thread.currentThread(); String terminal = "finished";
+    job.thread = Thread.currentThread();
+    var terminal = "finished";
+    ScheduledFuture<?> monitoring = null;
+    Path writingSet = null;
+    var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
     try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
       job.logWriter = log; job.checkCancelled(); stamp.check(fasta); templateStamp.check(template);
+      monitoring = startOverlayMonitoring(job);
       job.state = "preparing"; job.save();
       job.sourceFasta = fasta.toString(); job.sourceStamp = stamp.toString();
       job.toolCommand = executable.toString(); job.toolSha256 = sha256(executable);
@@ -753,51 +1103,57 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         execution.put("threads", selected.effective()).put("mode", selected.mode());
         job.log("ModDotPlot threads: requested=" + selected.requested() + ", effective=" + selected.effective()
           + ", mode=" + selected.mode() + ", allocatedCPUs=" + ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.available());
+      } else {
+        execution.put("threads", job.request.getInteger("effectiveThreads"));
       }
 
-      var keyText = template + "|" + templateStamp + "|" + sourceIdentity + "|" + settings.encode()
-        + "|" + gapPolicy + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
-      String key = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(keyText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-      var registry = job.directory.getParent().resolve("overlay-" + key + ".json");
-      Path previous = null;
-      if (job.request.getBoolean("mergeCompatible") && Files.isRegularFile(registry)) {
-        var index = new JsonObject(Files.readString(registry));
-        var candidate = job.data.resolve(index.getString("outputFile")).normalize();
-        if (!candidate.startsWith(job.directory.getParent()) || !Files.isRegularFile(candidate))
-          throw new IOException("Previous overlay is unavailable; its index was retained. Generate a separate overlay or restore the file.");
-        previous = candidate;
+      var root = job.directory.getParent();
+      final var standalone = job.request.containsKey("sourceFastaFilename");
+      final var key = standalone ? null : DotplotResultRegistry.key(template, templateStamp, sourceIdentity,
+        job.kind, settings, gapPolicy, job.toolSha256, aligner == null ? "" : sha256(aligner));
+      final DotplotResultRegistry.Previous compatible;
+      synchronized (DotplotResultRegistry.WRITING) {
+        compatible = key != null && job.request.getBoolean("mergeCompatible")
+          ? DotplotResultRegistry.latest(job.data, root, key) : null;
+        if (!standalone) {
+          writingSet = root.resolve(compatible == null ? job.id : compatible.setId());
+          DotplotResultRegistry.WRITING.add(writingSet);
+        }
       }
-      final long usable = Files.getFileStore(job.directory).getUsableSpace();
+      final var previous = compatible == null ? null : compatible.file();
+      final var setId = compatible == null ? job.id : compatible.setId();
+      final int regionCount = compatible == null ? 1 : Math.addExact(compatible.regionCount(), 1);
+      final long usable = freeDiskSpace.usableBytes(job.directory);
       final long previousBytes = previous == null ? 0L : Files.size(previous);
       if (previousBytes > usable || estimatedOutputBytes > usable - previousBytes) {
         throw new IOException("The overlay output exceeds available disk space. Select a smaller region or use another data directory.");
       }
-      var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
       var published = job.directory.resolve(job.kind + ".hict.hdf5");
-      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings)
+      var adapterSettings = settings.copy();
+      if (aligner != null) adapterSettings.put("threads", execution.getInteger("threads"));
+      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", adapterSettings)
         .put("execution", execution).put("template", template.toString()).put("output", output.toString())
+        .put("templateName", standalone ? fasta.getFileName().toString() : template.getFileName().toString())
+        .put("jobId", job.id)
         .put("gapPolicy", gapPolicy)
         .put("input", input.toString()).put("inputOffset", layout.padded(start, true)).put("inputLength", layout.padded(end, false) - layout.padded(start, true))
         .put("sequenceLength", layout.length()).put("sourceFastaIdentity", sourceIdentity)
         .put("inputSha256", job.inputSha256).put("snapshot", analysis.sequence().fingerprint())
-        .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels);
+        .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels)
+        .put("overviewLevels", job.request.getJsonArray("overviewLevels"));
       if (previous != null) plan.put("previous", previous.toString());
-      var planFile = job.directory.resolve("analysis-plan.json"); Files.writeString(planFile, plan.encodePrettily(), StandardOpenOption.CREATE_NEW);
+      var planFile = job.directory.resolve("analysis-plan.json");
+      Files.writeString(planFile, AsciiJson.encode(plan, true), StandardOpenOption.CREATE_NEW);
       job.log("Dotplots use source-bin anchored windows in the captured active assembly. Existing scores move with edits; changed joins are not silently recomputed.");
       job.log(previous == null ? "Creating a separate overlay version" : "Accumulating compatible regions; reclaiming the superseded matrix after successful publication and detach");
       job.state = "running"; job.save();
       long timer = System.nanoTime();
-      var process = new ProcessBuilder(executable.toString(), "--plan", planFile.toString()).redirectErrorStream(true).start();
-      job.process = process;
-      try {
-        job.checkCancelled();
-        try (var lines = new BufferedReader(new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-          for (String line; (line = lines.readLine()) != null;) { job.checkCancelled(); job.log(line); }
-        }
-        int code = process.waitFor();
-        if (code != 0) throw new IOException("Dotplot adapter exited with code " + code + "; see job log");
-      } finally { if (process.isAlive()) ProcessTree.stop(process); }
-      stamp.check(fasta); templateStamp.check(template); job.checkCancelled();
+      runAdapter(job, executable, planFile);
+      verifyLevels(output, job.request.getJsonArray("overviewLevels").stream().map(n -> ((Number)n).longValue()).toList());
+      stamp.check(fasta); templateStamp.check(template);
+      stopOverlayMonitoring(job, monitoring);
+      checkOverlayDisk(job);
+      job.checkCancelled();
       if (!Files.isRegularFile(output)) throw new IOException("Dotplot did not create its sidecar");
       job.elapsedNs = System.nanoTime() - timer;
       try { Files.move(output, published, StandardCopyOption.ATOMIC_MOVE); }
@@ -805,24 +1161,114 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var delivered = publishRequestedOutput(published, job, ".hict.hdf5");
       job.output = job.data.relativize(delivered).toString().replace('\\', '/');
       var managedOutput = job.data.relativize(published).toString().replace('\\', '/');
-      atomicJson(registry, new JsonObject().put("outputFile", managedOutput).put("jobId", job.id).put("settings", settings));
+      if (!standalone) {
+        var result = new JsonObject().put("id", setId).put("name", DotplotResultRegistry.name(settings, aligner))
+          .put("regionCount", regionCount).put("bytes", Files.size(published));
+        var manifest = result.copy().put("setId", setId).put("outputFile", managedOutput)
+          .put("mapFilename", job.mapFilename).put("kind", job.kind).put("jobId", job.id)
+          .put("updatedAtMs", System.currentTimeMillis()).put("settings", settings)
+          .put("displayMode", job.request.getString("displayMode", "below")).put("displayFile", job.output);
+        atomicJson(DotplotResultRegistry.manifest(root, key, setId), manifest);
+        job.resultSet = result;
+      }
       job.log("Saved overlay: " + job.output + ". Generation is complete; display attachment is a separate step.");
-      if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
-        new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
-    } catch (Exception failure) {
-      terminal = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof InterruptedIOException || failure instanceof CancellationException ? "cancelled" : "failed";
-      job.error = terminal.equals("failed") ? Objects.toString(failure.getMessage(), failure.getClass().getSimpleName()) : null;
+      if (previous != null) {
+        try {
+          atomicJson(root.resolve("superseded-" + job.id + ".json"),
+            new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
+        } catch (IOException failure) {
+          job.log("Previous version was retained: " + failure.getMessage());
+        }
+      }
+    } catch (Exception | OutOfMemoryError failure) {
+      if (failure instanceof OutOfMemoryError) job.stopReason = MEMORY_ERROR;
+      terminal = job.stopReason == null && (job.cancelled.get() || failure instanceof InterruptedException
+        || failure instanceof InterruptedIOException || failure instanceof CancellationException) ? "cancelled" : "failed";
+      job.error = terminal.equals("failed") ? Objects.toString(job.stopReason,
+        Objects.toString(failure.getMessage(), failure.getClass().getSimpleName())) : null;
       job.log(job.error == null ? "Dotplot cancelled; previous overlay retained" : "Dotplot failed: " + job.error);
     } finally {
+      stopOverlayMonitoring(job, monitoring);
       job.logWriter = null; job.process = null; job.thread = null;
+      Thread.interrupted();
+      if (!terminal.equals("finished")) removePartialOverlay(job, output);
       synchronized (job) {
         job.finished = System.currentTimeMillis(); job.state = terminal;
-        try { job.save(); } catch (IOException e) { job.state = "failed"; job.error = "Could not save analysis provenance: " + e.getMessage(); }
+        try { job.save(); }
+        catch (IOException e) {
+          job.state = "failed";
+          if (job.error == null) job.error = "Could not save analysis provenance: " + e.getMessage();
+        }
       }
       job.snapshot = null; // Source path is now on disk; do not retain a genome per completed job.
+      synchronized (DotplotResultRegistry.WRITING) {
+        if (writingSet != null) DotplotResultRegistry.WRITING.remove(writingSet);
+      }
       trimCompletedJobs();
       Thread.interrupted();
     }
+  }
+
+  void checkOverlayDisk(Job job) throws IOException {
+    if (freeDiskSpace.usableBytes(job.directory) < MINIMUM_FREE_DISK_BYTES) {
+      job.stopForFailure(LOW_DISK_ERROR);
+      throw new IOException(LOW_DISK_ERROR);
+    }
+  }
+
+  private ScheduledFuture<?> startOverlayMonitoring(Job job) throws IOException {
+    checkOverlayDisk(job);
+    job.diskMonitorActive = true;
+    return diskMonitor.scheduleWithFixedDelay(() -> monitorOverlayDisk(job), 1, 1, TimeUnit.SECONDS);
+  }
+
+  private void monitorOverlayDisk(Job job) {
+    synchronized (job) {
+      if (!job.diskMonitorActive || job.cancelled.get()) return;
+      try { checkOverlayDisk(job); }
+      catch (IOException failure) {
+        job.stopForFailure(Objects.toString(failure.getMessage(), LOW_DISK_ERROR));
+      }
+    }
+  }
+
+  private static void stopOverlayMonitoring(Job job, ScheduledFuture<?> monitoring) {
+    if (monitoring == null) return;
+    synchronized (job) { job.diskMonitorActive = false; }
+    monitoring.cancel(false);
+  }
+
+  private static void removePartialOverlay(Job job, Path output) {
+    try {
+      Files.deleteIfExists(output);
+      for (var name : List.of("assembly.fasta", "rows.fasta", "columns.fasta", "alignment.paf"))
+        Files.deleteIfExists(job.directory.resolve(name));
+      try (var scratch = Files.newDirectoryStream(job.directory, "samples-*.sqlite*")) {
+        for (var file : scratch) Files.deleteIfExists(file);
+      }
+    } catch (IOException failure) {
+      job.log("Could not remove temporary analysis files: " + failure.getMessage());
+    }
+  }
+
+  private static void runAdapter(Job job, Path executable, Path planFile) throws Exception {
+    var process = new ProcessBuilder(executable.toString(), "--plan", planFile.toString()).redirectErrorStream(true).start();
+      job.process = process;
+      try {
+        job.checkCancelled();
+        try (var lines = new BufferedReader(new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+          for (String line; (line = lines.readLine()) != null;) {
+            job.checkCancelled();
+            job.log(line);
+            if (line.contains("MemoryError") || line.contains("std::bad_alloc") || line.contains("Cannot allocate memory")) {
+              job.stopForFailure(MEMORY_ERROR);
+              job.checkCancelled();
+            }
+          }
+        }
+        int code = process.waitFor();
+        if (code != 0) throw new IOException("Dotplot adapter exited with code " + code + "; see job log");
+      } finally { if (process.isAlive()) ProcessTree.stop(process); job.process = null; }
   }
   private void trimCompletedJobs() {
     jobs.values().stream().filter(j -> j.finished > 0).sorted(Comparator.comparingLong((Job j) -> j.finished).reversed())
@@ -903,13 +1349,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     return new JsonArray(snapshot.fragments().stream().map(f -> new JsonObject().put("source", f.source())
       .put("start", f.start()).put("end", f.end()).put("reversed", f.reversed())).toList());
   }
-  private static void atomicJson(Path path, JsonObject value) throws IOException {
+  static void atomicJson(Path path, JsonObject value) throws IOException {
     var temp = path.resolveSibling(path.getFileName() + ".pending"); Files.writeString(temp, value.encodePrettily());
     try { Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
     catch (AtomicMoveNotSupportedException e) { Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING); }
   }
 
-  private record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key) {
+  record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key) {
     static Stamp read(Path path) throws IOException {
       var a = Files.readAttributes(path, BasicFileAttributes.class); return new Stamp(a.size(), a.lastModifiedTime(), a.fileKey());
     }
@@ -927,17 +1373,19 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       .digest(sequence.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
   }
 
-  private static final class Job {
-    final String id, mapFilename, kind, snapshotId; final long sequenceLength; final Path directory, data;
+  static final class Job {
+    final String id, mapFilename, kind; final Path directory, data;
+    volatile String snapshotId; volatile long sequenceLength;
     volatile AssemblySequenceSnapshot snapshot;
     final JsonObject request; final long created = System.currentTimeMillis(); final AtomicBoolean cancelled = new AtomicBoolean();
     final ArrayDeque<String> logs = new ArrayDeque<>();
-    volatile String state = "submitted", output, error;
+    volatile String state = "submitted", output, error, stopReason;
     volatile String sourceFasta, sourceStamp, toolCommand, toolSha256, inputSha256;
-    volatile JsonObject alignmentDetail, repeatPeriod;
+    volatile JsonObject alignmentDetail, repeatPeriod, resultSet;
     volatile long finished, hits, fragments, elapsedNs;
     volatile Process process; volatile Thread thread; volatile BufferedWriter logWriter;
     volatile Runnable removeQueuedWork;
+    volatile boolean diskMonitorActive;
     Job(String id, Path directory, Path data, AssemblySequenceSnapshot snapshot, JsonObject request, String mapFilename) {
       this(id, directory, data, snapshot, request, mapFilename, "search");
     }
@@ -945,13 +1393,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       this.id = id; this.directory = directory; this.data = data; this.snapshot = snapshot; this.request = request; this.mapFilename = mapFilename; this.kind = kind;
       this.snapshotId = snapshot.fingerprint(); this.sequenceLength = kind.equals("remote_blast") ? request.getLong("queryBases", 0L) : snapshot.length();
     }
-    void checkCancelled() { if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException(); }
+    void checkCancelled() {
+      if (stopReason != null || cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException();
+    }
+    synchronized void stopForFailure(String reason) {
+      if (finished > 0 || stopReason != null) return;
+      stopReason = reason;
+      interruptWork();
+    }
+    private void interruptWork() {
+      ProcessTree.stop(process);
+      var runningThread = thread;
+      if (runningThread != null) runningThread.interrupt();
+    }
     synchronized void cancel() {
       if (finished > 0) return;
-      cancelled.set(true); ProcessTree.stop(process);
-      var t = thread;
-      if (t != null) t.interrupt();
-      else {
+      cancelled.set(true);
+      interruptWork();
+      if (thread == null) {
         var remove = removeQueuedWork;
         if (remove != null) remove.run();
         removeQueuedWork = null;
@@ -975,6 +1434,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("requestedThreads", request.getInteger("requestedThreads", request.getInteger("threads", -1)))
         .put("effectiveThreads", request.getInteger("effectiveThreads"))
         .put("threadMode", request.getString("threadMode"))
+        .put("resultSet", resultSet)
         .put("logs", new JsonArray(new ArrayList<>(logs)));
     }
     void save() throws IOException {
@@ -992,5 +1452,10 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     }
   }
 
-  @Override public void close() { jobs.values().forEach(Job::cancel); workers.shutdownNow(); remoteWorkers.shutdownNow(); }
+  @Override public void close() {
+    jobs.values().forEach(Job::cancel);
+    workers.shutdownNow();
+    remoteWorkers.shutdownNow();
+    diskMonitor.shutdownNow();
+  }
 }

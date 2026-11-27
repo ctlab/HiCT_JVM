@@ -10,7 +10,7 @@ import subprocess
 import threading
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -35,9 +35,9 @@ def main():
             browser=pw.chromium.launch(headless=True)
             page=browser.new_page(viewport={'width':1600,'height':1100},accept_downloads=True)
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,output)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             def state():
                 return page.evaluate('''() => {const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
                     return {grid:l.currentViewState.resolutionDesciptor,view:l.captureViewPosition(),lengths:m.contigDimensionHolder.contigDescriptors.map(d=>d.contigLengthBp),
@@ -160,12 +160,12 @@ def main():
                 assert state()['sequence'],state()
                 assert max(abs(a-b) for a,b in zip(state()['view']['centerBp'],saved_view['centerBp']))<1e-7,state()
                 exports.append({'format':format,'bytes':len(content),'sha256':hashlib.sha256(content).hexdigest()})
-            with page.expect_download() as download: check.menu('File','Save session')
+            with page.expect_download() as download: check.menu('File','Save session…')
             session=output/'sequence-view-session.json';download.value.save_as(session)
             saved=json.loads(session.read_text())
             assert saved['client']['workspace']['view']['displayGrid']=='SEQUENCE_BP'
-            check.menu('File','Close')
-            with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+            check.menu('File','Close map')
+            with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
             chooser.value.set_files(session)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
             restored=state()

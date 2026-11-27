@@ -16,7 +16,7 @@ import threading
 import time
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -115,13 +115,7 @@ def main():
                 context.add_init_script(
                     "window.__HICT_BENCHMARK_ENABLED__=true;window.addEventListener('error',e=>{if(e instanceof ErrorEvent)window.__capturePaletteError(e.message);},true)"
                 )
-                context.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(context, api.url)
                 page = context.new_page()
                 page.set_default_timeout(30000)
                 check = BrowserCheck(page, out)
@@ -133,7 +127,7 @@ def main():
                     return post("/get_visualization_options")
 
                 def mode(value):
-                    control = page.locator('select[title^="Expected and O/E"]')
+                    control = page.locator('select[aria-label="Signal display"]')
                     control.select_option(value)
                     expect(control).to_be_enabled()
                     check.settle()
@@ -170,11 +164,9 @@ def main():
                     check.settle()
 
                 def bounds(lo, hi):
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill(str(lo))
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill(str(hi))
                     apply()
 
@@ -243,6 +235,7 @@ def main():
                     def colors():
                         nonlocal pixels
                         mode("OBSERVED_OVER_EXPECTED")
+                        expect(page.locator(".curve-endpoint")).to_have_count(0)
                         bounds(0.25, 4)
                         pick(0, "#00ff0080")
                         pick(1, "#ff00ffcc")
@@ -279,7 +272,7 @@ def main():
 
                     def reload():
                         page.reload()
-                        check.menu("File", "Attach")
+                        check.menu("File", "Join running session")
                         check.settle()
                         assert assert_palette() == pixels
                         mode("OBSERVED")
@@ -292,7 +285,7 @@ def main():
 
                     def session():
                         with page.expect_download() as event:
-                            check.menu("File", "Save session")
+                            check.menu("File", "Save session…")
                         saved = out / "oe-session.json"
                         event.value.save_as(saved)
                         document = json.loads(saved.read_text())
@@ -302,12 +295,12 @@ def main():
                             ]
                             == "OBSERVED_OVER_EXPECTED"
                         )
-                        check.menu("File", "Close")
+                        check.menu("File", "Close map")
                         page.get_by_role(
                             "heading", name="No contact map open"
                         ).wait_for()
                         with page.expect_file_chooser() as chooser:
-                            check.menu("File", "Open session")
+                            check.menu("File", "Open session…")
                         chooser.value.set_files(saved)
                         page.get_by_text(
                             "Session restored. Undo history starts from the restored assembly.",
@@ -374,7 +367,7 @@ def main():
                         check.menu("View", "Rendering pipeline…")
                         dialog = page.get_by_role("dialog")
                         dialog.get_by_role(
-                            "heading", name="Rendering Pipeline", exact=True
+                            "heading", name="Rendering pipeline", exact=True
                         ).wait_for()
                         page.screenshot(path=str(out / "ratio-pipeline-editor.png"))
                         with page.expect_response(
@@ -480,6 +473,8 @@ def main():
 
                     def editor_open():
                         check.menu("View", "Rendering pipeline…")
+                        dialog.wait_for()
+                        check.advanced()
                         expect(
                             dialog.get_by_role(
                                 "tab", name="Primary O/E colormap", exact=True
@@ -502,7 +497,7 @@ def main():
                     def active_editor():
                         editor_open()
                         expect(
-                            dialog.get_by_label("Enable custom pipeline", exact=True)
+                            dialog.get_by_label("Enable custom rendering", exact=True)
                         ).not_to_be_visible()
                         tab = dialog.get_by_role(
                             "tab", name="Primary O/E colormap", exact=True
@@ -546,7 +541,7 @@ def main():
                                 and rect["y"] >= 0
                                 and rect["y"] + rect["height"] <= height + 1
                             ), rect
-                            for button in ["Apply", "Close", "Reset"]:
+                            for button in ["Apply", "Close", "Reset to default"]:
                                 control = dialog.locator(".modal-footer").get_by_role(
                                     "button", name=button, exact=True
                                 )
@@ -625,7 +620,9 @@ def main():
                             document["target"] == "PRIMARY_OE"
                             and document["palette"]["max"] == 7
                         )
-                        dialog.get_by_role("button", name="Reset", exact=True).click()
+                        dialog.get_by_role(
+                            "button", name="Reset to default", exact=True
+                        ).click()
                         await_upper(2)
                         assert tile().getpixel((1, 1)) == (33, 102, 172, 255)
                         with page.expect_file_chooser() as chooser:
@@ -752,7 +749,7 @@ def main():
                         outcome = page.evaluate(
                             """async()=>{try {await window.__hictBenchmark.manager().visualizationManager.applyObservedExpectedPalette({min:.25,max:4,startColor:'#2166acff',endColor:'#b2182bff'});return 'wrongly applied';}catch(e){return e.message;}}"""
                         )
-                        assert "Select Show O/E" in outcome, outcome
+                        assert "Select Observed/Expected" in outcome, outcome
                         assert (
                             options() == before
                             and post("/render_pipeline/get") == editor_observed

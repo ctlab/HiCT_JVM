@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -23,12 +23,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def view():
@@ -261,8 +256,8 @@ def main():
             row.press("Escape")
             assert row.input_value() == "two"
             for label, query in (
-                ("Rows scope", "All Rows"),
-                ("Columns scope", "All Columns"),
+                ("Rows scope", "All rows"),
+                ("Columns scope", "All columns"),
             ):
                 field = page.get_by_role("textbox", name=label, exact=True)
                 field.fill(query)
@@ -357,7 +352,7 @@ def main():
             assert go_buttons.count() == 2
             page.locator(
                 'button[title="Remove saved location"], button[data-bs-original-title="Remove saved location"]'
-            ).last.click()
+            ).first.click()
             assert go_buttons.count() == 1
             with page.expect_download() as download:
                 page.locator(".bookmark-actions").get_by_role(
@@ -396,12 +391,12 @@ def main():
                 == "Release landmark"
             )
             with page.expect_download() as session_download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             session_path = output / "named-bookmark-session.json"
             session_download.value.save_as(session_path)
             saved = json.loads(session_path.read_text())
             assert saved["client"]["savedLocations"][0]["name"] == "Release landmark"
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.get_by_role(
                 "heading", name="No contact map open", exact=True
             ).wait_for()
@@ -415,7 +410,7 @@ def main():
                 == 0
             )
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(session_path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",
@@ -617,11 +612,16 @@ def main():
             assert select.locator("option").count() == len(labels_before) + 3
 
         def osd():
-            check.menu("View", "Info settings…")
             dialog = page.get_by_role(
-                "dialog", name="On-screen display settings", exact=True
+                "dialog", name="Info settings", exact=True
             )
-            dialog.get_by_label("Show overlay", exact=True).check()
+
+            def open_settings():
+                check.menu("View", "Info settings…")
+                check.advanced()
+
+            open_settings()
+            dialog.get_by_label("Show Info overlay", exact=True).check()
             fields = dialog.locator('input[id^="osd-field-"]').evaluate_all(
                 "(inputs) => inputs.map(input=>input.id)"
             )
@@ -641,31 +641,40 @@ def main():
 
             hover()
             overlay = page.locator(".ol-mouse-position")
-            baseline = overlay.inner_text().splitlines()
+            overlay.get_by_role("button", name="More…", exact=True).click()
+
+            def read_fields():
+                return overlay.evaluate("""overlay => Array.from(overlay.firstElementChild.childNodes)
+                    .filter(node => node.nodeType === Node.TEXT_NODE)
+                    .map(node => node.textContent.trim()).filter(Boolean)""")
+
+            baseline = read_fields()
             assert len(baseline) == len(fields), (baseline, fields)
             for index, field in enumerate(fields):
-                check.menu("View", "Info settings…")
+                open_settings()
                 dialog.locator("#" + field).uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
-                actual = overlay.inner_text().splitlines()
+                actual = read_fields()
                 assert actual == baseline[:index] + baseline[index + 1 :], (
                     field,
                     baseline,
                     actual,
                 )
-                check.menu("View", "Info settings…")
+                open_settings()
                 dialog.locator("#" + field).check()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
-            check.menu("View", "Info settings…")
+            open_settings()
             dialog.locator(".osd-field-row").first.get_by_role(
                 "button", name="Down", exact=True
             ).click()
-            dialog.get_by_label("Position", exact=True).select_option("bottom-left")
+            dialog.get_by_role("combobox", name="Position", exact=True).select_option(
+                "bottom-left"
+            )
             dialog.get_by_role("button", name="Done", exact=True).click()
             hover()
-            assert overlay.inner_text().splitlines() == [
+            assert read_fields() == [
                 baseline[1],
                 baseline[0],
                 *baseline[2:],
@@ -683,7 +692,7 @@ def main():
             assert overlay.inner_text() == ""
             page.locator("#toggle-osd-button").click()
             hover()
-            assert len(overlay.inner_text().splitlines()) == len(fields)
+            assert len(read_fields()) == len(fields)
             page.wait_for_timeout(300)
             assert (
                 json.loads(

@@ -59,6 +59,44 @@ test('artifact-only and fix branch safeguards survive early publication', () => 
   assert.equal(condition('publish-release-assets', { github: { event_name: 'push', ref_name: 'fix/example' } }), false);
 });
 
+test('both channels publish versioned assets before refreshing stable links', () => {
+  const publish = job('publish-release-assets');
+  const branch = publish.match(/if \[\[ \( "\$\{release_channel\}" == "jvm-sfx-native" \|\| "\$\{release_channel\}" == "main" \) &&([\s\S]+?)\n +elif/)?.[1];
+  assert.ok(branch, 'Missing run-specific branch tag selection');
+  assert.match(branch, /"\$\{GITHUB_EVENT_NAME\}" == "push" \|\| "\$\{GITHUB_EVENT_NAME\}" == "workflow_dispatch"/);
+  assert.match(branch, /^ +release_tag="\$\{release_channel\}-\$\{version\}"\n +versioned_branch_release="true"$/m);
+  assert.match(branch, /"\$\{PUBLISH_TARGET\}" != "release-tag"/);
+  assert.match(branch, /-n "\$\{SELECTED_RELEASE_TAG\}" && "\$\{SELECTED_RELEASE_TAG\}" != "\$\{release_tag\}"/);
+  assert.match(branch, /exit 1/);
+  assert.match(publish, /"\$\{release_tag\}" == "latest-jvm-sfx-native" \|\| "\$\{release_tag\}" == jvm-sfx-native-\* \|\|\s+"\$\{release_tag\}" == "latest-master" \|\| "\$\{release_tag\}" == main-\*/);
+  const ensure = publish.match(/      - name: Ensure the versioned channel tag points to the build\n([\s\S]+?)(?=\n      - name: Publish versioned channel release)/)?.[1];
+  assert.ok(ensure, 'Verify the exact tag before handing publication to the release action');
+  assert.match(ensure, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
+  assert.match(ensure, /await ensureVersionedTarget\(/);
+  const versioned = publish.match(/      - name: Publish versioned channel release\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.ok(versioned, 'Missing versioned branch publication');
+  assert.match(versioned, /steps\.collect-assets\.outputs\.versioned_branch_release == 'true'/);
+  assert.match(versioned, /python scripts\/ci\/test_publish_versioned_release\.py/);
+  assert.match(versioned, /python scripts\/ci\/publish_versioned_release\.py --directory release-dist --notes release-body\.md/);
+  assert.doesNotMatch(versioned, /target_commitish:/);
+  const verify = publish.match(/      - name: Verify versioned channel assets\n([\s\S]+?)(?=\n      - name: Refresh the channel download links)/)?.[1];
+  assert.ok(verify, 'Missing verification of published tag and assets');
+  assert.match(verify, /await verifyVersionedTarget\(/);
+  assert.match(verify, /await verifyAssets\(.*exact: true/);
+  assert.match(publish, /update_branch_release_index\.py/);
+  assert.doesNotMatch(publish, /await prune\(|overwrite_files: true/);
+});
+
+test('Windows qualification loads native DLLs from each installed package', () => {
+  const windows = job('windows-portable');
+  const gate = windows.match(/      - name: Exercise both Windows packages with a redirected runtime\n([\s\S]+?)(?=\n      - name:)/)?.[1];
+  assert.ok(gate, 'Missing installed Windows package qualification');
+  assert.match(gate, /Remove-Item Env:HICT_JHDF5_NATIVES_ARCHIVE/);
+  assert.match(gate, /Using installed JHDF5 native library/);
+  assert.match(gate, /Expand-Archive -LiteralPath \$zip -DestinationPath \$zipRoot\n +\$launcher = Get-ChildItem -LiteralPath \$zipRoot/);
+  assert.match(gate, /check_windows_standard_user\.ps1 .* -ZipLauncher \$launcher\.FullName/);
+});
+
 test('native cache source hashes exclude generated Python bytecode', () => {
   const sequence = fs.readFileSync('.github/workflows/sequence-tools.yml', 'utf8');
   assert.match(sequence, /'scripts\/sequence_analysis\/\*\*'/);

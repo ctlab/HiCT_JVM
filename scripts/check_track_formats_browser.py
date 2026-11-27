@@ -18,7 +18,7 @@ import threading
 import time
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -86,21 +86,19 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 page = browser.new_page(viewport={'width': 1600, 'height': 1100}, accept_downloads=True)
                 page.set_default_timeout(30000)
                 page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-                page.route('http://localhost:5000/**', lambda route: route.continue_(
-                    url=app.url + route.request.url.removeprefix('http://localhost:5000')))
+                configure_test_api(page, app.url)
                 check = BrowserCheck(page, case)
                 page.goto(f'http://127.0.0.1:{static.server_port}/')
-                check.menu('File', 'Attach')
+                check.menu('File', 'Join running session')
                 check.settle()
-                dialog = page.get_by_role('dialog', name='Tracks and layers', exact=True)
+                dialog = page.get_by_role('dialog', name='1D tracks', exact=True)
 
                 def open_manager():
-                    check.menu('View', 'Tracks and layers…')
+                    check.menu('View', '1D tracks…')
                     dialog.wait_for()
-                    dialog.get_by_role('tab', name='1D tracks', exact=True).click()
 
                 def close_manager():
-                    dialog.get_by_role('button', name='Close tracks and layers', exact=True).click()
+                    dialog.get_by_role('button', name='Close manager', exact=True).click()
                     dialog.wait_for(state='hidden')
                     check.settle()
 
@@ -183,7 +181,7 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 aggregates = {}
                 for mode, expected in (('MAX', -4), ('MEAN', -6), ('SUM', -4.8)) if args.signed else (('MAX', 9), ('MEAN', 6), ('SUM', 4.8)):
                     if mode != 'MAX':
-                        choose_mode(mode)
+                        choose_mode('MEAN_WITH_ZERO_GAPS' if mode == 'SUM' else mode)
                     verify_features()
                     assert values(query()['Signal']) == oracle
                     coarse = query(0, 5, 1)['Signal']
@@ -258,12 +256,12 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 check.step('reversed-source-values-and-vcf-spans', lambda: verify_features(True))
 
                 with page.expect_download() as download:
-                    check.menu('File', 'Save session')
+                    check.menu('File', 'Save session…')
                 session = case / 'tracks-session.json'
                 download.value.save_as(session)
-                check.menu('File', 'Close')
+                check.menu('File', 'Close map')
                 with page.expect_file_chooser() as chooser:
-                    check.menu('File', 'Open session')
+                    check.menu('File', 'Open session…')
                 chooser.value.set_files(session)
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
                 check.settle()
@@ -310,7 +308,8 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                                 linear.drawTrackCanvas(canvas,orientation,{tracks:[{...track,color}]},viewport,undefined,false);
                                 const range=linear.resolveSignalRange(summary,track.bins,viewport,1);
                                 const transform=linear.buildScaleTransform(range.min,range.max,log,10);
-                                result.push({orientation,fills,zero:cross-2-(cross-4)*transform.normalize(0),range,
+                                // The plot reserves a 16 px title strip and a 2 px inset on both edges.
+                                result.push({orientation,fills,zero:cross-2-(cross-20)*transform.normalize(0),range,
                                     png:canvas.toDataURL('image/png')});
                             }
                             return result;

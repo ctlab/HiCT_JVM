@@ -59,7 +59,7 @@ chmod +x HiCT-<version>-darwin-arm64.run
 === Start with your own data folder
 
 The Launcher lets you select the data directory. In server mode, set `DATA_DIR`.
-The browser interface uses port 8080 and its API uses port 5000 by default.
+The map viewer and its API share port 8080 by default.
 
 [source,bash]
 ----
@@ -125,8 +125,11 @@ parallel tools and browsers require more memory and disk.
 Portable launchers set Java's `MaxRAMPercentage` to 50. On an 8 GiB host this
 provides a 4 GiB Java heap. Set `HICT_JAVA_OPTS=-Xmx6g` to choose an explicit limit
 for a suitable host. Native tools and the browser use additional memory.
-Linux portable launchers default to four glibc allocation arenas per process.
+Linux portable launchers default to two glibc allocation arenas per process.
 Set `MALLOC_ARENA_MAX` before launch to override that value.
+The bundled glibc Linux runtime trims unused native heap pages every second
+when the build JDK supports it. Set
+`HICT_JAVA_OPTS=-XX:TrimNativeHeapInterval=0` to disable automatic trimming.
 
 Keep free disk for source downloads, the generated matrix, native conversion
 scratch and the uncompressed FASTA index. The recorded cheetah trial used about
@@ -135,16 +138,17 @@ See the example validation document for exact measurements and sampling limits.
 
 == Remote server over SSH
 
-The default services bind to all interfaces and accept browser requests through
-permissive CORS. They expose file access and assembly mutation without an
+Running `start-server` directly binds the services to all IPv4 interfaces
+(`0.0.0.0`) by default. Portable launchers default to loopback. The services
+accept browser requests through permissive CORS. They expose file access and assembly mutation without an
 authentication layer. Restrict access to trusted users. Set `HICT_BIND_HOST` to
-loopback and forward both ports over SSH.
+loopback and forward the HiCT port over SSH.
 
 On your local workstation, connect with port forwarding.
 
 [source,bash]
 ----
-ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org
+ssh -L 8080:127.0.0.1:8080 user@cluster.example.org
 ----
 
 In that SSH session, start the remote package.
@@ -156,15 +160,15 @@ DATA_DIR=/path/to/data HICT_BIND_HOST=127.0.0.1 \
 ----
 
 Open `http://localhost:8080` locally. Keep the SSH session running.
-Use `VXPORT` and `WEBUI_PORT` when the default server ports are occupied, and
-configure the corresponding API address in the WebUI. Stop the server before
+Set `HICT_PORT` to use another port. Set `VXPORT` and `WEBUI_PORT` to two
+different values to keep the old two-port layout. Stop the server before
 removing its data or scratch directories.
 
 == Guide and API
 
 * link:docs/user-guide.md[User guide and keyboard shortcuts]
 * link:docs/jvm_api_v1.md[API guide]
-* `http://localhost:5000/api/v1/` serves the bundled offline API reference.
+* `http://localhost:8080/api/v1/` serves the bundled offline API reference.
 * link:docs/normalization.md[Normalization] describes square-root coverage over
   one whole-map domain and the treatment of excluded bins.
 * link:docs/reinforcement-validation.md[Validation evidence] and

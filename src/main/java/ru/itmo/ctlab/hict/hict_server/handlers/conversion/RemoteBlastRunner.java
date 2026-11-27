@@ -16,9 +16,21 @@ import java.util.function.*;
 
 /** External subject coordinates are retained as BLAST coordinates and never converted to assembly BED. */
 public final class RemoteBlastRunner {
+  @FunctionalInterface
+  interface ProcessStarter {
+    Process start(ProcessBuilder builder) throws IOException;
+  }
+
   private final Supplier<NcbiBlastResultRetriever> retrievalFactory;
+  private final ProcessStarter processStarter;
   public RemoteBlastRunner() { this(NcbiBlastResultRetriever::new); }
-  RemoteBlastRunner(Supplier<NcbiBlastResultRetriever> retrievalFactory) { this.retrievalFactory = Objects.requireNonNull(retrievalFactory); }
+  RemoteBlastRunner(Supplier<NcbiBlastResultRetriever> retrievalFactory) {
+    this(retrievalFactory, ProcessBuilder::start);
+  }
+  RemoteBlastRunner(Supplier<NcbiBlastResultRetriever> retrievalFactory, ProcessStarter processStarter) {
+    this.retrievalFactory = Objects.requireNonNull(retrievalFactory);
+    this.processStarter = Objects.requireNonNull(processStarter);
+  }
   static final long MAX_OUTPUT_BYTES = 32L * 1024 * 1024;
   static final int MAX_REPORT_HITS = 20_000;
   private static final Semaphore REMOTE_CLIENT = new Semaphore(1, true);
@@ -71,7 +83,7 @@ public final class RemoteBlastRunner {
       var deadline = System.nanoTime() + timeout.toNanos();
       lastStartedNanos = System.nanoTime();
       hasStarted = true;
-      process = builder.start();
+      process = processStarter.start(builder);
       processStarted.accept(process);
       log.accept("NCBI remote BLAST submitted to " + options.database() + ". Waiting for provider results; no progress percentage is available.");
       while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {

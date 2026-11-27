@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from playwright.sync_api import expect, sync_playwright
 from check_reinforcement_baseline_browser import percentile
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def main():
@@ -56,12 +56,7 @@ def main():
             console.error('Unhandled promise in release soak', event.reason);
         });"""
         )
-        context.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(context, args.api)
         page = context.new_page()
         install_download_picker(page)
         page.set_default_timeout(60000)
@@ -77,6 +72,8 @@ def main():
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         cycle = 0
+        overlay_file = None
+        warm_opens = []
         try:
             while time.monotonic() - started < args.duration_seconds:
                 filename = args.files[cycle % len(args.files)]
@@ -132,20 +129,60 @@ def main():
                     arg=bool(sequence),
                 )
                 if sequence:
-                    page.evaluate("""async () => {
+                    if overlay_file is None:
+                        cold_start = time.monotonic()
+                        response = page.request.post(args.api + "/sequence/dotplot/jobs", data={
+                            "scope":"selection", "region":{"rowStart":900,"rowEnd":1100,"columnStart":900,"columnEnd":1100},
+                            "mergeCompatible":False, "resolutions":[1], "sampleBp":1, "threads":1,
+                        })
+                        assert response.ok, response.text()
+                        job_id = response.json()["jobId"]
+                        while time.monotonic() - cold_start < 180:
+                            job = next(j for j in page.request.post(args.api + "/sequence/jobs/list", data={}).json() if j["jobId"] == job_id)
+                            if job["status"] == "finished":
+                                overlay_file = job["outputFile"]
+                                break
+                            assert job["status"] not in ("failed", "cancelled"), job
+                            time.sleep(0.25)
+                        assert overlay_file, "Cold generation timed out"
+                        result["coldPyramidSeconds"] = time.monotonic() - cold_start
+                        result["fineOverlayFile"] = overlay_file
+                    warm_start = time.monotonic()
+                    page.evaluate("""async filename => {
                         const m=window.__hictBenchmark.manager(),requests=m.networkManager.requestManager;
-                        const status=await requests.openSecondarySource('mixed-fine.hict.hdf5',false);
+                        const status=await requests.openSecondarySource(filename,false);
                         if (!status.attached) throw Error('Mixed-pyramid attachment failed');
                         m.viewAndLayersManager.setSecondaryResolutionModel(status.compatibility);
                         const color=(source,shade)=>({type:'colormap',mode:'LINEAR',input:{type:'source',source},
-                            minSignal:0,maxSignal:1100,startColor:'#ffffff00',endColor:shade});
+                            minSignal:0,maxSignal:source==='SECONDARY'?1:1100,startColor:'#ffffff00',endColor:shade});
                         await requests.setRenderPipelineConfig({enabled:true,swapUpperLower:false,
-                            upperExpression:color('PRIMARY','#ff0000ff'),lowerExpression:color('SECONDARY','#0000ffff')});
+                            upperExpression:color('SECONDARY','#0000ffff'),lowerExpression:color('PRIMARY','#ff0000ff')});
                         await m.reloadTilesFromBackend();
+                    }""", overlay_file)
+                    warm_opens.append(time.monotonic()-warm_start)
+                    result["warmAttachP95Seconds"] = percentile(warm_opens, 0.95)
+                    page.evaluate("""() => {
+                        const m=window.__hictBenchmark.manager(), l=m.viewAndLayersManager;
+                        l.restoreViewPosition({centerBp:[1000.5,1000.5], resolution:l.getPixelResolutionForBpResolution(1)});
+                        m.getMap().renderSync();
                     }""")
+                    page.wait_for_function("""() => {
+                        const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
+                        const map=m.getMap(), center=map.getPixelFromCoordinate(m.getView().getCenter());
+                        return l.getNativeResolutionDescriptor('SECONDARY').bpResolution===1 &&
+                            l.layersHolder.secondaryHiCDataLayers.some(layer=> {
+                                if(!layer.getVisible()) return false;
+                                for (let y=-3; y<=3; y++) for(let x=-3; x<=3; x++) {
+                                    const rgba=layer.getData([center[0]+x,center[1]+y]);
+                                    if(rgba?.[3]>0 && rgba[2]>rgba[0]+20) return true;
+                                }
+                                return false;
+                            });
+                    }""")
+                    result["warmFinePaintSeconds"] = time.monotonic()-warm_start
                 page.get_by_role("link", name="View", exact=True).click()
                 page.get_by_role(
-                    "link", name="Restrict Resolutions…", exact=True
+                    "link", name="Restrict resolutions…", exact=True
                 ).click()
                 # Transient locator handles retain detached nodes in the inspector.
                 # Keep these memory measurements to primitive DOM results and real input.
@@ -248,7 +285,13 @@ def main():
                     dialog.get_by_role("button", name="Close", exact=True).last.click()
                     expect(dialog).to_have_count(0)
                 page.get_by_role("link", name="File", exact=True).click()
-                page.get_by_role("link", name="Close", exact=True).click()
+                with page.expect_response(
+                    lambda response: response.request.method == "POST"
+                    and response.url.endswith("/close")
+                ) as close_response:
+                    page.get_by_role("link", name="Close map", exact=True).click()
+                assert close_response.value.ok, close_response.value.text()
+                assert close_response.value.json().get("status") == "closed"
                 page.wait_for_function("!window.__hictBenchmark.manager()")
                 cdp.send("Runtime.discardConsoleEntries")
                 cdp.send("HeapProfiler.collectGarbage")

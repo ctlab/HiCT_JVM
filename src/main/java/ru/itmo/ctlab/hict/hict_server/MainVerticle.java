@@ -33,9 +33,11 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
 import io.vertx.core.Launcher;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
@@ -56,6 +58,7 @@ import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.files.ProcessedStorageHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
@@ -127,7 +130,11 @@ public class MainVerticle extends AbstractVerticle {
               .add("DATA_DIR")
               .add("PROCESSED_DIR")
               .add("TILE_SIZE")
+              .add("HICT_PORT")
               .add("VXPORT")
+              .add("WEBUI_PORT")
+              .add("SERVE_WEBUI")
+              .add("AUTO_OPEN_BROWSER")
               .add("HICT_BIND_HOST")
               .add("MIN_DS_POOL")
               .add("MAX_DS_POOL")
@@ -153,32 +160,45 @@ public class MainVerticle extends AbstractVerticle {
         return;
       }
 
-      final int port;
+      final var config = event.result();
+      final int hictPort = getIntegerSetting(config, "HICT_PORT", -1);
+      final int vxPort = getIntegerSetting(config, "VXPORT", -1);
+      final int webUiPort = getIntegerSetting(config, "WEBUI_PORT", -1);
+      final int port = hictPort >= 0 ? hictPort : vxPort >= 0 ? vxPort : webUiPort >= 0 ? webUiPort : 8080;
+      final boolean legacyTwoPorts = hictPort < 0 && vxPort >= 0 && webUiPort >= 0 && vxPort != webUiPort;
+      final boolean serveWebUi = getBooleanSetting(config, "SERVE_WEBUI", true);
+      final Router router;
       try {
-        port = configureServerState(event.result());
+        configureServerState(config, port);
+        router = createRouter(serveWebUi);
       } catch (final Exception ex) {
         log.error("Failed to initialize server state", ex);
         startPromise.fail(ex);
         return;
       }
 
-      final HttpServerOptions serverOptions = new HttpServerOptions();
-      serverOptions.setCompressionSupported(true);
-      final var server = vertx.createHttpServer(serverOptions);
-      final var router = createRouter();
-
-      log.info("Starting server on {}:{}", this.bindHost, port);
-      server.requestHandler(router).listen(port, this.bindHost, ar -> {
-        if (ar.succeeded()) {
-          log.info("Server started on {}:{}", this.bindHost, ar.result().actualPort());
+      listen(router, port, serveWebUi)
+        .compose(primary -> {
+          final var state = vertx.sharedData().getLocalMap("hict_server");
+          state.put("VXPORT", primary.actualPort());
+          state.put("HICT_PORT", primary.actualPort());
+          if (!legacyTwoPorts) {
+            return Future.succeededFuture(primary);
+          }
+          return listen(router, webUiPort, serveWebUi)
+            .recover(failure -> primary.close().compose(ignored -> Future.failedFuture(failure)));
+        })
+        .onSuccess(browserServer -> {
           AttributionInfo.startupBannerLines().forEach(log::info);
-          deployWebUiVerticle();
+          if (serveWebUi && getBooleanSetting(config, "AUTO_OPEN_BROWSER", false)) {
+            tryOpenBrowser(browserServer.actualPort());
+          }
           startPromise.complete();
-        } else {
-          log.error("Failed to start server on {}:{}", this.bindHost, port, ar.cause());
-          startPromise.fail(ar.cause());
-        }
-      });
+        })
+        .onFailure(failure -> {
+          log.error("Failed to start HiCT HTTP server", failure);
+          startPromise.fail(failure);
+        });
     });
   }
 
@@ -271,18 +291,26 @@ public class MainVerticle extends AbstractVerticle {
     return defaultValue;
   }
 
-  private int configureServerState(final @NotNull JsonObject config) {
-    final var dataDirectoryString = config.getString("DATA_DIR", ".");
+  private static boolean getBooleanSetting(final JsonObject config, final String key, final boolean defaultValue) {
+    final var override = System.getProperty(key);
+    if (override != null && !override.isBlank()) {
+      return Boolean.parseBoolean(override.trim());
+    }
+    final var raw = config.getValue(key);
+    return raw == null ? defaultValue : Boolean.parseBoolean(raw.toString().trim());
+  }
+
+  private void configureServerState(final @NotNull JsonObject config, final int port) {
+    final var dataDirectoryString = getStringSetting(config, "DATA_DIR", ".");
     final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
-    final var processedDirectoryString = config.getString(
-      "PROCESSED_DIR",
+    final var processedDirectoryString = getStringSetting(
+      config, "PROCESSED_DIR",
       dataDirectory.resolve("processed").toString()
     );
     final var processedDirectory = Path.of(processedDirectoryString).normalize().toAbsolutePath().normalize();
     final var tileSize = getIntegerSetting(config, "TILE_SIZE", 256);
     final var minDSPool = getIntegerSetting(config, "MIN_DS_POOL", 4);
     final var maxDSPool = getIntegerSetting(config, "MAX_DS_POOL", 16);
-    final var port = getIntegerSetting(config, "VXPORT", 5000);
     final var bindHost = getStringSetting(config, "HICT_BIND_HOST", "0.0.0.0");
     this.bindHost = bindHost;
     final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
@@ -336,6 +364,7 @@ public class MainVerticle extends AbstractVerticle {
     map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
     map.put("tileSize", tileSize);
     map.put("VXPORT", port);
+    map.put("HICT_PORT", port);
     map.put("HICT_BIND_HOST", bindHost);
     map.put("MIN_DS_POOL", minDSPool);
     map.put("MAX_DS_POOL", maxDSPool);
@@ -382,13 +411,24 @@ public class MainVerticle extends AbstractVerticle {
     log.info("Using {} as data directory", dataDirectory);
     log.info("Using {} as processed directory", processedDirectory);
     log.info("Using tile size {}", tileSize);
-    return port;
   }
 
   private NormalizationHandlersHolder normalization;
 
-  private @NotNull Router createRouter() {
+  private @NotNull Router createRouter(final boolean serveWebUi) {
     final var router = Router.router(vertx);
+    final var shutdownToken = System.getenv("HICT_LAUNCHER_SHUTDOWN_TOKEN");
+    if (shutdownToken != null && !shutdownToken.isBlank()) {
+      router.post("/shutdown").handler(ctx -> {
+        final var remote = ctx.request().remoteAddress().hostAddress();
+        final var supplied = ctx.request().getHeader("X-HiCT-Shutdown-Token");
+        if (!launcherShutdownAuthorized(remote, shutdownToken, supplied)) {
+          ctx.response().setStatusCode(403).end();
+          return;
+        }
+        ctx.response().setStatusCode(202).end().onSuccess(ignored -> vertx.close());
+      });
+    }
     final var requestStatistics = new RequestStatistics();
     router.route().handler(CorsHandler.create()
       .allowedMethod(io.vertx.core.http.HttpMethod.GET)
@@ -433,8 +473,10 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
     this.normalization = new NormalizationHandlersHolder(vertx);
-    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange);
+    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange,
+      this.normalization::cancelForSecondaryChange);
     handlersHolders.add(this.fileOperations);
+    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.conversion.DotplotResultsHandlers(vertx, this.fileOperations));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
@@ -470,48 +512,91 @@ public class MainVerticle extends AbstractVerticle {
         "download", examples::backgroundJobs, examples::cancelBackgroundJob, examples::close)
     ));
     handlersHolders.add(this.backgroundJobs);
+    handlersHolders.add(new ProcessedStorageHandlersHolder(vertx, requestTaskScheduler,
+      () -> backgroundJobs.snapshot().stream().anyMatch(ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob::canCancel)));
 
-    router.route().failureHandler(ctx -> {
-      final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError
-        ? httpError : null;
-      final boolean badInput = ctx.failure() instanceof IllegalArgumentException;
-      if (expected != null && expected.getStatusCode() < 500) {
-        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), expected.getStatusCode());
-      } else if (badInput) {
-        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), ctx.failure().getMessage());
-      } else {
-        log.error("An exception was caught at router top-level", ctx.failure());
-      }
-      final var message = failureMessage(ctx.failure());
-      final int statusCode = expected != null ? expected.getStatusCode()
-        : badInput ? 400
-        : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .setStatusCode(statusCode)
-        .end(Json.encode(Map.of("error", message)));
-    });
+    router.route().failureHandler(MainVerticle::respondFailure);
 
     log.info("Configuring router");
     handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));
+    if (serveWebUi) {
+      WebUiRoutes.mount(router);
+    }
     return router;
   }
 
-  private void deployWebUiVerticle() {
-    log.info("Deploying WebUI Verticle");
-    vertx.deployVerticle(new WebUIVerticle(), ar -> {
-      if (ar.succeeded()) {
-        log.info("WebUI verticle deployed");
-      } else {
-        log.error("WebUI verticle deployment failed", ar.cause());
+  private Future<HttpServer> listen(final Router router, final int port, final boolean serveWebUi) {
+    final var options = new HttpServerOptions().setCompressionSupported(true);
+    return vertx.createHttpServer(options).requestHandler(router).listen(port, this.bindHost)
+      .onSuccess(server -> log.info("HiCT listening on http://{}:{}/ ({})",
+        this.bindHost, server.actualPort(), serveWebUi ? "API and WebUI" : "API"));
+  }
+
+  private void tryOpenBrowser(final int port) {
+    try {
+      if (!java.awt.Desktop.isDesktopSupported()
+        || !java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+        log.info("Desktop browsing is not supported on this system, skipping automatic WebUI launch");
+        return;
       }
-    });
+      java.awt.Desktop.getDesktop().browse(java.net.URI.create("http://localhost:" + port + "/"));
+    } catch (final Exception ex) {
+      log.warn("Failed to open WebUI in the default browser", ex);
+    }
+  }
+
+  static boolean launcherShutdownAuthorized(String remote, String expected, String supplied) {
+    if (remote == null || expected == null || expected.isBlank() || supplied == null) return false;
+    try {
+      return java.net.InetAddress.getByName(remote).isLoopbackAddress()
+        && java.security.MessageDigest.isEqual(
+          expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          supplied.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    } catch (java.net.UnknownHostException malformed) {
+      return false;
+    }
+  }
+
+  static void respondFailure(io.vertx.ext.web.RoutingContext ctx) {
+    final var failure = ctx.failure();
+    final int statusCode;
+    if (failure instanceof io.vertx.ext.web.handler.HttpException http) {
+      statusCode = http.getStatusCode();
+    } else if (failure instanceof IllegalArgumentException || failure instanceof io.vertx.core.json.DecodeException) {
+      statusCode = 400;
+    } else if (failure instanceof NoOpenFileException || failure instanceof IllegalStateException && failure.getMessage() != null) {
+      statusCode = 409;
+    } else {
+      statusCode = ctx.statusCode() >= 400 ? ctx.statusCode() : 500;
+    }
+    final String message;
+    if (statusCode >= 500) {
+      final var reference = java.util.UUID.randomUUID().toString().substring(0, 8);
+      log.error("Request failed. Reference {} for {} {}", reference, ctx.request().method(), ctx.request().path(), failure);
+      message = "Internal error. Reference " + reference;
+    } else {
+      message = failureMessage(failure);
+      log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), statusCode);
+    }
+    if (ctx.response().headWritten() || ctx.response().ended()) return;
+    ctx.response()
+      .putHeader("content-type", "application/json")
+      .setStatusCode(statusCode)
+      .end(Json.encode(Map.of("error", message)));
   }
 
   /** Vert.x keeps the user-facing explanation in payload, not getMessage() ("Conflict"). */
   public static String failureMessage(Throwable failure) {
-    if (failure instanceof io.vertx.ext.web.handler.HttpException http
-        && http.getPayload() != null && !http.getPayload().isBlank()) return http.getPayload();
-    return failure != null && failure.getMessage() != null ? failure.getMessage() : "Request failed";
+    if (failure instanceof NoOpenFileException) return "Open a map first";
+    if (failure instanceof NumberFormatException) return "Invalid number in the request";
+    if (failure instanceof io.vertx.core.json.DecodeException) return "Expected a JSON request object";
+    final var message = failure instanceof io.vertx.ext.web.handler.HttpException http && http.getPayload() != null
+      ? http.getPayload() : failure == null ? null : failure.getMessage();
+    if (message == null || message.isBlank() ||
+      JAVA_FAILURE_TEXT.matcher(message).find()) return "Request failed";
+    return message;
   }
+
+  private static final java.util.regex.Pattern JAVA_FAILURE_TEXT = java.util.regex.Pattern.compile(
+    "java\\.|javax\\.|Exception|Cannot invoke|Cannot read field|ClassCast|IndexOutOfBounds|For input string|ru\\.itmo|io\\.vertx");
 }

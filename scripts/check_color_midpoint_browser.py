@@ -5,7 +5,8 @@ import argparse, functools, hashlib, http.server, io, json, math, shutil, subpro
 from pathlib import Path
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from browser_review_helpers import expand_signal_advanced
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 from browser_review_helpers import select_visualization_source
 
 
@@ -60,12 +61,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
 
             def post(path, body=None):
@@ -133,7 +129,7 @@ def main():
             midpoint = page.get_by_role("slider", name="Color midpoint", exact=True)
 
             def mode(value):
-                c = page.locator('select[title^="Expected and O/E"]')
+                c = page.locator('select[aria-label="Signal display"]')
                 c.select_option(value)
                 expect(c).to_be_enabled()
                 wait()
@@ -226,12 +222,12 @@ def main():
                 assert gamma() == saved_gamma
                 record("source-switch-keeps-independent-midpoints-and-inputs")
                 # Typed thresholds and a logarithmic slider axis preserve the color curve.
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("22")
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
                 assert gamma() == saved_gamma
+                expand_signal_advanced(page)
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Log", exact=True
                 ).click()
@@ -241,7 +237,7 @@ def main():
                 record(
                     "threshold-and-log-axis-adjustments-keep-color-and-signal-transforms-separate"
                 )
-                page.get_by_role("button", name="Reset midpoint", exact=True).click()
+                page.get_by_role("button", name="Reset curve", exact=True).click()
                 wait()
                 assert gamma() == 1
                 assert (
@@ -254,11 +250,7 @@ def main():
                 page.get_by_role("group", name="Slider scale", exact=True).get_by_role(
                     "button", name="Linear", exact=True
                 ).click()
-                details = page.locator("details.range-details")
-                if details.get_attribute("open") is None:
-                    details.locator("summary").click()
-                maximum = page.get_by_role(
-                    "spinbutton", name="Slider maximum signal", exact=True
+                maximum = page.get_by_label("Histogram view to", exact=True
                 )
                 maximum.fill("10000")
                 maximum.press("Tab")
@@ -276,7 +268,7 @@ def main():
                 record(
                     "close-thresholds-leave-the-midpoint-visible-and-keyboard-accessible"
                 )
-                page.get_by_role("button", name="Focus range", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
                 key("ArrowRight")
                 observed_gamma = gamma()
                 observed_graph = graph()
@@ -396,7 +388,7 @@ def main():
                 )
                 pixels = tile().tobytes()
                 with page.expect_download() as event:
-                    check.menu("File", "Save session")
+                    check.menu("File", "Save session…")
                 saved = out / "gamma-session.json"
                 event.value.save_as(saved)
                 doc = json.loads(saved.read_text())
@@ -405,10 +397,10 @@ def main():
                     and doc["snapshot"]["renderPipeline"]["lowerExpression"]["gamma"]
                     == 0.5
                 )
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 page.get_by_role("heading", name="No contact map open").wait_for()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(saved)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly.",
@@ -424,6 +416,123 @@ def main():
                 record(
                     "session-save-and-restore-preserve-midpoints-and-rendered-pixels"
                 )
+                page.get_by_role("button", name="Reset curve", exact=True).click()
+                page.get_by_label("Lower signal threshold", exact=True).fill("0")
+                page.get_by_label("Upper signal threshold", exact=True).fill("30000")
+                page.get_by_role("button", name="Apply", exact=True).click()
+                scale = page.get_by_role("group", name="Slider scale", exact=True)
+                scale.get_by_role("button", name="Log", exact=True).click()
+                page.get_by_role("button", name="Whole data", exact=True).click()
+                wait()
+                editor = page.locator(".curve-editor")
+                editor.scroll_into_view_if_needed()
+                box = editor.bounding_box()
+                points = editor.locator(".curve-point")
+                editor.dblclick(position={"x": box["width"] * 0.66, "y": box["height"] * 0.62})
+                page.get_by_role("button", name="Apply", exact=True).click()
+                wait()
+                curve = options()["colormap"]
+                assert curve["curveMode"] == "smooth-log" and len(curve["curve"]) == 2, curve
+                knot, weight = curve["curve"]
+                assert abs(knot - 0.66) < 0.015 and abs(weight - 0.38) < 0.025, curve
+                xy = [tuple(map(float, pair.split(","))) for pair in editor.locator(".transfer-line").get_attribute("points").split()]
+                plotted = sorted({x / 1000: 1 - y / 64 for x, y in xy}.items())
+
+                def slopes(segment):
+                    return [(y1 - y0) / (x1 - x0) for (x0, y0), (x1, y1) in zip(segment, segment[1:])]
+
+                left = slopes([(x, y) for x, y in plotted if knot - 0.15 < x < knot - 0.01])
+                right = slopes([(x, y) for x, y in plotted if knot + 0.01 < x < knot + 0.15])
+                assert len(left) > 4 and all(a < b for a, b in zip(left, left[1:])), left
+                assert len(right) > 4 and all(a > b for a, b in zip(right, right[1:])), right
+
+                sample = next(index for index, value in enumerate(raw) if value == 3)
+                value = raw[sample]
+                t = (math.log10(value / curve["maxSignal"]) + 10) / 10
+                left_slope, right_slope = weight / knot, (1 - weight) / (1 - knot)
+                steepest = 1.5 * max(left_slope, right_slope)
+                mix = (weight * (t / knot) ** (steepest / left_slope) if t <= knot else
+                       1 - (1 - weight) * ((1 - t) / (1 - knot)) ** (steepest / right_slope))
+                expected = (255, round(255 * (1 - mix)), round(255 * (1 - mix)), 255)
+                actual = tile().getpixel((sample % 5, sample // 5))
+                assert all(abs(a - b) <= 1 for a, b in zip(actual, expected)), (actual, expected)
+                client = page.evaluate("""async value => {
+                  const source = window.__hictBenchmark.manager().getMap().getAllLayers()
+                    .map(layer => layer.getSource?.()).find(source => source?.renderSignalTile);
+                  const img = new Image();
+                  img.src = source.renderSignalTile(Float32Array.of(value), 1, 1);
+                  await img.decode();
+                  const canvas = document.createElement('canvas');
+                  const context = canvas.getContext('2d');
+                  context.drawImage(img, 0, 0);
+                  return [...context.getImageData(0, 0, 1, 1).data];
+                }""", value)
+                assert all(abs(a - b) <= 1 for a, b in zip(client, expected)), (client, expected)
+                editor.evaluate("element => element.scrollIntoView({block: 'center'})")
+                editor.screenshot(path=str(out / "smooth-log-histogram.png"))
+                record("smooth-log-curve-has-an-inflection-and-agrees-with-client-and-server-pixels")
+                before_scale = tile().tobytes()
+                scale.get_by_role("button", name="Linear", exact=True).click()
+                wait()
+                assert tile().tobytes() == before_scale and options()["colormap"]["curveMode"] == "smooth-log"
+                page.get_by_role("button", name="Reset curve", exact=True).click()
+                page.get_by_label("Upper signal threshold", exact=True).fill("11")
+                page.get_by_role("button", name="Apply", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
+                wait()
+                box = editor.bounding_box()
+                for count, (x, y) in enumerate([(0.22, 0.68), (0.77, 0.18)], 1):
+                    editor.dblclick(position={"x": box["width"] * x, "y": box["height"] * y})
+                    expect(points).to_have_count(count)
+                page.get_by_role("button", name="Apply", exact=True).click()
+                wait()
+                assert len(options()["colormap"]["curve"]) == 4
+                assert options()["colormap"]["curveMode"] == "smooth-value"
+                points.nth(1).click(button="right")
+                expect(points).to_have_count(1)
+                page.get_by_role("slider", name="Curve point 1", exact=True).click(button="right")
+                expect(points).to_have_count(1)
+                wait()
+                assert "curve" not in options()["colormap"]
+                assert "curveMode" not in options()["colormap"]
+                record("histogram-points-and-slider-projections-edit-the-rendered-curve")
+                page.get_by_label("Upper signal threshold", exact=True).fill("5")
+                page.get_by_role("button", name="Apply", exact=True).click()
+                page.get_by_role("button", name="Fit view to colour range", exact=True).click()
+                wait()
+                lower_end = page.get_by_role("slider", name="At and below Lower")
+                upper_end = page.get_by_role("slider", name="At and above Upper")
+                lower_end.press("Shift+ArrowUp")
+                expect(lower_end).to_have_attribute("aria-valuenow", "10")
+                lower_end.press("ArrowUp")
+                expect(lower_end).to_have_attribute("aria-valuenow", "11")
+                lower_end.click(button="right")
+                expect(lower_end).to_have_attribute("aria-valuenow", "0")
+                high = next(index for index, value in enumerate(raw) if value > 5)
+                coord = high % 5, high // 5
+                assert tile().getpixel(coord) == (255, 0, 0, 255)
+                editor.scroll_into_view_if_needed()
+                end_box = upper_end.bounding_box()
+                plot_box = editor.bounding_box()
+                end_x = end_box["x"] + end_box["width"] / 2
+                page.mouse.move(end_x, end_box["y"] + end_box["height"] / 2)
+                page.mouse.down()
+                page.mouse.move(end_x - 25, plot_box["y"] + plot_box["height"] - 2, steps=10)
+                page.mouse.up()
+                expect(upper_end).to_have_attribute("aria-valuenow", "0")
+                assert abs(upper_end.bounding_box()["x"] - end_box["x"]) < 1
+                page.get_by_role("button", name="Apply", exact=True).click()
+                wait()
+                assert options()["colormap"]["curve"] == [1, 0]
+                assert options()["colormap"]["curveMode"] == "smooth-value"
+                assert tile().getpixel(coord) == (255, 255, 255, 255)
+                assert query(input_before) == raw
+                record("editable-curve-endpoints-change-saturated-pixels-without-changing-signal")
+                page.get_by_role("button", name="Reset curve", exact=True).click()
+                wait()
+                assert "curveMode" not in options()["colormap"]
+                expect(upper_end).to_have_attribute("aria-valuenow", "100")
+                assert tile().getpixel(coord) == (255, 0, 0, 255)
                 page.set_viewport_size({"width": 640, "height": 800})
                 check.settle()
                 midpoint.scroll_into_view_if_needed()

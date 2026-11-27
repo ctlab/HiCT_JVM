@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -27,12 +27,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def pipeline():
@@ -80,22 +75,50 @@ def main():
             # Loaded-tile metadata belongs to the native grid. Letter/base-grid
             # images intentionally omit native-cell statistics to avoid counting
             # repeated references as base observations. Keep this legacy loaded-
-            # range/drag test explicitly at four screen pixels per source bin.
+            # range/drag test below the letter-scale threshold.
             page.evaluate("""()=>{const m=window.__hictBenchmark.manager();
                 m.viewAndLayersManager.restoreViewPosition({centerBp:[8.5,8.5],
-                  resolution:1/m.viewAndLayersManager.coordinateBaseBp,rotation:0});}""")
+                  resolution:2/m.viewAndLayersManager.coordinateBaseBp,rotation:0});}""")
             check.settle()
             assert not page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale")
             page.locator("#normalization-mode").select_option("none")
             page.locator("#signal-transform-linear").click()
             advanced = page.locator("#signal-advanced")
+            expect(advanced).not_to_have_attribute("open", "")
+            histogram = page.get_by_role("group", name="Viewport signal histogram")
+            scale = histogram.get_by_role("group", name="Slider scale", exact=True)
+            fit = histogram.get_by_role("button", name="Fit levels", exact=True)
+            displayed_signal = page.get_by_role(
+                "group", name="Displayed signal", exact=True
+            )
+            expect(scale).to_be_visible()
+            expect(fit).to_be_enabled()
+            expect(displayed_signal).to_be_visible()
+            plot_box = histogram.get_by_role("img").bounding_box()
+            scale_box = scale.bounding_box()
+            fit_box = fit.bounding_box()
+            assert plot_box["y"] + plot_box["height"] <= scale_box["y"]
+            assert scale_box["x"] + scale_box["width"] <= fit_box["x"]
+            assert abs(
+                (scale_box["y"] + scale_box["height"] / 2)
+                - (fit_box["y"] + fit_box["height"] / 2)
+            ) <= 1, (scale_box, fit_box)
+            caption_box = histogram.get_by_role("status").bounding_box()
+            processing_box = page.get_by_role(
+                "region", name="Signal processing", exact=True
+            ).bounding_box()
+            assert caption_box["y"] + caption_box["height"] <= processing_box["y"]
+            page.screenshot(path=str(output / "sidebar-controls-advanced-closed.png"))
+            results.append(
+                {
+                    "test": "Slider scale and Fit levels share a row beneath the histogram with Advanced closed"
+                }
+            )
             advanced.locator(":scope > summary").click()
             page.locator("#scaling-across-zoom").select_option("none")
-            lower = page.get_by_role(
-                "spinbutton", name="Lower signal threshold", exact=True
+            lower = page.get_by_label("Lower signal threshold", exact=True
             )
-            upper = page.get_by_role(
-                "spinbutton", name="Upper signal threshold", exact=True
+            upper = page.get_by_label("Upper signal threshold", exact=True
             )
             lower.fill("0")
             upper.fill("11")
@@ -165,22 +188,19 @@ def main():
             )
             graph = pipeline()
             thresholds = [lower.input_value(), upper.input_value()]
-            scale = page.get_by_role("group", name="Slider scale", exact=True)
             for mode in ("Log", "Linear"):
                 scale.get_by_role("button", name=mode, exact=True).click()
                 assert [lower.input_value(), upper.input_value()] == thresholds
                 assert pipeline() == graph
-            page.get_by_role("button", name="Focus range", exact=True).click()
-            details = page.locator("details.range-details")
-            details.locator("summary").click()
-            minimum = page.get_by_role(
-                "spinbutton", name="Slider minimum signal", exact=True
+            page.get_by_role("button", name="Fit view to colour range", exact=True).click()
+            minimum = page.get_by_label("Histogram view from", exact=True
             )
-            maximum = page.get_by_role(
-                "spinbutton", name="Slider maximum signal", exact=True
+            maximum = page.get_by_label("Histogram view to", exact=True
             )
-            assert float(minimum.input_value()) == float(thresholds[0])
-            assert float(maximum.input_value()) == float(thresholds[1])
+            lo, hi = map(float, thresholds)
+            margin = (hi - lo) * 0.05
+            assert math.isclose(float(minimum.input_value()), lo - margin, abs_tol=0.001)
+            assert math.isclose(float(maximum.input_value()), hi + margin, abs_tol=0.001)
             minimum.fill("-5")
             minimum.press("Tab")
             maximum.fill("20")
@@ -188,9 +208,12 @@ def main():
             assert pipeline() == graph
             maximum.fill("-10")
             maximum.press("Tab")
-            assert float(maximum.input_value()) == float(minimum.input_value()) + 1
+            expect(maximum).to_have_value("20")
+            expect(maximum).to_have_attribute("aria-invalid", "true")
             assert pipeline() == graph
             page.get_by_role("button", name="Use full loaded range", exact=True).click()
+            assert [float(minimum.input_value()), float(maximum.input_value())] == [-5, 20]
+            page.get_by_role("button", name="Whole data", exact=True).click()
             assert (
                 float(minimum.input_value()) == 0 and float(maximum.input_value()) == 11
             )
@@ -204,7 +227,7 @@ def main():
             assert pipeline() == graph and query() == known
             results.append(
                 {
-                    "test": "Slider Linear/Log, Focus, domain repair, loaded range and exact scan preserve graph and exact contacts"
+                    "test": "Slider Linear/Log, fitted and validated view bounds, loaded range and exact scan preserve graph and exact contacts"
                 }
             )
             page.locator("#signal-transform-log").click()
@@ -290,8 +313,7 @@ def main():
             )
             expect(targets.locator("option")).to_have_count(2)
             targets.select_option("upper.top")
-            upper = page.get_by_role(
-                "spinbutton", name="Upper signal threshold", exact=True
+            upper = page.get_by_label("Upper signal threshold", exact=True
             )
             page.wait_for_function(
                 "document.querySelector('[aria-label=\"Upper signal threshold\"]').value === '22'"

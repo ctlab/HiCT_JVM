@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -31,16 +31,14 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
-        dialog = page.get_by_role("dialog").filter(
-            has=page.get_by_role("heading", name="Tracks and layers", exact=True)
-        )
+        dialog = page.locator('.track-manager-root [role=dialog]').first
+        def switch_manager(name):
+            if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
+            close_manager()
+            check.menu("View",name+"…")
+            dialog.wait_for()
 
         def api(path, payload=None):
             response = page.request.post(args.api + path, data=payload or {})
@@ -52,7 +50,7 @@ def main():
             return response.text()
 
         def open_manager():
-            check.menu("View", "Tracks and layers…")
+            check.menu("View", "1D tracks…")
             dialog.wait_for(state="visible")
 
         def close_manager():
@@ -61,7 +59,7 @@ def main():
             check.settle()
 
         def browse(index, heading, filename):
-            dialog.get_by_role('tab',name='1D tracks' if index==0 else 'Sources and layers',exact=True).click()
+            switch_manager('1D tracks' if index==0 else 'Sources and layers')
             dialog.get_by_role("button", name="Browse…", exact=True).click()
             picker = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=heading, exact=True)
@@ -182,7 +180,7 @@ def main():
             results.append({"track": tracks[0], "feature": feature})
 
         def choose_weights(source):
-            dialog.get_by_role('tab',name='1D tracks',exact=True).click()
+            switch_manager('1D tracks')
             dialog.get_by_label('Add track',exact=True).select_option('weights')
             dialog.get_by_label('Weights from',exact=True).select_option(source)
             return dialog.get_by_role('button',name='Add weights',exact=True)
@@ -221,7 +219,7 @@ def main():
             assert len(api('/tracks/list'))==1
 
         def backgrounds():
-            dialog.locator('summary').filter(has_text='Track appearance').click()
+            check.advanced()
             dialog.locator("#track-bg-inherit").uncheck()
             panel = dialog.locator(".alert").filter(
                 has=page.get_by_text("Track panel background", exact=True)
@@ -239,7 +237,7 @@ def main():
             check.settle()
             assert_background([18, 52, 86, 255])
             open_manager()
-            dialog.locator('summary').filter(has_text='Track appearance').click()
+            check.advanced()
             expect(color).to_have_value("#123456")
             dialog.locator("#track-bg-inherit").check()
             expect(color).to_be_disabled()
@@ -259,7 +257,7 @@ def main():
             )
             results.append({"secondaryWeights": weight_values("SECONDARY")})
             remove_weights('SECONDARY')
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            switch_manager('Sources and layers')
             dialog.get_by_role('button',name='Detach',exact=True).click()
             choose_weights('PRIMARY')
             expect(dialog.locator('#track-weight-source option[value=SECONDARY]')).to_be_disabled()
@@ -267,7 +265,9 @@ def main():
             assert len(api("/tracks/list")) == 1
 
         def precompute():
-            dialog.locator('summary').filter(has_text='Preparation').click()
+            advanced = dialog.locator('details[data-advanced-id="tracks"]')
+            if advanced.get_attribute('open') is None:
+                advanced.locator(':scope > summary').click()
             with page.expect_response("**/tracks/precompute/start") as response:
                 dialog.get_by_role("button", name="Precompute all", exact=True).click()
             assert response.value.ok

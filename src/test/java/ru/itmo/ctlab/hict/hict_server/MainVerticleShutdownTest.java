@@ -22,6 +22,16 @@ import java.util.zip.GZIPOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MainVerticleShutdownTest {
+  @Test
+  void launcherShutdownRequiresLoopbackAndExactToken() {
+    assertTrue(MainVerticle.launcherShutdownAuthorized("127.0.0.1", "expected", "expected"));
+    assertTrue(MainVerticle.launcherShutdownAuthorized("::1", "expected", "expected"));
+    assertFalse(MainVerticle.launcherShutdownAuthorized("127.0.0.1", "expected", null));
+    assertFalse(MainVerticle.launcherShutdownAuthorized("127.0.0.1", "expected", "different"));
+    assertFalse(MainVerticle.launcherShutdownAuthorized("192.0.2.1", "expected", "expected"));
+    assertFalse(MainVerticle.launcherShutdownAuthorized("127.0.0.1", null, "expected"));
+  }
+
   @TempDir Path directory;
 
   @Test

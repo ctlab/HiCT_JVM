@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_server.launcher;
 
+import ru.itmo.ctlab.hict.hict_server.util.WindowsPaths;
 import ru.itmo.ctlab.hict.hict_server.info.AttributionInfo;
 import ru.itmo.ctlab.hict.hict_server.tools.HictCli;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
@@ -199,6 +200,11 @@ public final class HictLauncherGui {
     }
   }
 
+  static String unexpectedExitMessage(int exitCode, boolean ready) {
+    if (!ready) return "HiCT stopped before it was ready. See the log below for the reason.";
+    return exitCode == 0 ? null : "Stopped unexpectedly (exit " + exitCode + "). See log.";
+  }
+
   private static final class LauncherWindow {
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final int MAX_LOG_CHARS = 200_000;
@@ -221,10 +227,10 @@ public final class HictLauncherGui {
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY, "Folders and network"),
+      new ConfigSpec("HICT_TEMP_DIR", "Working folder", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("PROCESSED_DIR", "Processed/cache directory", "", PathKind.DIRECTORY, "Folders and network"),
       new ConfigSpec("HICT_BIND_HOST", "Bind host", "127.0.0.1", PathKind.NONE, "Folders and network"),
-      new ConfigSpec("VXPORT", "API port", "5000", PathKind.NONE, "Folders and network"),
-      new ConfigSpec("WEBUI_PORT", "WebUI port", "8080", PathKind.NONE, "Folders and network"),
+      new ConfigSpec("HICT_PORT", "Port", "8080", PathKind.NONE, "Folders and network"),
       new ConfigSpec("MIN_DS_POOL", "Min dataset pool", "4", PathKind.NONE, "Memory and threads"),
       new ConfigSpec("MAX_DS_POOL", "Max dataset pool", "16", PathKind.NONE, "Memory and threads"),
       new ConfigSpec("HICT_WORKERS_TOTAL_MAX", "Total worker limit", "", PathKind.NONE, "Memory and threads"),
@@ -291,6 +297,7 @@ public final class HictLauncherGui {
     private JPanel logCardsPanel;
     private JTextArea logArea;
     private JLabel statusLabel;
+    private JLabel runtimeTempNote;
     private JProgressBar startProgress;
     private JLabel dataFolderLabel;
     private JCheckBox followLogCheckbox;
@@ -298,6 +305,7 @@ public final class HictLauncherGui {
     private JButton webUiLinkButton;
     private JLabel browserStatusLabel;
     private JButton startButton;
+    private JButton backToStartButton;
     private JButton stopButton;
     private JButton openWebUiButton;
     private JButton configureButton;
@@ -315,8 +323,12 @@ public final class HictLauncherGui {
     private JLabel logLevelValueLabel;
     private Timer statusTimer;
     private volatile Process serverProcess;
+    private String serverShutdownToken;
+    private URI serverShutdownUri;
     private volatile boolean closing;
     private volatile Integer lastExitCode;
+    private volatile Process readyProcess;
+    private volatile boolean exitedBeforeReady;
     private volatile boolean stopRequested;
     private volatile boolean startAttempted;
     private volatile boolean exitDialogShown;
@@ -368,7 +380,7 @@ public final class HictLauncherGui {
       });
 
       updateBrowserStatus();
-      updateStatusLabels(false, false);
+      updateStatusLabels(false);
       this.statusTimer = new Timer(1_000, ignored -> pollStatusInBackground());
       this.statusTimer.setInitialDelay(0);
       this.statusTimer.start();
@@ -496,29 +508,24 @@ public final class HictLauncherGui {
 
     private JPanel createLaunchPlaceholderPanel() {
       final var panel = new JPanel(new GridBagLayout());
-      panel.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createTitledBorder("HiCT server log"),
-        BorderFactory.createEmptyBorder(this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge())
-      ));
       final var content = new JPanel(new GridBagLayout());
       final var gbc = new GridBagConstraints();
       gbc.gridx = 0;
       gbc.gridy = 0;
-      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
-      final var title = new JLabel("Start HiCT to open the WebUI.");
-      title.setFont(title.getFont().deriveFont(Font.BOLD, (float) this.uiScale.heroFontSize()));
-      content.add(title, gbc);
-
-      gbc.gridy = 1;
-      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
+      gbc.insets = new Insets(0, 0, this.uiScale.gap(), 0);
       content.add(createDataFolderRow(), gbc);
 
-      gbc.gridy = 2;
+      gbc.gridy++;
       gbc.insets = new Insets(this.uiScale.gap(), 0, 0, 0);
       final var duplicateStartButton = new JButton("Start HiCT");
       duplicateStartButton.addActionListener(ignored -> startHiCT());
       styleHeroButton(duplicateStartButton);
       content.add(duplicateStartButton, gbc);
+
+      gbc.gridy++;
+      final var viewLog = new JButton("View console log");
+      viewLog.addActionListener(ignored -> showActivityCard("log"));
+      content.add(viewLog, gbc);
 
       panel.add(content);
       return panel;
@@ -550,6 +557,23 @@ public final class HictLauncherGui {
       addStatusRow(panel, gbc, 0, "Status:", statusRow);
       addStatusRow(panel, gbc, 1, "Links:", createAddressLinksPanel());
       addStatusRow(panel, gbc, 2, "Open in:", createBrowserModePanel());
+      this.runtimeTempNote = new JLabel();
+      this.runtimeTempNote.setForeground(new Color(71, 84, 103));
+      this.runtimeTempNote.setVisible(false);
+      gbc.gridx = 0;
+      gbc.gridy = 3;
+      gbc.gridwidth = 2;
+      panel.add(this.runtimeTempNote, gbc);
+      final int installLength = this.appHome.toString().length();
+      if (isWindows() && installLength > 150) {
+        final var warning = "<html><b>HiCT is installed in a very deep folder</b> (" + installLength
+          + " characters). Windows can refuse to load the bundled analysis tools from there. "
+          + "HiCT starts them through a short link automatically. If ModDotPlot still fails, "
+          + "move HiCT to a short folder such as C:\\HiCT.</html>";
+        final var warningLabel = new JLabel(warning, UIManager.getIcon("OptionPane.warningIcon"), JLabel.LEADING);
+        gbc.gridy = 4;
+        panel.add(warningLabel, gbc);
+      }
       this.uiScale.applyFonts(panel);
       return panel;
     }
@@ -693,6 +717,16 @@ public final class HictLauncherGui {
           browse.addActionListener(ignored -> browsePath(spec, field));
           form.add(browse, gbc);
           rowComponents.add(browse);
+        }
+        if ("HICT_PORT".equals(spec.key())) {
+          final var hint = new JLabel("HiCT serves the map viewer and its API on this one port.");
+          hint.setForeground(new Color(90, 96, 104));
+          gbc.gridy = gridy++;
+          gbc.gridx = 1;
+          gbc.gridwidth = 2;
+          form.add(hint, gbc);
+          gbc.gridwidth = 1;
+          rowComponents.add(hint);
         }
         this.configRows.add(new ConfigRow(spec, label, rowComponents));
       }
@@ -858,6 +892,9 @@ public final class HictLauncherGui {
       row.add(copy);
       row.add(save);
       row.add(clear);
+      this.backToStartButton = new JButton("Back to start");
+      this.backToStartButton.addActionListener(ignored -> showActivityCard("start"));
+      row.add(this.backToStartButton);
       this.uiScale.applyFonts(row);
       return row;
     }
@@ -1025,13 +1062,13 @@ public final class HictLauncherGui {
       return panel;
     }
 
-    private void showActivityCard() {
+    private void showActivityCard(final String card) {
       if (this.configurationPanel != null) {
         final var body = this.configurationPanel.getParent();
         ((CardLayout) body.getLayout()).show(body, "activity");
       }
       this.configureButton.setText("Show Configuration");
-      showLogPanel();
+      ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, card);
       if (this.frame != null) {
         this.frame.revalidate();
         this.frame.repaint();
@@ -1145,7 +1182,7 @@ public final class HictLauncherGui {
 
     private void startHiCT() {
       if (isProcessAlive()) {
-        showActivityCard();
+        showActivityCard("log");
         appendLauncherLog("HiCT is already running.");
         return;
       }
@@ -1170,17 +1207,25 @@ public final class HictLauncherGui {
         return;
       }
       saveSettings();
-      showActivityCard();
+      showActivityCard("log");
 
       final Path dataDir;
       final Path tempDir;
+      final Path processedDir;
+      dataDir = normalizePath(getFieldValue("DATA_DIR"));
       try {
-        dataDir = normalizePath(getFieldValue("DATA_DIR"));
-        Files.createDirectories(dataDir);
         tempDir = selectExecutableRuntimeTempDir(dataDir);
-        Files.createDirectories(tempDir);
-      } catch (final Exception ex) {
-        showError("Cannot prepare DATA_DIR", ex);
+      } catch (final IOException ex) {
+        showWorkingFolderRecovery("HiCT could not use its working folder.", "HICT_TEMP_DIR", ex);
+        return;
+      }
+      try {
+        final var defaultProcessed = dataDir.resolve("processed");
+        final var configuredProcessed = getFieldValue("PROCESSED_DIR");
+        final var requestedProcessed = configuredProcessed.isBlank() ? defaultProcessed : normalizePath(configuredProcessed);
+        processedDir = prepareProcessedDirectory(requestedProcessed, defaultProcessed, tempDir);
+      } catch (final IOException | RuntimeException ex) {
+        showWorkingFolderRecovery("HiCT could not use its processed-data folder.", "PROCESSED_DIR", ex);
         return;
       }
 
@@ -1190,14 +1235,21 @@ public final class HictLauncherGui {
       processBuilder.directory(dataDir.toFile());
       final var env = processBuilder.environment();
       applyEnvironment(env, dataDir, tempDir);
+      env.put("PROCESSED_DIR", processedDir.toString());
+      this.serverShutdownToken = java.util.UUID.randomUUID().toString();
+      this.serverShutdownUri = URI.create("http://127.0.0.1:" + normalizedPort("HICT_PORT", "8080") + "/shutdown");
+      env.put("HICT_LAUNCHER_SHUTDOWN_TOKEN", this.serverShutdownToken);
 
       appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
       appendLauncherLog("Runtime temp directory: " + tempDir);
+      appendLauncherLog("Processed/cache directory: " + processedDir);
       appendLauncherLog("Native processing launch mode: " + selectedNativeProcessingMode().label);
       appendLauncherLog("Command: " + String.join(" ", command));
 
       this.lastExitCode = null;
       this.stopRequested = false;
+      this.readyProcess = null;
+      this.exitedBeforeReady = false;
       this.exitDialogShown = false;
       try {
         this.serverProcess = processBuilder.start();
@@ -1211,26 +1263,25 @@ public final class HictLauncherGui {
 
       updateButtons();
       if (this.openAfterStartCheckbox.isSelected()) {
-        waitAndOpenWebUi();
+        waitAndOpenWebUi(this.serverProcess);
       }
     }
 
-    private int parsePort(final String key, final String name, final String fallback) {
-      final var raw = getFieldValue(key);
-      final var text = raw.isBlank() ? fallback : raw;
+    private int parsePort() {
+      final var text = normalizedPort("HICT_PORT", "8080");
       final int port;
       try {
         port = Integer.parseInt(text.trim());
       } catch (final NumberFormatException ex) {
-        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got '" + text + "').");
+        throw new IllegalArgumentException("Port must be an integer from 1024 to 65535 (got '" + text + "').");
       }
-      if (port < 1 || port > 65535) {
-        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got " + port + ").");
+      if (port < 1024 || port > 65535) {
+        throw new IllegalArgumentException("Port must be an integer from 1024 to 65535 (got " + port + ").");
       }
       return port;
     }
 
-    private String checkPortBindable(final String host, final int port, final String name) {
+    private String checkPortBindable(final String host, final int port) {
       try (var socket = new ServerSocket()) {
         if (!isWindows()) {
           socket.setReuseAddress(true);
@@ -1241,35 +1292,23 @@ public final class HictLauncherGui {
       } catch (final UnknownHostException ex) {
         return "Bind host '" + host + "' cannot be resolved.";
       } catch (final IOException | RuntimeException ex) {
-        return name + " " + port + " is already in use or cannot be opened on "
-          + (host.isBlank() ? "all interfaces" : host) + ": " + ex.getMessage();
+        return "Port " + port + " is used by another program. Choose another port, for example 8765, or stop that program.";
       }
     }
 
     /** Checks everything that commonly makes the server fail right after start; reports the first problem. */
     private boolean validateBeforeStart() {
-      final int apiPort;
-      final int webUiPort;
+      final int port;
       try {
-        apiPort = parsePort("VXPORT", "API port", "5000");
-        webUiPort = parsePort("WEBUI_PORT", "WebUI port", "8080");
+        port = parsePort();
       } catch (final IllegalArgumentException ex) {
         showErrorMessage("Invalid port", ex.getMessage());
         return false;
       }
-      if (apiPort == webUiPort) {
-        showErrorMessage("Invalid port", "API port and WebUI port must differ (both are " + apiPort + ").");
-        return false;
-      }
       final var host = getFieldValue("HICT_BIND_HOST");
-      final var apiProblem = checkPortBindable(host, apiPort, "API port");
-      if (apiProblem != null) {
-        showErrorMessage("Cannot start HiCT", apiProblem);
-        return false;
-      }
-      final var webUiProblem = checkPortBindable(host, webUiPort, "WebUI port");
-      if (webUiProblem != null) {
-        showErrorMessage("Cannot start HiCT", webUiProblem);
+      final var portProblem = checkPortBindable(host, port);
+      if (portProblem != null) {
+        showErrorMessage("Cannot start HiCT", portProblem);
         return false;
       }
       final var dataDir = safeNormalizePath(getFieldValue("DATA_DIR"));
@@ -1283,8 +1322,8 @@ public final class HictLauncherGui {
         showErrorMessage("Cannot start HiCT", "DATA_DIR cannot be created: " + dataDir + " (" + ex.getMessage() + ")");
         return false;
       }
-      if (!Files.isWritable(dataDir)) {
-        showErrorMessage("Cannot start HiCT", "DATA_DIR is not writable: " + dataDir);
+      if (!Files.isReadable(dataDir)) {
+        showErrorMessage("Cannot start HiCT", "The data directory cannot be read: " + dataDir);
         return false;
       }
       boolean loopback;
@@ -1307,28 +1346,23 @@ public final class HictLauncherGui {
       return true;
     }
 
-    private void showLogPanel() {
-      if (this.logCardsPanel == null) {
-        return;
-      }
-      final var layout = (CardLayout) this.logCardsPanel.getLayout();
-      layout.show(this.logCardsPanel, "log");
-      this.logCardsPanel.revalidate();
-      this.logCardsPanel.repaint();
-    }
-
     private List<String> buildServerCommand(final Path tempDir) {
       final var command = new ArrayList<String>();
       command.add(resolveJavaExecutable());
       command.add("-XX:MaxRAMPercentage=50.0");
       command.add("-DAUTO_OPEN_BROWSER=false");
       command.add("-DSERVE_WEBUI=true");
-      command.add("-Djava.io.tmpdir=" + tempDir);
+      final boolean windows = isWindows();
+      if (!windows) command.add("-Djava.io.tmpdir=" + tempDir);
       final var extraJvmOptions = splitCommandLine(getFieldValue("HICT_JAVA_OPTS"));
       if (extraJvmOptions.isEmpty() && System.getProperty("os.name", "").startsWith("Linux")) {
         command.addAll(List.of("-Xms64m", "-XX:MinHeapFreeRatio=15", "-XX:MaxHeapFreeRatio=30"));
       } else {
         command.addAll(extraJvmOptions);
+      }
+      if (windows) {
+        command.add("-Djava.io.tmpdir=" + tempDir);
+        command.add("-Dvertx.cacheDirBase=" + tempDir.resolve("vertx-cache"));
       }
       command.add("-DHICT_LOG_LEVEL=" + selectedLogLevel());
 
@@ -1346,7 +1380,13 @@ public final class HictLauncherGui {
 
     private Path selectExecutableRuntimeTempDir(final Path dataDir) throws IOException {
       final var candidates = new ArrayList<Path>();
-      addTempCandidate(candidates, firstNonBlank(System.getenv("HICT_TEMP_DIR"), System.getenv("HICT_EXEC_TEMP_DIR")));
+      addTempCandidate(candidates, firstNonBlank(getFieldValue("HICT_TEMP_DIR"), System.getenv("HICT_EXEC_TEMP_DIR")));
+      if (isWindows()) {
+        final var localAppData = safeNormalizePath(System.getenv("LOCALAPPDATA"));
+        if (localAppData != null) {
+          addTempCandidate(candidates, localAppData.resolve("HiCT/runtime").toString());
+        }
+      }
       addTempCandidate(candidates, dataDir.resolve("tmp").toString());
       addTempCandidate(
         candidates,
@@ -1356,49 +1396,99 @@ public final class HictLauncherGui {
       );
       addTempCandidate(candidates, this.appHome.resolve("tmp").toString());
 
-      IOException lastError = null;
-      final var localDataTemp = dataDir.resolve("tmp").toAbsolutePath().normalize();
+      this.runtimeTempNote.setVisible(false);
+      final var windowsPaths = new WindowsPaths(System::getenv);
       for (final var candidate : candidates) {
-        try {
-          final var normalizedCandidate = candidate.toAbsolutePath().normalize();
-          Files.createDirectories(normalizedCandidate);
-          if (canExecuteFromDirectory(normalizedCandidate)) {
-            if (!normalizedCandidate.equals(localDataTemp)) {
-              appendLauncherLog("Using fallback runtime temp directory because DATA_DIR/tmp is not executable or not usable: " + normalizedCandidate);
-            }
-            return normalizedCandidate;
+        final var normalizedCandidate = candidate.toAbsolutePath().normalize();
+        final var selected = windowsPaths.runtimeTemp(normalizedCandidate, LauncherWindow::prepareRuntimeDirectory);
+        if (selected != null) {
+          if (!selected.equals(normalizedCandidate)) {
+            final var note = "Contains non-ASCII characters. HiCT uses " + selected + " for Java temporary files instead.";
+            this.runtimeTempNote.setText(note);
+            this.runtimeTempNote.setVisible(true);
+            appendLauncherLog(note);
           }
-          appendLauncherLog("Runtime temp candidate is not executable, trying fallback: " + normalizedCandidate);
-        } catch (final IOException ex) {
-          lastError = ex;
-          appendLauncherLog("Runtime temp candidate is not usable, trying fallback: " + candidate + " (" + ex.getMessage() + ")");
+          return selected;
         }
+        appendLauncherLog("Runtime temp candidate is unusable, trying the next folder: " + normalizedCandidate);
       }
 
-      final var error = new IOException("No executable runtime temp directory is available. Check DATA_DIR/tmp, HICT_TEMP_DIR, and the system temp directory.");
-      if (lastError != null) {
-        error.addSuppressed(lastError);
-      }
-      throw error;
+      throw new IOException("No usable runtime temp directory was found. Check the HiCT working folder or HICT_TEMP_DIR.");
     }
 
-    private static void addTempCandidate(final List<Path> candidates, final String rawPath) {
+    private static Path prepareProcessedDirectory(Path requested, Path defaultDirectory, Path runtime) throws IOException {
+      try {
+        Files.createDirectories(requested);
+        Files.delete(Files.createTempFile(requested, "hict-write-test-", ".tmp"));
+        return requested;
+      } catch (IOException unavailable) {
+        if (!requested.equals(defaultDirectory)) {
+          throw new IOException("Choose a writable Processed/cache directory: " + requested, unavailable);
+        }
+        final var fallback = runtime.resolve("processed");
+        Files.createDirectories(fallback);
+        Files.delete(Files.createTempFile(fallback, "hict-write-test-", ".tmp"));
+        return fallback;
+      }
+    }
+
+    private void addTempCandidate(final List<Path> candidates, final String rawPath) {
       if (rawPath == null || rawPath.isBlank()) {
         return;
       }
-      final var candidate = normalizePath(rawPath);
+      final var candidate = safeNormalizePath(rawPath);
+      if (candidate == null) return;
       if (candidates.stream().noneMatch(existing -> existing.equals(candidate))) {
         candidates.add(candidate);
       }
     }
 
-    private static boolean canExecuteFromDirectory(final Path directory) {
+    private void showWorkingFolderRecovery(String message, String key, Exception failure) {
+      final var details = new java.io.StringWriter();
+      failure.printStackTrace(new java.io.PrintWriter(details));
+      appendLauncherLog(message + " " + failure);
+      final var actions = new String[]{"Choose working folder…", "Copy details", "Cancel"};
+      while (true) {
+        final int action = JOptionPane.showOptionDialog(this.frame,
+          message + System.lineSeparator() + "Choose a folder you can write to, then retry.",
+          "HiCT Launcher", JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE,
+          null, actions, actions[0]);
+        if (action == 0) {
+          final var chooser = new JFileChooser();
+          chooser.setDialogTitle("Choose a working folder for HiCT");
+          chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+          if (chooser.showDialog(this.frame, "Use folder and retry") == JFileChooser.APPROVE_OPTION) {
+            this.fields.get(key).setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
+            SwingUtilities.invokeLater(this::startHiCT);
+          }
+          return;
+        }
+        if (action != 1) return;
+        try {
+          java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+            .setContents(new StringSelection(message + System.lineSeparator() + details), null);
+        } catch (IllegalStateException busy) {
+          appendLauncherLog("The clipboard is temporarily unavailable. See Console logs for details.");
+        }
+      }
+    }
+
+    private static boolean prepareRuntimeDirectory(final Path directory) {
+      try {
+        Files.createDirectories(directory);
+        return canUseRuntimeDirectory(directory);
+      } catch (final IOException ex) {
+        return false;
+      }
+    }
+
+    private static boolean canUseRuntimeDirectory(final Path directory) {
       Path probe = null;
       try {
         if (isWindows()) {
-          probe = Files.createTempFile(directory, "hict-exec-test-", ".cmd");
-          Files.writeString(probe, "@echo off\r\nexit /b 0\r\n", StandardCharsets.UTF_8);
-          return runProbe(new ProcessBuilder("cmd.exe", "/d", "/c", probe.toString()));
+          probe = Files.createTempFile(directory, "hict-write-test-", ".tmp");
+          Files.writeString(probe, "HiCT", StandardCharsets.UTF_8);
+          return true;
         }
         probe = Files.createTempFile(directory, "hict-exec-test-", ".sh");
         Files.writeString(probe, "#!/bin/sh\nexit 0\n", StandardCharsets.UTF_8);
@@ -1446,8 +1536,13 @@ public final class HictLauncherGui {
       env.put("AUTO_OPEN_BROWSER", "false");
       env.put("HICT_LOG_LEVEL", selectedLogLevel());
       env.put("HICT_TEMP_DIR", tempDir.toString());
-      env.putIfAbsent("TMP", tempDir.toString());
-      env.putIfAbsent("TEMP", tempDir.toString());
+      if (isWindows()) {
+        env.put("TMP", tempDir.toString());
+        env.put("TEMP", tempDir.toString());
+      } else {
+        env.putIfAbsent("TMP", tempDir.toString());
+        env.putIfAbsent("TEMP", tempDir.toString());
+      }
       final var nativeProcessingMode = selectedNativeProcessingMode();
       if (nativeProcessingMode == NativeProcessingMode.JAVA) {
         env.put("HICT_NATIVE_PROCESSING", "0");
@@ -1463,8 +1558,9 @@ public final class HictLauncherGui {
         }
       }
       env.putIfAbsent("HICT_BIND_HOST", "127.0.0.1");
-      env.putIfAbsent("VXPORT", "5000");
-      env.putIfAbsent("WEBUI_PORT", "8080");
+      env.put("HICT_PORT", normalizedPort("HICT_PORT", "8080"));
+      env.remove("VXPORT");
+      env.remove("WEBUI_PORT");
       env.put("HICT_APP_HOME", this.appHome.toString());
       if (this.jarPath != null) {
         env.put("HICT_JAR_PATH", this.jarPath.toString());
@@ -1609,7 +1705,11 @@ public final class HictLauncherGui {
           try {
             exitCode = process.waitFor();
             if (this.serverProcess == process) {
+              this.exitedBeforeReady = this.readyProcess != process;
               this.lastExitCode = exitCode;
+              if (this.exitedBeforeReady && !this.stopRequested && !this.closing) {
+                appendLauncherLog(unexpectedExitMessage(exitCode, false));
+              }
             }
             appendLauncherLog("HiCT server process exited with code " + exitCode + ".");
           } catch (final InterruptedException interrupted) {
@@ -1620,24 +1720,29 @@ public final class HictLauncherGui {
             this.serverProcess = null;
           }
           stopBundledBrowsers("because the HiCT server process exited");
-          SwingUtilities.invokeLater(this::updateButtons);
+          SwingUtilities.invokeLater(() -> {
+            if (!this.stopRequested && !this.closing && this.serverProcess == null) {
+              showActivityCard(this.exitedBeforeReady ? "log" : "start");
+            }
+            updateButtons();
+          });
         }
       });
     }
 
-    private void waitAndOpenWebUi() {
+    private void waitAndOpenWebUi(final Process process) {
       this.backgroundExecutor.submit(() -> {
         final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-        while (!this.closing && isProcessAlive() && System.nanoTime() < deadline) {
-          if (isUrlReachable(webUiUrl())) {
-            if (isProcessAlive()) {
-              SwingUtilities.invokeLater(this::openWebUi);
-            }
+        while (!this.closing && this.serverProcess == process && process.isAlive() && System.nanoTime() < deadline) {
+          if (probeReadiness(process)) {
+            SwingUtilities.invokeLater(() -> {
+              if (this.serverProcess == process && process.isAlive()) openWebUi();
+            });
             return;
           }
           sleepQuietly(800);
         }
-        if (!isProcessAlive()) {
+        if (this.serverProcess != process || !process.isAlive()) {
           appendLauncherLog("HiCT stopped before the WebUI became reachable; not opening a browser.");
           return;
         }
@@ -1729,10 +1834,7 @@ public final class HictLauncherGui {
             // Do not hide a failed shutdown behind the ready-to-start card.
             if ((this.serverProcess == null || !this.serverProcess.isAlive())
               && this.browserProcesses.stream().noneMatch(Process::isAlive)) {
-              showActivityCard();
-              ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, "start");
-              this.logCardsPanel.revalidate();
-              this.logCardsPanel.repaint();
+              showActivityCard("start");
               updateButtons();
             }
           });
@@ -1752,10 +1854,14 @@ public final class HictLauncherGui {
       stopBundledBrowsers("before stopping HiCT");
       appendLauncherLog("Stopping HiCT server process...");
       final var serverChildren = process.descendants().toList();
-      process.destroy();
       try {
+        if (requestGracefulShutdown() && process.waitFor(10, TimeUnit.SECONDS)) {
+          appendLauncherLog("HiCT finished cleaning up and stopped.");
+          return;
+        }
+        process.destroy();
         if (!process.waitFor(5, TimeUnit.SECONDS)) {
-          appendLauncherLog("HiCT did not stop gracefully within 5 seconds; terminating it forcibly.");
+          appendLauncherLog("HiCT did not stop within the shutdown deadline. Terminating the process.");
           process.destroyForcibly();
           process.waitFor(5, TimeUnit.SECONDS);
         }
@@ -1768,6 +1874,20 @@ public final class HictLauncherGui {
           this.serverProcess = null;
         }
         SwingUtilities.invokeLater(this::updateButtons);
+      }
+    }
+
+    private boolean requestGracefulShutdown() throws InterruptedException {
+      if (this.serverShutdownUri == null || this.serverShutdownToken == null) return false;
+      final var request = HttpRequest.newBuilder(this.serverShutdownUri)
+        .timeout(Duration.ofSeconds(2))
+        .header("X-HiCT-Shutdown-Token", this.serverShutdownToken)
+        .POST(HttpRequest.BodyPublishers.noBody()).build();
+      try {
+        return this.httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() == 202;
+      } catch (IOException unavailable) {
+        appendLauncherLog("The server did not answer the graceful shutdown request.");
+        return false;
       }
     }
 
@@ -1852,25 +1972,37 @@ public final class HictLauncherGui {
     }
 
     private void pollStatusInBackground() {
+      final var process = this.serverProcess;
       this.backgroundExecutor.submit(() -> {
-        final var apiReachable = isUrlReachable(apiUrl("/version"));
-        final var webUiReachable = isUrlReachable(webUiUrl());
-        SwingUtilities.invokeLater(() -> updateStatusLabels(apiReachable, webUiReachable));
+        final var reachable = probeReadiness(process);
+        SwingUtilities.invokeLater(() -> {
+          if (this.serverProcess == process) updateStatusLabels(reachable);
+        });
       });
     }
 
-    private void updateStatusLabels(final boolean apiReachable, final boolean webUiReachable) {
+    private boolean probeReadiness(final Process process) {
+      final var reachable = isUrlReachable(apiUrl("/version"));
+      if (reachable && process != null && this.serverProcess == process && process.isAlive()) {
+        this.readyProcess = process;
+      }
+      return reachable;
+    }
+
+    private void updateStatusLabels(final boolean reachable) {
       final var green = new Color(20, 118, 55);
       final var red = new Color(170, 40, 40);
       final var amber = new Color(176, 112, 0);
       final var neutral = new Color(90, 96, 104);
       final var alive = isProcessAlive();
       final var exitCode = this.lastExitCode;
+      final var failure = exitCode == null || this.stopRequested ? null
+        : unexpectedExitMessage(exitCode, !this.exitedBeforeReady);
       String text;
       Color color;
       boolean starting = false;
       if (alive) {
-        if (apiReachable && webUiReachable) {
+        if (reachable) {
           text = "Running";
           color = green;
         } else {
@@ -1878,8 +2010,8 @@ public final class HictLauncherGui {
           color = neutral;
           starting = true;
         }
-      } else if (exitCode != null && exitCode != 0 && !this.stopRequested) {
-        text = "Stopped unexpectedly (exit " + exitCode + "). See log.";
+      } else if (failure != null) {
+        text = failure;
         color = red;
         if (!this.exitDialogShown && !this.closing) {
           this.exitDialogShown = true;
@@ -1887,7 +2019,7 @@ public final class HictLauncherGui {
           SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
             this.frame, message, "HiCT Launcher", JOptionPane.ERROR_MESSAGE));
         }
-      } else if (apiReachable || webUiReachable) {
+      } else if (reachable) {
         text = "Port in use by another program";
         color = amber;
       } else {
@@ -1922,6 +2054,7 @@ public final class HictLauncherGui {
 
     private void updateButtons() {
       final var alive = isProcessAlive();
+      this.backToStartButton.setVisible(!alive && !this.closing);
       this.startButton.setVisible(!alive && this.startAttempted && !this.closing);
       this.startButton.setEnabled(!alive && !this.closing);
       this.stopButton.setVisible(alive && !this.closing);
@@ -2214,18 +2347,18 @@ public final class HictLauncherGui {
           .GET()
           .build();
         final var response = this.httpClient.send(request, HttpResponse.BodyHandlers.discarding());
-        return response.statusCode() >= 200 && response.statusCode() < 500;
+        return response.statusCode() >= 200 && response.statusCode() < 300;
       } catch (final Exception ignored) {
         return false;
       }
     }
 
     private String apiUrl(final String path) {
-      return "http://" + clientHost() + ":" + normalizedPort("VXPORT", "5000") + path;
+      return "http://" + clientHost() + ":" + normalizedPort("HICT_PORT", "8080") + path;
     }
 
     private String webUiUrl() {
-      return "http://" + clientHost() + ":" + normalizedPort("WEBUI_PORT", "8080") + "/";
+      return "http://" + clientHost() + ":" + normalizedPort("HICT_PORT", "8080") + "/";
     }
 
     private String webUiLaunchUrl() {
@@ -2254,7 +2387,9 @@ public final class HictLauncherGui {
     }
 
     private String resolveInitialValue(final ConfigSpec spec) {
-      final var fromSettings = this.settings.getProperty(spec.key());
+      final var fromSettings = "HICT_PORT".equals(spec.key())
+        ? this.settings.getProperty(spec.key(), this.settings.getProperty("WEBUI_PORT"))
+        : this.settings.getProperty(spec.key());
       if (fromSettings != null) {
         return fromSettings;
       }
@@ -2966,12 +3101,8 @@ public final class HictLauncherGui {
       return Math.max(13, scaled(13));
     }
 
-    private int heroFontSize() {
-      return Math.max(18, scaled(18));
-    }
-
     private int primaryButtonFontSize() {
-      return Math.max(20, scaled(22));
+      return 2 * Math.max(20, scaled(22));
     }
 
     private int logFontSize() {
@@ -3001,7 +3132,7 @@ public final class HictLauncherGui {
     }
 
     private Dimension heroButtonMinimumSize() {
-      return new Dimension(scaled(260), scaled(72));
+      return new Dimension(2 * scaled(260), 2 * scaled(72));
     }
 
     private Insets actionButtonInsets() {

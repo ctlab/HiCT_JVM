@@ -33,6 +33,7 @@ def main():
         default=[],
         help="Physically copy a map into disposable DATA",
     )
+    parser.add_argument("--borrelia-dir", type=Path, default=Path(os.environ.get("HICT_BORRELIA_DIR", "/mnt/Models/HiCT/examples/geo-borrelia")), help="Prepared Borrelia example directory")
     parser.add_argument("--webui-commit", required=True)
     parser.add_argument(
         "--browser-python",
@@ -91,6 +92,9 @@ def main():
             stdout=log,
             stderr=subprocess.STDOUT,
         )
+    subprocess.run(["java", "--class-path", str(jar),
+                    "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java",
+                    str(data)], check=True)
     from check_structural_edits_browser import prepare_fixture
 
     prepare_fixture(data, jar)
@@ -99,6 +103,8 @@ def main():
 
     with h5py.File(data / "incomplete.hict.hdf5", "w") as partial:
         partial.create_dataset("resolutions/100000/treap_coo/block_length", data=[1])
+    for filename in ("borrelia.hict.hdf5", "borrelia-matching.fa"):
+        shutil.copyfile(args.borrelia_dir / filename, data / filename)
     names = ["mixed-primary.hict.hdf5"]
     inputs = []
     for source in map(Path, args.source_map):
@@ -118,23 +124,15 @@ def main():
         names.append(source.name)
     evidence["inputSources"] = inputs
     hashes = {p.name: sha256(p) for p in data.glob("*.hdf5")}
-    sockets = []
-    try:
-        for _ in range(2):
-            reservation = socket.socket()
-            reservation.bind(("127.0.0.1", 0))
-            sockets.append(reservation)
-        api_port, web_port = [s.getsockname()[1] for s in sockets]
-    finally:
-        for reservation in sockets:
-            reservation.close()
-    api, web = f"http://127.0.0.1:{api_port}", f"http://127.0.0.1:{web_port}"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    api = web = f"http://127.0.0.1:{port}"
     env = {
         **os.environ,
         "DATA_DIR": str(data),
         "PROCESSED_DIR": str(out / "processed"),
-        "VXPORT": str(api_port),
-        "WEBUI_PORT": str(web_port),
+        "HICT_PORT": str(port),
         "HICT_BIND_HOST": "127.0.0.1",
         "AUTO_OPEN_BROWSER": "false",
         "WEBUI_ROOT": str(app / "webui"),
@@ -239,6 +237,12 @@ def main():
                 "check_menu_surfaces_browser.py",
                 ["--file", "structural.hict.hdf5"],
             )
+            stage("fine-overlay", "check_fine_sequence_overlay_browser.py", [])
+            stage("legacy-overview", "check_legacy_overview_browser.py", [
+                "--data-dir", str(data),
+                "--session", str(out / "fine-overlay/fine-overlay-session.json"),
+            ])
+            stage("boundaries", "check_release_boundaries.py", ["--data-dir", str(data)])
             stage("structural", "check_structural_edits_browser.py", [])
             stage("incomplete-open", "check_incomplete_map_browser.py", [])
             stage("offline", "check_offline_browser.py", [])

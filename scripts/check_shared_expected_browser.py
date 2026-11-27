@@ -11,7 +11,7 @@ from pathlib import Path
 import threading
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def oracle(raw, row_ids, col_ids, row_start=0, col_start=0):
@@ -58,11 +58,10 @@ def main():
             page = browser.new_page(viewport={'width':1440,'height':1000})
             page.set_default_timeout(30000)
             page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda route:route.continue_(
-                url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check = BrowserCheck(page,output)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File','Attach'); check.settle()
+            check.menu('File','Join running session'); check.settle()
             for offset in (5,1):
                 page.evaluate('''async offset => {
                     const m=window.__hictBenchmark.manager();
@@ -73,10 +72,10 @@ def main():
                 check.settle()
             app.http('/reverse_selection_range',{'startBP':0,'endBP':17})
             app.http('/group_contigs_into_scaffold',{'startBP':0,'endBP':17})
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             mode = page.locator('select').filter(has=page.locator('option[value="EXPECTED"]'))
             mode.select_option('EXPECTED'); check.settle()
-            assert 'repeated bin pairs share' in mode.get_attribute('title')
+            assert 'average contact level at each distance' in mode.get_attribute('title')
             options = json.loads(app.http('/get_visualization_options',{}))
             options.update(preLogBase=-1,postLogBase=-1,applyCoolerWeights=False,
                            resolutionScaling=False,resolutionLinearScaling=False)
@@ -138,7 +137,8 @@ def main():
                 const rect=m.getMap().getViewport().getBoundingClientRect();return [rect.left+p[0],rect.top+p[1]];
             }''')
             page.mouse.click(*point,button='right')
-            page.get_by_role('menuitem',name='Signal histogram...',exact=True).click()
+            page.get_by_role("menuitem", name="Analyse", exact=True).click()
+            page.get_by_role('menuitem',name='Signal histogram…',exact=True).click()
             dialog = page.get_by_role('dialog',name='Signal histogram',exact=True)
             dialog.get_by_text('counts displayed samples.',exact=False).wait_for()
             sequence_scale=page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale')

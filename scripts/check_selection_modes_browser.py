@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import threading
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -42,10 +42,10 @@ def main():
                 origin=f'http://127.0.0.1:{static.server_port}',
             )
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,out);edits=[]
             page.on('request',lambda r:edits.append(r.post_data_json) if r.url.endswith('/reverse_selection_range') else None)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''async()=>{const m=window.__hictBenchmark.manager(),a=m.networkManager.requestManager;
                 m.eventManager.applyAssemblyInfo(await a.splitContigAtBp(0,1000));
                 const id=m.contigDimensionHolder.contigDescriptors[1].contigId;
@@ -93,13 +93,58 @@ def main():
                 assert page.locator('.hict-entity-drag').count()==0
                 assert page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.entityHighlightLayer.getStyle().every(s=>!s.getFill())')
             check.step('shift-entities',entity_drag)
+
+            def isolate_entities():
+                page.mouse.click(*point(500,500),button='right')
+                menu=page.get_by_role('menu',name='Assembly actions',exact=True)
+                menu.get_by_role('menuitem',name='Isolate view to selection',exact=True).click()
+                check.settle()
+                read_scopes = 'window.__hictBenchmark.manager().viewAndLayersManager.getAxisScopes()'
+                selected = page.evaluate(read_scopes)
+                assert all(selected[axis]['kind'] == 'selection' and len(selected[axis]['contigIds']) == 2
+                           for axis in ('row','column')), selected
+                read_detail = """() => {
+                    const manager = window.__hictBenchmark.manager();
+                    const view = manager.getView();
+                    const display = manager.viewAndLayersManager.currentViewState.resolutionDesciptor;
+                    return {resolution: view.getResolution(), finest: view.getMinResolution(),
+                            bp: display.bpResolution, grid: display.displayGrid};
+                }"""
+                for control in (
+                    page.get_by_role('button', name='Zoom in', exact=True),
+                    page.locator('.ol-zoom-in'),
+                ):
+                    detail = page.evaluate(read_detail)
+                    for _ in range(12):
+                        if detail['resolution'] <= detail['finest'] * (1 + 1e-9):
+                            break
+                        control.click()
+                        check.settle()
+                        next_detail = page.evaluate(read_detail)
+                        assert next_detail['resolution'] < detail['resolution'], (detail, next_detail)
+                        assert next_detail['bp'] <= detail['bp'], (detail, next_detail)
+                        assert page.evaluate(read_scopes) == selected
+                        detail = next_detail
+                    assert detail['grid'] == 'SEQUENCE_BP' and detail['bp'] == 1, detail
+                    assert detail['resolution'] <= detail['finest'] * (1 + 1e-9), detail
+                    control.click()
+                    check.settle()
+                    assert page.evaluate(read_detail) == detail
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
+                    check.settle()
+                scope('row','All rows')
+                scope('column','All columns')
+                restored = page.evaluate(read_scopes)
+                assert all(restored[axis]['kind'] == 'all' for axis in ('row','column')), restored
+
+            check.step('shift-selection-isolates-both-axes',isolate_entities)
+            entity_drag()
             with page.expect_response('**/group_contigs_into_scaffold') as response:
                 page.get_by_role('button',name='Group selection into scaffold',exact=True).click()
             assert response.value.ok;check.settle()
             scaffold=page.evaluate('''()=>{const m=window.__hictBenchmark.manager();return [...m.scaffoldHolder.scaffoldTable.values()].find(s=>s.scaffoldBordersBP?.startBP===0&&s.scaffoldBordersBP?.endBP===2000);}''')
             assert scaffold,scaffold
             def scaffold_pick():
-                choose('Shift selects scaffolds')
                 page.keyboard.down('Shift');page.mouse.click(*point(500,500));page.keyboard.up('Shift');check.settle()
                 s=state();assert len(s['ids'])==2 and len(s['scaffolds'])==1 and s['highlights']==1,s
                 page.evaluate('''()=>window.__hictBenchmark.manager().viewAndLayersManager.restoreViewPosition({centerBp:[1000,1000],resolution:.008})''');check.settle()
@@ -114,6 +159,10 @@ def main():
                 for key,target in {'rowStart':250,'rowEnd':900,'columnStart':300,'columnEnd':750}.items():
                     assert abs(s['region'][key]-target)<=5,s
                 assert not s['ids'] and s['entityRange'] is None and s['highlights']==0,s
+                square = page.get_by_label('Square selection', exact=True)
+                square.check()
+                assert state()['region'] == s['region']
+                square.uncheck()
                 before=len(edits);page.get_by_role('button',name='Reverse Selection',exact=True).click();check.settle();assert len(edits)==before
                 page.mouse.click(*point(500,500));check.settle();assert state()['region']==s['region']
                 page.mouse.click(*point(2200,2200));check.settle();assert state()['region'] is None,state()
@@ -123,9 +172,8 @@ def main():
             def hide_scoped():
                 choose('Hide borders in scoped view')
                 assert page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager;return [l.getActiveContigBordersLayer(),l.getActiveScaffoldBordersLayer()].every(layer=>layer.getSource().getFeatures().every(f=>!['contigBorders','scaffoldBorders'].includes(f.get('trackType'))));}''')
-                choose('Shift selects contigs')
                 page.keyboard.down('Shift');page.mouse.click(*point(1200,1200));page.keyboard.up('Shift');check.settle()
-                assert len(state()['ids'])==1 and state()['highlights']==1,state()
+                assert len(state()['ids'])==2 and state()['highlights']==1,state()
             check.step('scoped-borders-and-visible-selection',hide_scoped)
             def typed_region():
                 dialog=coordinates();fill(dialog,{'row-start':'0'});dialog.get_by_role('button',name='Select region',exact=True).click()
@@ -165,7 +213,7 @@ def main():
                 dialog.get_by_role('button',name='Select region',exact=True).click();check.settle();assert state()['region']==expected,state()
                 page.keyboard.press('Escape');check.settle();assert state()['region'] is None
             check.step('typed-scoped-coordinates-export-and-escape',typed_region)
-            scope('row','All Rows');scope('column','All Columns')
+            scope('row','All rows');scope('column','All columns')
             assert page.evaluate('''()=>window.__hictBenchmark.manager().viewAndLayersManager.getActiveContigBordersLayer().getSource().getFeatures().some(f=>f.get('trackType')==='contigBorders')''')
             def export_without_overlays():
                 def export(name):
@@ -175,7 +223,7 @@ def main():
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.clearSelections()');check.settle()
                 clean=export('clean-export')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,2000)');check.settle()
-                assert state()['highlights']==2
+                assert state()['highlights']==1
                 assert export('entity-export')==clean
                 assert len(state()['ids'])==2 and page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.entityHighlightLayer.getVisible()')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds({rowStart:100,rowEnd:1000,columnStart:300,columnEnd:2000})');check.settle()
@@ -195,13 +243,17 @@ def main():
                 dialog.wait_for(state='hidden')
                 check.settle()
                 before = state()
-                choose('Copy selection coordinates')
+                choose('Copy coordinates')
                 page.get_by_text('Selection coordinates copied', exact=True).wait_for()
                 assert page.evaluate('navigator.clipboard.readText()') == (
                     'Assembly coordinates (bp, 1-based inclusive)\n'
                     'Rows\t101\t900\nColumns\t201\t1200'
                 )
-                choose('Copy contig coordinates')
+                page.mouse.click(*point(500, 500), button='right')
+                menu = page.get_by_role('menu', name='Assembly actions')
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Coordinates in contig').click()
                 page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Contig coordinates')")
                 assert page.evaluate('navigator.clipboard.readText()') == (
                     f'Contig coordinates (bp, 1-based inclusive)\nRows\tctg:{names[0]}:101\tctg:{names[0]}:900\n'
@@ -209,7 +261,9 @@ def main():
                 )
                 page.mouse.click(*point(500, 500), button='right')
                 menu = page.get_by_role('menu', name='Assembly actions')
-                menu.get_by_role('menuitem', name='Copy scaffold coordinates').click()
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Coordinates in scaffold').click()
                 page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Scaffold coordinates')")
                 scaffold_name = scaffold['scaffoldName']
                 assert page.evaluate('navigator.clipboard.readText()') == (
@@ -219,7 +273,9 @@ def main():
 
                 page.mouse.click(*point(500, 500), button='right')
                 menu = page.get_by_role('menu', name='Assembly actions')
-                menu.get_by_role('menuitem', name='Copy selection as PNG').click()
+                menu.get_by_role('menuitem', name='Copy', exact=True).click()
+                page.get_by_role('menu', name='Copy', exact=True).get_by_role(
+                    'menuitem', name='Region as image', exact=True).click()
                 page.get_by_text('Selection copied as PNG', exact=True).wait_for()
                 png = page.evaluate('''async () => {
                     const [item] = await navigator.clipboard.read();
@@ -248,7 +304,7 @@ def main():
             check.step('stale-coordinates-rejected',stale_dialog)
 
             def selected_fasta_with_explicit_gap():
-                check.menu('Assembly', 'Load AGP')
+                check.menu('Assembly', 'Load AGP…')
                 check.choose_file('selection-gap.agp')
                 with page.expect_response('**/load_agp') as loaded:
                     page.get_by_role('button', name='Load', exact=True).click()

@@ -6,17 +6,19 @@ contact signal along the visible diagonal, excluding borders and entity labels.
 Fixtures must be disposable copies in the server data directory.
 """
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
 
-def main():
+def main(default_normalizations=("file", "sqrt")):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("url", "api", "output"):
         parser.add_argument("--" + name, required=True)
@@ -30,7 +32,7 @@ def main():
         "--normalizations",
         nargs="+",
         choices=["file", "sqrt"],
-        default=["file", "sqrt"],
+        default=default_normalizations,
     )
     parser.add_argument("--floor", type=float, default=0.5)
     args = parser.parse_args()
@@ -50,12 +52,7 @@ def main():
         )
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         context.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        context.route(
-            "http://localhost:5000/**",
-            lambda r: r.continue_(
-                url=args.api + r.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(120000)
         page.on("pageerror", lambda e: report["pageErrors"].append(str(e)))
@@ -65,11 +62,36 @@ def main():
                 report["consoleErrors"].append(m.text) if m.type == "error" else None
             ),
         )
+        tile_responses = {}
+
+        def track_tile(response):
+            url = urlsplit(response.url)
+            if url.path != "/get_tile":
+                return
+            parameters = parse_qs(url.query)
+            key = tuple(parameters.get(field, [""])[0] for field in
+                        ("version", "level", "bpResolution", "row", "col"))
+            tile_responses[key] = {
+                **dict(zip(("version", "level", "bpResolution", "row", "col"), key)),
+                "status": response.status,
+                "cancelled": response.headers.get("x-hict-cancelled") == "true",
+            }
+
+        page.on("response", track_tile)
 
         def settle():
             page.wait_for_timeout(2200)
             page.wait_for_function(
-                "()=>!window.__hictBenchmark.manager().visualizationManager.openingRangeRefreshInFlight"
+                """() => {
+                    const manager = window.__hictBenchmark.manager();
+                    const map = manager.getMap();
+                    if (manager.visualizationManager.openingRangeRefreshInFlight ||
+                        map.getView().getAnimating() || map.tileQueue_.getTilesLoading() ||
+                        map.tileQueue_.getCount()) return false;
+                    map.renderSync();
+                    return map.renderComplete_ && !map.tileQueue_.getTilesLoading()
+                        && !map.tileQueue_.getCount();
+                }"""
             )
             page.wait_for_timeout(700)
 
@@ -116,6 +138,7 @@ def main():
                 share=share,
                 samples=total,
                 resolution=state()["resolution"],
+                tiles=list(tile_responses.values())[-120:] if share < args.floor else None,
             )
 
         def wheel(delta=-300):
@@ -141,7 +164,7 @@ def main():
                     context.request.post(args.api + "/close", data={})
                     page.goto(args.url)
                     page.wait_for_function("window.__hictBenchmark")
-                    page.get_by_text("Open map…", exact=False).first.click()
+                    page.get_by_role("button", name="Open map…", exact=True).click()
                     d = page.get_by_role("dialog")
                     d.get_by_text(fixture, exact=False).first.click()
                     d.get_by_role("button", name="Load", exact=True).click()
@@ -150,7 +173,12 @@ def main():
                     if normalization == "sqrt":
                         page.locator("#normalization-mode").select_option("sqrt")
                         page.wait_for_function(
-                            '()=>!document.querySelector("#normalization-progress")',
+                            """() => {
+                                const manager = window.__hictBenchmark.manager();
+                                return manager.networkManager.requestManager
+                                    .getNormalizationWeightsMode("PRIMARY") === "SQRT_COVERAGE"
+                                    && !document.querySelector("#normalization-progress");
+                            }""",
                             timeout=240000,
                         )
                         page.get_by_role("button", name="Apply", exact=True).click()
@@ -211,8 +239,13 @@ def main():
                     page.get_by_role("button", name="Apply", exact=True).click()
                     settle()
                     manual_level = state()["resolution"]
-                    for _ in range(4):
-                        wheel(300)
+                    for direction in (300, -300):
+                        for _ in range(6):
+                            wheel(direction)
+                            if state()["resolution"] != manual_level:
+                                break
+                        if state()["resolution"] != manual_level:
+                            break
                     settle()
                     check(
                         stem + " manual range crosses levels",

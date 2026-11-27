@@ -8,9 +8,10 @@ No inverse approximation is used for splitting. Failed edits restore the pre-edi
 Empty/unchanged operations do not discard the redo branch. A successful new edit
 following an undo truncates later entries; entry IDs are never reused in the session.
 
-The journal is intentionally session-local, not a saved project format. Closing/opening
-a file, attaching/detaching an overlay, or switching the authoritative assembly source
-starts a new journal. Exported AGP/FASTA still represent the current state only.
+The primary map keeps its journal until it is closed or replaced. Attaching or detaching
+an overlay preserves that journal. The active assembly source determines which journal
+Undo and Redo use. Switching back to an attached source restores its journal. A detached
+overlay's snapshots are released. Exported AGP and FASTA represent the active assembly.
 Visualization, normalization, track settings, file conversion and file linking are
 not assembly edits and are not journaled. Two browser clients share the server journal;
 revision/session guards prevent stale undo/redo and guarded structural requests.

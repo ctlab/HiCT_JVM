@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import threading
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -35,10 +35,10 @@ def main():
             browser=pw.chromium.launch(headless=True)
             page=browser.new_page(viewport={'width':1600,'height':1100},accept_downloads=True)
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,out);requests=[]
             page.on('request',lambda r:requests.append(r.post_data_json) if r.url.endswith('/tracks/query_1d') else None)
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''async()=>{const t=window.__hictBenchmark.manager().linearTrackManager;
                 await t.openTrack('genes.gtf','Genes');await t.openTrack('signal.bed','Signal');await t.openCoolerWeightsTrack('Weights');}''');check.settle()
             def focus(bp):
@@ -67,11 +67,16 @@ def main():
             assert page.locator('#normalization-mode option[value="file"]').is_enabled()
             assert not page.locator('#imported-weights-unavailable').count()
             # Hover a native-weight value on hidden sequence and inspect the scientific resolution label.
-            point=page.evaluate('''()=>{const t=window.__hictBenchmark.manager().linearTrackManager,s=t.lastRenderedSnapshot.horizontal;
-                const idx=s.tracks.findIndex(t=>t.name==='Weights'),bin=s.tracks[idx].bins.find(b=>b.startBp===1);
-                const r=document.querySelector('#horizontal-igv-track-div').getBoundingClientRect();
-                return [r.left+s.viewport.pxToScreen(1.5),r.top+(idx+.5)*s.canvasHeight/s.tracks.length];}''')
-            page.mouse.move(*point)
+            track_host = page.locator('#horizontal-igv-track-div')
+            weights_lane = track_host.get_by_role('region', name='Weights feature rows', exact=True)
+            lane_bounds = weights_lane.bounding_box()
+            assert lane_bounds and lane_bounds['height'] > 0
+            weight_x = track_host.evaluate('''host => {
+                const tracks = window.__hictBenchmark.manager().linearTrackManager;
+                return host.getBoundingClientRect().left +
+                    tracks.lastRenderedSnapshot.horizontal.viewport.pxToScreen(1.5);
+            }''')
+            page.mouse.move(weight_x, lane_bounds['y'] + lane_bounds['height'] / 2)
             page.get_by_text('Native weights: 100 bp bins',exact=False).last.wait_for()
             page.get_by_text('Assembly 2-2 bp (1-based, inclusive)',exact=True).last.wait_for()
             page.screenshot(path=str(out/'hidden-binless-tracks.png'))
@@ -108,10 +113,10 @@ def main():
             assert [value(reversed_query['tracks'][1],p) for p in range(3998,4003)]==[4,4,9,9,7],reversed_query
             assert [value(reversed_query['tracks'][2],p) for p in range(3998,4003)]==[100,100,20,20,None],reversed_query
             assert any(b['label']=='binless' and b['startBp']==4002 and b['strand']=='-' for b in reversed_query['tracks'][0]['bins'])
-            with page.expect_download() as saved:check.menu('File','Save session')
+            with page.expect_download() as saved:check.menu('File','Save session…')
             session=out/'sequence-tracks-session.json';saved.value.save_as(session)
-            check.menu('File','Close')
-            with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+            check.menu('File','Close map')
+            with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
             chooser.value.set_files(session)
             page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
             assert query(3998,4003)['tracks']==reversed_query['tracks']

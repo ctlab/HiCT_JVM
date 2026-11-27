@@ -3,10 +3,11 @@
 
 import argparse
 import json
+import random
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, install_download_picker, configure_test_api
 
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output", "data-dir"):
@@ -20,23 +21,23 @@ args = parser.parse_args()
 data = Path(args.data_dir).resolve()
 assert data.is_relative_to("/tmp")
 (data / "jobs.bed").write_text("tiny\t0\t12017\t2\n")
+# Exercise job delivery with a short self-hit. The periodic map FASTA generates
+# millions of seed matches in either aligner before it can produce a PAF record.
+self_sequence = "".join(random.Random(20261125).choices("ACGT", k=12017))
+(data / "jobs-self.fa").write_text(">jobs-self\n" + self_sequence + "\n")
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 results = []
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    install_download_picker(page)
     page.set_default_timeout(60000)
     browser_check = BrowserCheck(page, out)
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-    page.route(
-        "http://localhost:5000/**",
-        lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")
-        ),
-    )
+    configure_test_api(page, args.api)
 
     def post(path, body=None):
         response = page.request.post(args.api + path, data=body or {})
@@ -85,13 +86,13 @@ with sync_playwright() as pw:
           const s=m.viewAndLayersManager.currentViewState.selectionBorders;
           s.leftBP=[0,0]; s.rightBP=[256,256];}""")
         dialog = tools(
-            "Find sequences in linked FASTA…", "Find sequences in the linked FASTA"
+            "Find sequences in linked FASTA…", "Find sequences"
         )
         dialog.get_by_label("FASTA records, or one DNA sequence per line").fill(
             "".join((data / "mixed.fa").read_text().splitlines()[1:])[:80]
         )
         dialog.get_by_label("Search scope", exact=True).select_option("assembly")
-        dialog.get_by_role("button", name="Find sequences", exact=True).click()
+        dialog.get_by_role("button", name="Search", exact=True).click()
         dialog.get_by_role("button", name="Close", exact=True).first.click()
         dialog.wait_for(state="hidden")
         search = await_kind("search")
@@ -101,16 +102,18 @@ with sync_playwright() as pw:
             label="ModDotPlot: multicolor overlay"
         )
         notifications = page.get_by_role("button", name="Open notifications", exact=True)
-        badge = notifications.locator(".notification-badge")
+        badge = page.locator(".notification-badge")
         badge.wait_for(state="visible")
+        badge_text = badge.inner_text().strip()
         notifications.click()
         history = page.get_by_role("dialog").filter(
             has=page.get_by_role("heading", name="Notifications", exact=True)
         )
         history.get_by_text("Attach a generated overlay", exact=False).wait_for()
-        badge_text = badge.inner_text().strip()
         notice_count = history.locator(".notification-entry").count()
-        assert badge_text == ("99+" if notice_count > 99 else str(notice_count)), badge_text
+        unread = 100 if badge_text == "99+" else int(badge_text)
+        assert 0 < unread <= notice_count, (unread, notice_count)
+        badge.wait_for(state="detached")
         history.get_by_role("button", name="Clear", exact=True).click()
         history.locator(".notification-entry").wait_for(state="detached")
         history.locator(".btn-close").click()
@@ -133,13 +136,10 @@ with sync_playwright() as pw:
             }
         )
 
-        dialog = tools("Generate ModDotPlot…", "Generate ModDotPlot")
+        dialog = tools("ModDotPlot…", "ModDotPlot")
         dialog.get_by_label("Analysis scope").select_option("selection")
-        for checkbox in dialog.locator(".resolution-options input").all():
-            checkbox.uncheck()
-        dialog.locator('.resolution-options input[value="10"]').check()
         dialog.locator("#dotplot-display").select_option("none")
-        dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+        dialog.get_by_role("button", name="Generate", exact=True).click()
         dialog.get_by_role("button", name="Close", exact=True).first.click()
         identity = await_kind("moddotplot")
         dialog = panel()
@@ -176,7 +176,7 @@ with sync_playwright() as pw:
         post(
             "/dotplot/jobs",
             {
-                "fastaFiles": ["mixed.fa"],
+                "fastaFiles": ["jobs-self.fa"],
                 "outputDirectory": "jobs-dotplot",
                 "binSize": 1000,
                 "resolutions": "1000",
@@ -278,7 +278,7 @@ with sync_playwright() as pw:
         )
         page.get_by_role("link", name="Assembly", exact=True).click()
         with page.expect_download() as agp_download:
-            page.get_by_role("link", name="Export to AGP", exact=True).click()
+            page.get_by_role("link", name="Export AGP…", exact=True).click()
         agp_file = out / "fasta-only-export.agp"
         agp_download.value.save_as(agp_file)
         agp_rows = [

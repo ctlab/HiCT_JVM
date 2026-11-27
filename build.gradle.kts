@@ -69,7 +69,30 @@ val doOnChange = "${projectDir}/gradlew classes"
 val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
 
-val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val releaseWebUIPin = file("webui-revision.txt").readText().trim().also {
+  require(it.matches(Regex("[0-9a-f]{40}"))) { "Invalid release WebUI revision" }
+}
+val backendRevision = providers.environmentVariable("HICT_BACKEND_REVISION")
+  .orElse(providers.exec {
+    commandLine("git", "rev-parse", "HEAD")
+  }.standardOutput.asText)
+  .map { revision ->
+    revision.trim().also { require(it.matches(Regex("[0-9a-f]{40}"))) { "Invalid JVM revision" } }
+  }
+val releaseBuildVersion = providers.environmentVariable("HICT_BUILD_VERSION")
+  .orElse(providers.gradleProperty("portableReleaseVersion")).orNull
+fun buildVersion(base: String): String = releaseBuildVersion?.also {
+  require(it == base) { "HICT_BUILD_VERSION differs from the version assigned by CI" }
+} ?: "${base.substringBefore("-")}-${backendRevision.get().take(7)}-webui_${releaseWebUIPin.take(7)}"
+val requestedWebUI = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val releaseWebUIRequired = (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
+  ?.lowercase() in setOf("true", "1", "yes")
+val webUIRefOverride = if (releaseWebUIRequired) {
+  require(requestedWebUI == null || requestedWebUI == "same-as-jvm" || requestedWebUI == releaseWebUIPin) {
+    "The requested WebUI differs from webui-revision.txt"
+  }
+  releaseWebUIPin
+} else requestedWebUI
 val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
@@ -500,8 +523,6 @@ fun validateRequiredJhdf5FilterPlugins(nativeRoot: File, requiredPlatforms: List
     )
   }
 }
-
-version = readVersion()
 
 application {
   mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
@@ -1055,13 +1076,13 @@ fun verifyWebUIConverterDtoRegression(webUIDir: File) {
 
 val currentVersion: String by lazy { readVersion() }
 
-version = currentVersion
+version = buildVersion(currentVersion)
 
 tasks.register("incrementPatchVersion") {
   doLast {
     val newVersion = incrementPatchVersion(currentVersion)
     writeVersion(newVersion)
-    project.version = newVersion
+    project.version = buildVersion(newVersion)
     println("[Patch] Version incremented to $newVersion")
   }
 }
@@ -1090,6 +1111,7 @@ tasks.register("buildWebUI") {
         }
         project.exec {
           commandLine(npmExecutable, "run", "build")
+          environment("HICT_DOCS_DIR", file("docs").absolutePath)
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
@@ -1174,6 +1196,7 @@ tasks.register("buildWebUI") {
 
       project.exec {
         commandLine(npmExecutable, "run", "build")
+        environment("HICT_DOCS_DIR", file("docs").absolutePath)
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
@@ -1201,6 +1224,40 @@ tasks.register<Sync>("copyWebUI") {
   into(webUITargetDirectory)
 }
 
+val verifyBakedWebUI = tasks.register("verifyBakedWebUI") {
+  group = "verification"
+  dependsOn("copyWebUI")
+  doLast {
+    if (!releaseWebUIRequired && providers.gradleProperty("allowStaleWebUI").orNull.toBoolean()) {
+      logger.warn("Skipping baked WebUI verification for this development build")
+    } else {
+      val stamp = webUITargetDirectory.file("webui-revision.txt").asFile
+      if (!webUITargetDirectory.file("index.html").asFile.isFile ||
+        !stamp.isFile || stamp.readText().trim() != releaseWebUIPin) {
+        throw GradleException("Missing or stale baked WebUI. Build and copy the WebUI at $releaseWebUIPin before packaging.")
+      }
+    }
+  }
+}
+
+val verifyBundledTools = tasks.register("verifyBundledTools") {
+  group = "verification"
+  if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
+  doLast {
+    for (platform in bundledToolchainPlatforms) {
+      if (bundledToolchainSourceDirectory.dir(platform).asFile.isDirectory) {
+        project.exec {
+          commandLine(
+            System.getenv("HICT_TOOL_BUILD_PYTHON")
+              ?: if (System.getProperty("os.name").lowercase().contains("win")) "python" else "python3",
+            "scripts/portable/verify_toolchain_revision.py", platform
+          )
+        }
+      }
+    }
+  }
+}
+
 tasks.named("clean") {
   dependsOn("cleanWebUI")
 }
@@ -1209,6 +1266,18 @@ tasks.named<ProcessResources>("processResources") {
   from(webUIRepositoryDirectory.file("package.json")) {
     rename { "webui-package.json" }
   }
+  inputs.property("backendRevision", backendRevision)
+  inputs.property("webuiRevision", releaseWebUIPin)
+  inputs.property("releaseBuildVersion", releaseBuildVersion.orEmpty())
+  from("CITATION.cff") {
+    into("webui/docs")
+    filter { line -> if (line.startsWith("version: ")) "version: '${buildVersion(readVersion())}'" else line }
+  }
+  from(files("docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) {
+    into("webui/docs")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  }
+  doLast { destinationDir.resolve("backend-revision.txt").writeText(backendRevision.get() + "\n") }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")
   if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
@@ -1340,11 +1409,7 @@ tasks.named<ProcessResources>("processResources") {
     }
   }
   doLast {
-    Files.copy(
-      versionFile.toPath(),
-      layout.buildDirectory.file("resources/main/version.txt").get().asFile.toPath(),
-      StandardCopyOption.REPLACE_EXISTING
-    )
+    destinationDir.resolve("version.txt").writeText(buildVersion(readVersion()) + "\n")
     if (changelogFile.exists()) {
       Files.copy(
         changelogFile.toPath(),
@@ -1609,6 +1674,7 @@ tasks.register("verifyBundledJhdf5Payload") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
+  dependsOn(verifyBakedWebUI, verifyBundledTools)
   mustRunAfter("incrementPatchVersion")
   dependsOn("verifyNativeProcessingBuild")
   dependsOn(prepareRuntimeJhdf5NativesArchive)

@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -176,13 +176,7 @@ def main():
                 page = browser.new_page(viewport={"width": 1440, "height": 1000})
                 page.set_default_timeout(30000)
                 page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-                page.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(page, api.url)
                 page.route(
                     "**/examples/**",
                     lambda r: r.continue_(url=fx + urlparse(r.request.url).path),
@@ -273,7 +267,7 @@ def main():
                     )
 
                 def open_catalog():
-                    check.menu("File", "Open Examples…")
+                    check.menu("File", "Examples…")
                     dialog = page.get_by_role("dialog", name="Examples", exact=True)
                     expect(dialog).to_be_visible()
                     return dialog
@@ -463,7 +457,7 @@ def main():
                         p.get_by_text("This example will open when ready.", exact=False)
                     ).to_have_count(0)
                     row.get_by_role(
-                        "button", name="Open Examples to resume", exact=True
+                        "button", name="Resume in Examples…", exact=True
                     ).click()
                     d = page.get_by_role("dialog", name="Examples", exact=True)
                     expect(
@@ -503,7 +497,7 @@ def main():
                     expect(row).to_contain_text("cancelled")
                     assert filename() == "examples/jobs-failure/example.hict.hdf5"
                     row.get_by_role(
-                        "button", name="Open Examples to resume", exact=True
+                        "button", name="Resume in Examples…", exact=True
                     ).click()
                     d = page.get_by_role("dialog", name="Examples", exact=True)
                     card(d, "cancel").get_by_role(
@@ -758,7 +752,7 @@ def main():
 
                     def save_session(name):
                         with page.expect_download() as download:
-                            check.menu("File", "Save session")
+                            check.menu("File", "Save session…")
                         target = out / (name + ".json")
                         download.value.save_as(target)
                         return target, json.loads(target.read_text())
@@ -959,7 +953,7 @@ def main():
                     )
                     page.screenshot(path=str(out / "conversion-error-details.png"))
                     row.get_by_role(
-                        "button", name="Open Examples to retry", exact=True
+                        "button", name="Retry in Examples…", exact=True
                     ).click()
                     retry_dialog = page.get_by_role(
                         "dialog", name="Examples", exact=True
@@ -1066,7 +1060,7 @@ def main():
                                 "cancel-running-example-keeps-inputs-removes-output-and-stops-owned-hictk"
                             )
                         row.get_by_role(
-                            "button", name="Open Examples to retry", exact=True
+                            "button", name="Retry in Examples…", exact=True
                         ).click()
                         retry_dialog = page.get_by_role(
                             "dialog", name="Examples", exact=True
@@ -1151,15 +1145,16 @@ def main():
                                     "button", name="Open result", exact=True
                                 ).click()
                             wizard = page.get_by_role(
-                                "dialog", name="Open File Wizard", exact=True
+                                "dialog", name="Open with options", exact=True
                             )
                             expect(wizard).to_be_visible(timeout=60000)
                             return wizard
 
                         wizard = open_wizard()
                         wizard.get_by_role(
-                            "button", name=re.compile(r"1D tracks$")
+                            "button", name=re.compile(r"Review & open$")
                         ).click()
+                        check.advanced()
                         expect(wizard.locator(".wizard-track-item")).to_have_count(1)
                         expect(wizard.locator(".wizard-track-item")).to_contain_text(
                             "annotations.bed"
@@ -1203,9 +1198,9 @@ def main():
                         wizard.get_by_role("button", name="Cancel", exact=True).click()
                         wizard = open_wizard()
                         wizard.get_by_role(
-                            "button", name=re.compile(r"Final checks$")
+                            "button", name=re.compile(r"Review & open$")
                         ).click()
-                        finish = wizard.get_by_role("button", name="Finish", exact=True)
+                        finish = wizard.get_by_role("button", name="Open map", exact=True)
                         expect(finish).to_be_enabled()
                         finish.click()
                         expect(wizard).to_have_count(0, timeout=90000)
@@ -1285,7 +1280,7 @@ def main():
                             )
                             catalog_file.unlink()
                             with page.expect_file_chooser() as chooser:
-                                check.menu("File", "Open session")
+                                check.menu("File", "Open session…")
                             chooser.value.set_files(saved_path)
                             page.get_by_text(
                                 "Session restored. Undo history starts from the restored assembly.",

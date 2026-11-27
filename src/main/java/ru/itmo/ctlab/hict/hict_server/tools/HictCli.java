@@ -1,6 +1,8 @@
 package ru.itmo.ctlab.hict.hict_server.tools;
 
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Launcher;
+import io.vertx.core.Vertx;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import hdf.hdf5lib.H5;
@@ -22,6 +24,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkLoadOptions;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
+import ru.itmo.ctlab.hict.hict_server.util.BuildVersion;
 
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
@@ -44,7 +47,7 @@ import java.util.regex.Pattern;
 @Command(
   name = "hict",
   mixinStandardHelpOptions = true,
-  version = "HiCT JVM",
+  versionProvider = HictCli.VersionProvider.class,
   description = "HiCT server and conversion CLI.",
   subcommands = {
     HictCli.StartServer.class,
@@ -80,12 +83,33 @@ public class HictCli implements Runnable {
   @Option(names = {"-v", "--verbose"}, arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Enable verbose output.")
   boolean verbose;
 
+  public static final class VersionProvider implements CommandLine.IVersionProvider {
+    @Override
+    public String[] getVersion() {
+      return new String[]{
+        "HiCT " + BuildVersion.version(),
+        "JVM revision " + BuildVersion.backendRevision(),
+        "WebUI revision " + BuildVersion.webuiRevision()
+      };
+    }
+  }
+
   @Override
   public void run() {
     CommandLine.usage(this, System.out);
   }
 
-  public static void main(final String[] args) {
+  public static void main(final String[] javaArgs) {
+    final String[] args;
+    try {
+      args = Boolean.getBoolean("hict.windows.launcher.argv")
+        ? decodeWindowsLauncherArguments(System.getenv("HICT_WINDOWS_LAUNCHER_ARGV"))
+        : javaArgs;
+    } catch (final IllegalArgumentException ex) {
+      System.err.println(ex.getMessage());
+      System.exit(CommandLine.ExitCode.USAGE);
+      return;
+    }
     final CommandLine commandLine = new CommandLine(new HictCli())
       .setCaseInsensitiveEnumValuesAllowed(true)
       .setParameterExceptionHandler(HictCli::handleParameterException)
@@ -102,7 +126,10 @@ public class HictCli implements Runnable {
       if (System.getProperty("AUTO_OPEN_BROWSER") == null) {
         System.setProperty("AUTO_OPEN_BROWSER", "true");
       }
-      commandLine.execute("start-server");
+      final int exitCode = commandLine.execute("start-server");
+      if (exitCode != 0) {
+        System.exit(exitCode);
+      }
       return;
     }
 
@@ -126,10 +153,28 @@ public class HictCli implements Runnable {
     final var parseResult = commandLine.getParseResult();
     final var subcommand = parseResult == null ? null : parseResult.subcommand();
     final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
-    if ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName)) {
+    if (exitCode == 0 && ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName))) {
       return;
     }
     System.exit(exitCode);
+  }
+
+  static String[] decodeWindowsLauncherArguments(final String payload) {
+    if (payload == null || payload.isEmpty()) {
+      throw new IllegalArgumentException("The Windows launcher did not supply the command-line arguments.");
+    }
+    final var args = new ArrayList<String>();
+    int offset = 0;
+    while (offset < payload.length()) {
+      // The native launcher prefixes each UTF-16 argument with its length + 1.
+      final int length = payload.charAt(offset++) - 1;
+      if (length < 0 || length > payload.length() - offset) {
+        throw new IllegalArgumentException("The Windows launcher supplied invalid command-line arguments.");
+      }
+      args.add(payload.substring(offset, offset + length));
+      offset += length;
+    }
+    return args.toArray(String[]::new);
   }
 
   private static int handleParameterException(final CommandLine.ParameterException ex,
@@ -275,19 +320,29 @@ public class HictCli implements Runnable {
     return null;
   }
 
+  private static final class ServerLauncher extends Launcher {
+    @Override
+    public void handleDeployFailed(final Vertx vertx, final String verticle,
+                                   final DeploymentOptions options, final Throwable cause) {
+      vertx.close().onComplete(ignored -> System.exit(1));
+    }
+  }
+
   @Command(
     name = "start-server",
     mixinStandardHelpOptions = true,
     description = "Start API server with WebUI."
   )
   static class StartServer implements Callable<Integer> {
-    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).", defaultValue = "true")
-    boolean serveWebUi;
+    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).")
+    Boolean serveWebUi;
 
     @Override
     public Integer call() {
-      System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
-      Launcher.main(new String[]{"run", MainVerticle.class.getName()});
+      if (serveWebUi != null) {
+        System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
+      }
+      new ServerLauncher().dispatch(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }
   }
@@ -301,7 +356,7 @@ public class HictCli implements Runnable {
     @Override
     public Integer call() {
       System.setProperty("SERVE_WEBUI", "false");
-      Launcher.main(new String[]{"run", MainVerticle.class.getName()});
+      new ServerLauncher().dispatch(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }
   }
@@ -388,8 +443,8 @@ public class HictCli implements Runnable {
           if (!quiet) {
             System.out.println("HDF5 native library: " + version[0] + "." + version[1] + "." + version[2]);
           }
-        } catch (final Throwable err) {
-          failures.add("HDF5 native library is unavailable: " + err.getClass().getSimpleName() + ": " + err.getMessage());
+        } catch (final LinkageError | RuntimeException err) {
+          failures.add("HDF5 native library is unavailable: " + describeNativeFailure(err));
         }
       }
       if (checkAvailableNatives) {
@@ -413,6 +468,19 @@ public class HictCli implements Runnable {
         return 1;
       }
       return 0;
+    }
+
+    private static String describeNativeFailure(Throwable failure) {
+      final var details = new ArrayList<String>();
+      for (var cause = failure; cause != null && details.size() < 8; cause = cause.getCause()) {
+        details.add(cause.toString());
+      }
+      return String.join(" caused by ", details)
+        + " [Java=" + System.getProperty("java.home")
+        + ", runtime files=" + System.getProperty("java.io.tmpdir")
+        + ", HDF5 archive=" + valueOrNone(System.getenv("HICT_JHDF5_NATIVES_ARCHIVE"))
+        + ", HDF5 library=" + valueOrNone(System.getProperty("native.libpath.hdf5"))
+        + ", JHDF5 library=" + valueOrNone(System.getProperty("native.libpath.jhdf5")) + "]";
     }
 
     private static String valueOrNone(final String value) {

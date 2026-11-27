@@ -8,12 +8,13 @@ import http.server
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import threading
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -85,12 +86,7 @@ def main():
             context.add_init_script(
                 "window.__HICT_BENCHMARK_ENABLED__=true;window.__layoutErrors=[];window.addEventListener('error',e=>{if(e instanceof ErrorEvent){window.__layoutErrors.push(e.message);window.__captureLayoutError(e.message);}},true)"
             )
-            context.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(context, api.url)
             page = context.new_page()
             page.set_default_timeout(30000)
             check = BrowserCheck(page, out)
@@ -125,16 +121,22 @@ def main():
                     "Dev",
                     "Help",
                 ]:
-                    toggle = page.locator(".navbar-bar .navbar-nav").get_by_role(
-                        "link", name=name, exact=True
-                    )
+                    if name == "Selection":
+                        toggle = page.locator(".header-ribbon").get_by_role(
+                            "button", name=name, exact=True
+                        )
+                    else:
+                        toggle = page.locator(".navbar-bar .navbar-nav").get_by_role(
+                            "link", name=name, exact=True
+                        )
                     toggle.click()
                     menu = toggle.locator("..").locator(".dropdown-menu.show")
                     menu.wait_for()
-                    page.wait_for_function(
-                        """name=>{const a=[...document.querySelectorAll('.navbar-bar .navbar-nav > li > a')].find(e=>e.textContent.trim()===name),m=a?.parentElement.querySelector('.dropdown-menu.show');if(!m)return false;const b=m.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth+1&&b.top>=0&&b.bottom<=innerHeight+1;}""",
-                        arg=name,
-                    )
+                    assert menu.evaluate("""element => {
+                        const bounds = element.getBoundingClientRect();
+                        return bounds.left >= 0 && bounds.right <= innerWidth + 1 &&
+                            bounds.top >= 0 && bounds.bottom <= innerHeight + 1;
+                    }"""), name
                     items = menu.locator(
                         'a.dropdown-item:not(.disabled):not([aria-disabled="true"]),button.dropdown-item:not([disabled]):not(.disabled),input:not([disabled])'
                     )
@@ -166,22 +168,114 @@ def main():
                 ), point
                 return list(picture.getpixel(tuple(point)))
 
+            def notification_access():
+                notification = page.get_by_role("button", name="Open notifications", exact=True)
+                assert notification.evaluate("""button => {
+                    const bounds = button.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                        bounds.left + bounds.width / 2, bounds.top + bounds.height / 2
+                    );
+                    return bounds.bottom <= innerHeight && button.contains(hit);
+                }""")
+                upper = page.locator(".toolbar-upper")
+                if upper.evaluate("pane => pane.scrollHeight > pane.clientHeight"):
+                    before = notification.bounding_box()
+                    upper.evaluate("pane => { pane.scrollTop = pane.scrollHeight; }")
+                    assert upper.evaluate("pane => pane.scrollTop > 0")
+                    assert notification.bounding_box() == before
+                    upper.evaluate("pane => { pane.scrollTop = 0; }")
+
+            def desktop_toolbar_fit():
+                for width, height in ((1280, 720), (1366, 768), (1440, 900), (1920, 1080)):
+                    page.set_viewport_size({"width": width, "height": height})
+                    toolbar = page.locator(".toolbar-outer")
+                    problems = toolbar.evaluate("""toolbar => {
+                        const outside = [];
+                        const column = toolbar.querySelector(".toolbar-upper");
+                        const viewport = column.getBoundingClientRect();
+                        for (const button of toolbar.querySelectorAll("button")) {
+                            if (!button.getClientRects().length) continue;
+                            const bounds = button.getBoundingClientRect();
+                            const name = button.getAttribute("aria-label") || button.title;
+                            const limit = column.contains(button) ? viewport.bottom : innerHeight;
+                            if (bounds.bottom > limit + 1 || bounds.top < 0) {
+                                outside.push([name, "clipped", Math.ceil(Math.max(bounds.bottom - limit, -bounds.top))]);
+                            }
+                            if (button.matches(":disabled, [aria-disabled=true]")) continue;
+                            const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                            if (!button.contains(hit)) outside.push([name, "obscured"]);
+                        }
+                        return outside;
+                    }""")
+                    assert not problems, (width, height, problems)
+
+                page.set_viewport_size({"width": 900, "height": 520})
+                upper = page.locator(".toolbar-upper")
+                expect(upper).to_have_class(re.compile("toolbar-upper--more-below"))
+                upper.evaluate("pane => { pane.scrollTop = pane.scrollHeight; }")
+                expect(upper).not_to_have_class(re.compile("toolbar-upper--more-below"))
+                expect(page.get_by_role("button", name="Open notifications", exact=True)).to_be_in_viewport()
+                page.set_viewport_size({"width": 1440, "height": 1000})
+
             try:
                 page.goto(url)
+
+                def empty_ribbon_search():
+                    ribbon = page.locator(".header-ribbon")
+                    selection = ribbon.get_by_role("button", name="Selection", exact=True)
+                    expect(selection).to_be_disabled()
+                    opacity = selection.evaluate("button => getComputedStyle(button).opacity")
+                    assert float(opacity) < 1, opacity
+                    search = ribbon.get_by_role(
+                        "textbox", name="Find a contig, scaffold or feature", exact=True
+                    )
+                    go_to = ribbon.get_by_role("button", name="Go to", exact=True)
+                    for control in (search, go_to):
+                        expect(control).to_be_disabled()
+                        expect(control).to_have_css("opacity", opacity)
+
+                page.set_viewport_size({"width": 1440, "height": 900})
+                check.step("empty-ribbon-search-matches-disabled-controls", empty_ribbon_search)
+                for height in (720, 900):
+                    page.set_viewport_size({"width": 1440, "height": height})
+                    notification_access()
+                page.set_viewport_size({"width": 1440, "height": 1000})
                 page.evaluate(
                     "a=>window.__hictBenchmark.open(a.primary,a.api,a.fasta)",
                     {"primary": primary, "api": api.url, "fasta": fasta},
                 )
                 check.settle()
+                check.step("desktop-toolbar-controls-fit-and-scroll-fade", desktop_toolbar_fit)
+                page.set_viewport_size({"width": 1280, "height": 720})
+                notification_access()
+                page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()")
+                check.settle()
+                ribbon = page.locator(".header-ribbon")
+                expect(ribbon.get_by_role("button", name="Selection", exact=True)).to_be_visible()
+                ribbon_height = ribbon.bounding_box()["height"]
+                square_box = ribbon.get_by_text("Square selection", exact=True).bounding_box()
+                check.select_range()
+                selection = ribbon.get_by_role("button", name=re.compile(r"^Region · "))
+                expect(selection).to_have_attribute("title", re.compile(r"^Region · rows"))
+                assert ribbon.bounding_box()["height"] == ribbon_height <= 56, (
+                    ribbon_height,
+                    ribbon.evaluate("""ribbon => Array.from(ribbon.querySelectorAll(
+                        '.header-block, #left-header-block > *, #right-header-block > *'
+                    ), element => [element.id || element.className,
+                        element.getBoundingClientRect().toJSON()])"""),
+                )
+                assert ribbon.get_by_text("Square selection", exact=True).bounding_box() == square_box
+                for _ in range(3):
+                    ribbon.locator("#ruler-mode-button").click()
+                    assert ribbon.bounding_box()["height"] == ribbon_height
+                page.keyboard.press("Escape")
+                page.set_viewport_size({"width": 1440, "height": 1000})
 
                 def prepare():
-                    check.menu("View", "Tracks and layers…")
+                    check.menu("View", "Sources and layers…")
                     dialog = page.get_by_role(
-                        "dialog", name="Tracks and layers", exact=True
+                        "dialog", name="Sources and layers", exact=True
                     )
-                    dialog.get_by_role(
-                        "tab", name="Sources and layers", exact=True
-                    ).click()
                     dialog.get_by_role("button", name="Browse…", exact=True).click()
                     picker = page.get_by_role(
                         "dialog", name="Select secondary data source", exact=True
@@ -194,7 +288,9 @@ def main():
                     expect(
                         dialog.get_by_text("Attached: " + secondary, exact=True)
                     ).to_be_visible()
-                    dialog.get_by_role("tab", name="1D tracks", exact=True).click()
+                    dialog.get_by_role("button",name="Close",exact=True).click()
+                    check.menu("View","1D tracks…")
+                    dialog=page.get_by_role("dialog",name="1D tracks",exact=True)
                     dialog.get_by_role("button", name="Browse…", exact=True).click()
                     picker = page.get_by_role(
                         "dialog", name="Select 1D track file", exact=True
@@ -218,11 +314,9 @@ def main():
                     if details.get_attribute("open") is None:
                         details.locator("summary").click()
                     page.locator("#scaling-across-zoom").select_option("none")
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill("0")
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill("11")
                     page.locator("#gradient-apply-button").click()
                     check.settle()
@@ -231,7 +325,7 @@ def main():
                     ).click()
                     alignment = page.get_by_role(
                         "menuitemcheckbox",
-                        name="Automatically align visible FASTA",
+                        name="Align visible FASTA automatically",
                         exact=True,
                     )
                     if alignment.get_attribute("aria-checked") == "true":
@@ -307,12 +401,20 @@ def main():
                             .get_attribute("title")
                             == secondary
                         )
+                        source_toggle = page.get_by_role("button", name="Sources", exact=True)
+                        compact = source_toggle.is_visible()
+                        if compact:
+                            source_toggle.press("Enter")
+                            expect(source_toggle).to_have_attribute("aria-expanded", "true")
                         assert (
                             page.get_by_role(
                                 "button", name="Relink FASTA", exact=True
                             ).get_attribute("title")
                             == fasta
                         )
+                        if compact:
+                            page.keyboard.press("Escape")
+                            expect(source_toggle).to_have_attribute("aria-expanded", "false")
                         menus()
                         measurements.append(result)
                         pixel("workspace-" + str(width))
@@ -321,8 +423,7 @@ def main():
 
                     def change_range(index=index, width=width):
                         before = pixel("before-" + str(width))
-                        upper = page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        upper = page.get_by_label("Upper signal threshold", exact=True
                         )
                         upper.fill(str(22 + index * 11))
                         page.locator("#gradient-apply-button").click()
@@ -343,6 +444,34 @@ def main():
                         change_range,
                     )
 
+                def compact_map():
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    hide_sidebar = page.get_by_role("button", name="Hide side panel", exact=True)
+                    if hide_sidebar.is_visible():
+                        hide_sidebar.click()
+                    map_area = page.locator(".interactive-workspace_content")
+                    tools_toggle = page.get_by_role("button", name="Map tools", exact=True)
+                    tools = page.get_by_role("region", name="Map tools", exact=True)
+                    tracks_toggle = page.get_by_role("button", name="Tracks", exact=True)
+                    tracks = page.locator("#workspace-horizontal-tracks")
+                    expect(tools).to_be_hidden()
+                    expect(tracks).to_be_hidden()
+                    assert map_area.bounding_box()["width"] >= 390 * 0.7
+                    tools_toggle.press("Enter")
+                    expect(tools).to_be_visible()
+                    tools_toggle.press("Tab")
+                    expect(tools).to_be_focused()
+                    page.keyboard.press("Escape")
+                    expect(tools_toggle).to_be_focused()
+                    expect(tools).to_be_hidden()
+                    tracks_toggle.press("Enter")
+                    expect(tracks).to_be_visible()
+                    tracks_toggle.press("Enter")
+                    expect(tracks).to_be_hidden()
+                    assert raw() == known
+
+                check.step("map-and-keyboard-panels-at-390", compact_map)
+
                 def restore_choice():
                     page.set_viewport_size({"width": 800, "height": 600})
                     show_sidebar()
@@ -353,7 +482,7 @@ def main():
                     page.set_viewport_size({"width": 1024, "height": 768})
                     page.set_viewport_size({"width": 800, "height": 600})
                     page.reload()
-                    check.menu("File", "Attach")
+                    check.menu("File", "Join running session")
                     check.settle()
                     expect(
                         page.get_by_role("button", name="Hide side panel", exact=True)
@@ -362,7 +491,7 @@ def main():
                         "button", name="Hide side panel", exact=True
                     ).click()
                     page.reload()
-                    check.menu("File", "Attach")
+                    check.menu("File", "Join running session")
                     check.settle()
                     expect(
                         page.get_by_role("button", name="Show side panel", exact=True)
@@ -373,13 +502,7 @@ def main():
                     restore_choice,
                 )
                 fresh = browser.new_context(viewport={"width": 640, "height": 800})
-                fresh.route(
-                    "http://localhost:5000/**",
-                    lambda r: r.continue_(
-                        url=api.url
-                        + r.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(fresh, api.url)
                 empty = fresh.new_page()
                 empty.on("pageerror", lambda error: check.errors.append(str(error)))
                 empty.goto(url)

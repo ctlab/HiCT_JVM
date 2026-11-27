@@ -28,6 +28,7 @@ import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
+import ru.itmo.ctlab.hict.hict_library.visualization.DiagonalMask;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 
@@ -42,6 +43,7 @@ public record VisualizationOptionsDTO(double preLogBase,
                                       String coolerWeightsNaNPolicy,
                                       boolean coolerWeightsHaveNaNs,
                                       long coolerWeightsNaNCount,
+                                      DiagonalMask diagonalMask,
                                       ColormapDTO colormap
 ) {
   public static @NotNull VisualizationOptionsDTO fromEntity(final @NotNull SimpleVisualizationOptions options, final @NotNull ChunkedFile chunkedFile) {
@@ -57,6 +59,7 @@ public record VisualizationOptionsDTO(double preLogBase,
       options.getCoolerWeightsNaNPolicy().name(),
       chunkedFile.getCoolerWeightsNaNCount().get() > 0L,
       chunkedFile.getCoolerWeightsNaNCount().get(),
+      options.getDiagonalMask(),
       ColormapDTO.fromEntity(options.getColormap(), chunkedFile)
     );
   }
@@ -74,6 +77,7 @@ public record VisualizationOptionsDTO(double preLogBase,
       CoolerWeightsNaNPolicy.fromRaw(json.getString("coolerWeightsNaNPolicy")).name(),
       false,
       0L,
+      readDiagonalMask(json),
       ColormapDTO.fromJSONObject(json.getJsonObject("colormap"))
     );
   }
@@ -89,8 +93,24 @@ public record VisualizationOptionsDTO(double preLogBase,
       this.autoThresholdQuantile,
       SignalDisplayMode.fromRaw(this.signalDisplayMode),
       CoolerWeightsNaNPolicy.fromRaw(this.coolerWeightsNaNPolicy),
-      this.colormap.toEntity()
+      this.colormap.toEntity(),
+      this.diagonalMask
     );
+  }
+
+  public static DiagonalMask readDiagonalMask(JsonObject json) {
+    final var raw = json.getValue("diagonalMask");
+    if (raw == null) return DiagonalMask.DEFAULT;
+    if (!(raw instanceof JsonObject mask)
+      || !(mask.getValue("enabled") instanceof Boolean enabled)
+      || !(mask.getValue("distanceBp") instanceof Number distance)) {
+      throw new IllegalArgumentException("Expected diagonalMask with enabled and distanceBp");
+    }
+    final double bp = distance.doubleValue();
+    if (!Double.isFinite(bp) || bp != Math.rint(bp) || bp < 1 || bp > DiagonalMask.MAX_DISTANCE_BP) {
+      throw new IllegalArgumentException("Diagonal distance must be a whole number between 1 and 1,000,000,000 bp");
+    }
+    return new DiagonalMask(enabled, (long) bp);
   }
 
   private static double getFiniteDouble(final @NotNull JsonObject json, final @NotNull String key, final double fallback) {

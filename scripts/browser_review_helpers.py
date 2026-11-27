@@ -3,20 +3,20 @@ import re
 from pathlib import PurePosixPath
 
 
-def expand_slider_limits(page):
-    details = page.locator("details.range-details")
+def expand_signal_advanced(page):
+    details = page.locator("#signal-advanced")
     if details.get_attribute("open") is None:
-        details.locator("summary").click()
+        details.locator(":scope > summary").click()
 
 
 def link_fasta(page, filename):
     """Use the same linkage path as the user, including frontend capability updates."""
     page.get_by_role("link", name="Assembly", exact=True).click()
-    page.get_by_role("link", name="Link FASTA", exact=True).click()
+    page.get_by_role("link", name="Link FASTA…", exact=True).click()
     dialog = page.locator(".modal.show").filter(has_text="Select FASTA file")
     file = PurePosixPath(filename)
     if str(file.parent) != ".":
-        path = dialog.get_by_placeholder("Relative folder or file path under DATA_DIR")
+        path = dialog.get_by_placeholder("Relative path in the HiCT data folder")
         path.fill(str(file.parent))
         with page.expect_response(lambda response: response.url.endswith("/list_directory")):
             path.press("Enter")

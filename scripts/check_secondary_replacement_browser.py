@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise secondary replacement errors, cancellation and successful edited alignment."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 import re
@@ -21,8 +22,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1440, 'height': 1000})
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(15000)
         page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
@@ -48,8 +48,7 @@ def main():
                     'pixels': pixels, 'clientContigs': contigs}
 
         def choose(filename):
-            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
             dialog.get_by_role('button', name='Browse…', exact=True).click()
             picker = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Select secondary data source', exact=True))
             picker.locator('span[title]').filter(has_text=re.compile('^' + re.escape(filename) + '$')).click()
@@ -67,16 +66,18 @@ def main():
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             before = snapshot()
             expected = list(reversed([1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11]))
             assert before['pixels'] == {'primary': expected, 'secondary': expected}
             page.get_by_role('link', name='View', exact=True).click()
-            page.get_by_role('link', name='Tracks and layers…', exact=True).click()
+            page.get_by_role('link', name='Sources and layers…', exact=True).click()
             if args.secondary_drives_assembly:
-                dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-                dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+                dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')):
                     dialog.get_by_label('Assembly source',exact=True).select_option('SECONDARY')
                 page.wait_for_function("()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction===0")
@@ -122,8 +123,7 @@ def main():
             assert client_contigs == expected_contigs
             assert post('/secondary/status')['filename'] == 'tiny-unrelated.hict.hdf5'
             result['checks'].append('confirmed mismatched replacement applies the returned assembly to the client')
-            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Sources and layers', exact=True))
             for source in ('PRIMARY', 'SECONDARY'):
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')) as switched:
                     dialog.get_by_label('Assembly source',exact=True).select_option(source)

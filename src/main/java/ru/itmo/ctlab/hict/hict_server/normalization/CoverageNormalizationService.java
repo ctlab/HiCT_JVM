@@ -31,22 +31,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.CoverageWeightsBuilder;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.NormalizationWeights;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
+import java.util.function.DoubleConsumer;
 
-/**
- * Runs square-root coverage preparation as one cancellable background job.
- *
- * <p>Only one job runs at a time. Starting again while one is running for the same files joins it.
- * Vectors are published to the files only when every resolution of every file is done, so a cancelled
- * or failed job leaves the maps exactly as they were. Progress counts finished files, with the
- * fraction of the current file's resolutions inside it.
- */
+/** Prepares all coverage levels for one source, publishing only a complete result. */
 @Slf4j
 public final class CoverageNormalizationService {
   public enum State {
@@ -57,20 +53,34 @@ public final class CoverageNormalizationService {
     CANCELLED
   }
 
-  /** What a client sees. {@code fileKey} identifies the files the job was started for. */
+  /** The state and identity of the latest preparation for this source. */
   public record Status(@NotNull State state, double progress, @NotNull String message,
                        @NotNull String algorithmVersion, @Nullable String error, long jobId) {
   }
 
-  private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-    final var thread = new Thread(runnable, "hict-coverage-normalization");
-    thread.setDaemon(true);
-    return thread;
-  });
+  private static final AtomicLong JOB_IDS = new AtomicLong();
+  private final ExecutorService executor;
+  private final String sourceLabel;
+  private final Preparation preparation;
+
+  @FunctionalInterface
+  interface Preparation {
+    NormalizationWeights.Prepared scan(ChunkedFile source, long budget, BooleanSupplier cancelled, DoubleConsumer progress);
+  }
+
+  public CoverageNormalizationService(ExecutorService executor, String sourceLabel) {
+    this(executor, sourceLabel, CoverageWeightsBuilder::build);
+  }
+
+  CoverageNormalizationService(ExecutorService executor, String sourceLabel, Preparation preparation) {
+    this.executor = executor;
+    this.sourceLabel = sourceLabel;
+    this.preparation = preparation;
+  }
+
   private final Object lock = new Object();
   private Status status = new Status(State.IDLE, 0.0d, "Not started", CoverageNormalizer.ALGORITHM_VERSION, null, 0L);
   private AtomicBoolean cancelFlag = new AtomicBoolean(false);
-  private long nextJobId = 1L;
   private long startedAtMs;
   private long finishedAtMs;
 
@@ -79,13 +89,13 @@ public final class CoverageNormalizationService {
       if (status.state() == State.IDLE) return java.util.List.of();
       return java.util.List.of(new BackgroundJob(
         Long.toString(status.jobId()), "coverage", status.state().name(), status.progress(),
-        startedAtMs, startedAtMs, finishedAtMs, status.message(), status.error(), java.util.List.of()));
+        startedAtMs, startedAtMs, finishedAtMs, sourceLabel + ": " + status.message(), status.error(), java.util.List.of()));
     }
   }
 
   public boolean cancelBackgroundJob(String id) {
     synchronized (lock) {
-      if (!Long.toString(status.jobId()).equals(id)) return false;
+      if (status.state() != State.RUNNING || !Long.toString(status.jobId()).equals(id)) return false;
       cancel();
       return true;
     }
@@ -104,24 +114,26 @@ public final class CoverageNormalizationService {
     }
   }
 
-  /** Starts a job for the files. Clients can follow an existing job through status. */
-  public @NotNull Status start(final @NotNull List<ChunkedFile> files, final long budgetBytes) {
+  /** Starts a job for the selected source. Clients can follow it through status. */
+  public @NotNull Status start(final @NotNull ChunkedFile file, final long budgetBytes,
+                               final @NotNull Path processedDirectory) {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
         throw new AlreadyRunningException();
       }
       startedAtMs = System.currentTimeMillis();
       finishedAtMs = 0;
-      if (files.stream().allMatch(f -> f.getNormalizationWeights().prepared() != null)) {
+      if (file.getNormalizationWeights().prepared() != null) {
         finishedAtMs = System.currentTimeMillis();
-        status = new Status(State.READY, 1.0d, "Already prepared", CoverageNormalizer.ALGORITHM_VERSION, null, nextJobId++);
+        var message = status.state() == State.READY ? status.message() : "Already prepared";
+        status = new Status(State.READY, 1.0d, message, CoverageNormalizer.ALGORITHM_VERSION, null, JOB_IDS.incrementAndGet());
         return status;
       }
-      final long jobId = nextJobId++;
+      final long jobId = JOB_IDS.incrementAndGet();
       final var cancel = new AtomicBoolean(false);
       this.cancelFlag = cancel;
-      status = new Status(State.RUNNING, 0.0d, "Reading contacts", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
-      executor.execute(() -> run(jobId, List.copyOf(files), budgetBytes, cancel));
+      status = new Status(State.RUNNING, 0.0d, "Preparing coverage", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
+      executor.execute(() -> run(jobId, file, budgetBytes, processedDirectory, cancel));
       return status;
     }
   }
@@ -146,33 +158,41 @@ public final class CoverageNormalizationService {
     }
   }
 
-  private void run(final long jobId, final @NotNull List<ChunkedFile> files, final long budgetBytes,
-                   final @NotNull AtomicBoolean cancel) {
+  private void run(final long jobId, final @NotNull ChunkedFile file, final long budgetBytes,
+                   final @NotNull Path processedDirectory, final @NotNull AtomicBoolean cancel) {
     try {
-      final var prepared = new ArrayList<ru.itmo.ctlab.hict.hict_library.chunkedfile.NormalizationWeights.Prepared>();
-      for (int i = 0; i < files.size(); i++) {
-        final int index = i;
-        final var file = files.get(i);
-        if (file.getNormalizationWeights().prepared() != null) {
-          prepared.add(file.getNormalizationWeights().prepared());
-          continue;
+      if (cancel.get()) throw new CoverageNormalizer.CancelledException();
+      CoverageWeightsBuilder.requireWithinBudget(file, budgetBytes);
+      String cacheKey = null;
+      NormalizationWeights.Prepared prepared = null;
+      try {
+        cacheKey = CoverageCache.key(file);
+        prepared = CoverageCache.read(processedDirectory, cacheKey, CoverageCache.expectedBins(file));
+      } catch (IOException invalid) {
+        log.warn("Ignoring saved coverage for {}: {}", file.getHdfFilePath().getFileName(), invalid.getMessage());
+      }
+      final boolean loaded = prepared != null;
+      boolean saved = loaded;
+      if (!loaded) {
+        prepared = preparation.scan(file, budgetBytes, cancel::get, fraction -> update(jobId, fraction, "Reading contacts"));
+        if (cancel.get()) throw new CoverageNormalizer.CancelledException();
+        try {
+          if (cacheKey != null && cacheKey.equals(CoverageCache.key(file))) {
+            CoverageCache.write(processedDirectory, cacheKey, prepared);
+            saved = true;
+          }
+        } catch (IOException unavailable) {
+          log.warn("Could not save coverage for {}: {}", file.getHdfFilePath().getFileName(), unavailable.getMessage());
         }
-        prepared.add(CoverageWeightsBuilder.build(file, budgetBytes, cancel::get, fraction -> update(jobId,
-          (index + fraction) / files.size(),
-          files.size() > 1 ? "Reading contacts of source " + (index + 1) + " of " + files.size() : "Reading contacts")));
       }
-      if (cancel.get()) {
-        throw new CoverageNormalizer.CancelledException();
-      }
-      // Publish only now, so nothing changes unless every file finished.
       synchronized (lock) {
         if (status.jobId() != jobId) return;
         if (cancel.get()) throw new CoverageNormalizer.CancelledException();
-        for (int i = 0; i < files.size(); i++) {
-          files.get(i).getNormalizationWeights().publish(prepared.get(i));
-        }
+        file.getNormalizationWeights().publish(prepared);
         finishedAtMs = System.currentTimeMillis();
-        status = new Status(State.READY, 1.0d, "Ready", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
+        var message = loaded ? "Loaded saved coverage" : saved ? "Saved coverage" : "Ready";
+        if (loaded) log.info("Loaded saved coverage for {}", file.getHdfFilePath().getFileName());
+        status = new Status(State.READY, 1.0d, message, CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     } catch (final CoverageNormalizer.CancelledException cancelled) {
       synchronized (lock) {
@@ -205,8 +225,4 @@ public final class CoverageNormalizationService {
     }
   }
 
-  public void close() {
-    invalidateForMapChange();
-    executor.shutdownNow();
-  }
 }

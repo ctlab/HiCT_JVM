@@ -6,6 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 from urllib.error import HTTPError
 
 from sequence_browser_harness import HictTestServer
@@ -13,15 +15,28 @@ from sequence_browser_harness import HictTestServer
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("jar", "source-dir", "output"):
+    for name in ("jar", "output"):
         parser.add_argument("--" + name, required=True)
+    fixtures = parser.add_mutually_exclusive_group(required=True)
+    fixtures.add_argument("--source-dir", help="Data from check_example_jobs_browser.py --recipe-provenance")
+    fixtures.add_argument("--webui", help="Build fresh jobs-automatic and jobs-wizard fixtures with this WebUI")
     args = parser.parse_args()
-    source, out = Path(args.source_dir).absolute(), Path(args.output).absolute()
+    out = Path(args.output).absolute()
+    source = Path(args.source_dir).absolute() if args.source_dir else out / "generated-example-data"
     if any(p != p.resolve() or not p.is_relative_to("/tmp") for p in (source, out)):
         parser.error("Use nonsymlinked disposable /tmp paths")
     if any(p.is_symlink() for p in source.rglob("*")):
         parser.error("Fixture copies must contain no symlinks")
     out.mkdir(exist_ok=False)
+    if args.webui:
+        with (out / "fixture-generation.log").open("w") as log:
+            subprocess.run([sys.executable, str(Path(__file__).with_name("check_example_jobs_browser.py")),
+                "--jar", args.jar, "--webui", args.webui, "--data-dir", str(source),
+                "--output", str(out / "browser"), "--recipe-provenance"],
+                check=True, stdout=log, stderr=subprocess.STDOUT)
+    for recipe in ("jobs-automatic", "jobs-wizard"):
+        if not (source / "examples" / recipe / "example.hict.hdf5").is_file():
+            parser.error(f"Missing {recipe} fixture. Supply a WebUI with --webui to generate it.")
     data = out / "data"
     shutil.copytree(source, data, copy_function=shutil.copy2)
     hashes = {

@@ -14,7 +14,7 @@ import math
 import threading
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -82,12 +82,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             publications = []
             page.on(
@@ -141,8 +136,7 @@ def main():
                 raise AssertionError("Expected visualization request did not start")
 
             def set_upper(value, apply=True):
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill(str(value))
                 if apply:
                     page.locator("#gradient-apply-button").click()
@@ -221,8 +215,7 @@ def main():
                 while not held:
                     page.wait_for_timeout(10)
                 page.locator("#signal-transform-log").click()
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("100")
                 page.locator("#gradient-apply-button").click()
                 # Give the legacy overlapping Apply time to start; the fixed queue may keep it waiting.
@@ -240,8 +233,7 @@ def main():
                     and not actual["applyCoolerWeights"]
                 ), actual
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("100")
                 expect(page.locator("#signal-transform-log")).to_have_attribute(
@@ -325,8 +317,7 @@ def main():
                     actual_graph["lowerExpression"]["input"] == original_secondary_input
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("750")
                 assert tile("SECONDARY").getpixel((4, 4))[1] < 130, tile(
@@ -360,8 +351,7 @@ def main():
                 )
                 assert tile("SECONDARY").tobytes() != before_secondary
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("175")
                 record(
@@ -400,8 +390,7 @@ def main():
                     and graph["lowerExpression"]["maxSignal"] == 18
                 ), graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("18")
                 record(
@@ -445,8 +434,7 @@ def main():
                     wait()
                     assert options()["colormap"]["maxSignal"] == value
                     expect(
-                        page.get_by_role(
-                            "spinbutton", name="Upper signal threshold", exact=True
+                        page.get_by_label("Upper signal threshold", exact=True
                         )
                     ).to_have_value(str(value))
                     record(
@@ -482,8 +470,7 @@ def main():
                     and tile().tobytes() == before_pixels
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("20")
                 expect(
@@ -529,8 +516,7 @@ def main():
                     and tile().tobytes() == before_pixels
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("30")
                 expect(
@@ -551,7 +537,7 @@ def main():
                 # Save flushes the pending debounce before capturing options and the graph.
                 set_upper(45, False)
                 with page.expect_download() as download:
-                    check.menu("File", "Save session")
+                    check.menu("File", "Save session…")
                 saved = out / "pending-draft-session.json"
                 download.value.save_as(saved)
                 session = json.loads(saved.read_text())
@@ -573,7 +559,7 @@ def main():
                 # A mode change follows the pending Observed edit and retains its palette on return.
                 secondary_before = post("/render_pipeline/get")["lowerExpression"]
                 set_upper(55, False)
-                mode = page.locator('select[title^="Expected and O/E"]')
+                mode = page.locator('select[aria-label="Signal display"]')
                 mode.select_option("OBSERVED_OVER_EXPECTED")
                 expect(mode).to_be_enabled()
                 wait()
@@ -593,8 +579,7 @@ def main():
                     post("/render_pipeline/get")["lowerExpression"] == secondary_before
                 )
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("55")
                 record(
@@ -620,8 +605,7 @@ def main():
                 assert graph["upperExpression"] == primary_before, graph
                 assert graph["lowerExpression"]["maxSignal"] == 0.75, graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("0.75")
                 record(
@@ -730,8 +714,7 @@ def main():
                     and graph["lowerExpression"]["maxSignal"] == 900
                 ), graph
                 expect(
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     )
                 ).to_have_value("900")
                 record(
@@ -748,7 +731,7 @@ def main():
                 wait_held(held)
                 check.menu("View", "Rendering pipeline…")
                 dialog = page.get_by_role(
-                    "dialog", name="Rendering Pipeline", exact=True
+                    "dialog", name="Rendering pipeline", exact=True
                 )
                 expect(
                     dialog.get_by_role("button", name="Apply", exact=True)

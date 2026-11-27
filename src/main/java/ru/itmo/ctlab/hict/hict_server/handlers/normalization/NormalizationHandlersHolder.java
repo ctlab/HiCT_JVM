@@ -36,16 +36,21 @@ import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.CoverageWeightsBuilder;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.NormalizationWeights;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.normalization.CoverageNormalizationService;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
-import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 /**
  * Normalization vectors computed from the matrix itself (square-root coverage).
@@ -54,102 +59,149 @@ import java.util.Map;
  * {@code /normalization/weights} switches which weights tiles use once the vectors exist.
  */
 public class NormalizationHandlersHolder extends HandlersHolder {
+  private enum Source {
+    PRIMARY("chunkedFile", "Primary"),
+    SECONDARY("chunkedFileSecondary", "Secondary");
+
+    final String key;
+    final String label;
+
+    Source(String key, String label) {
+      this.key = key;
+      this.label = label;
+    }
+
+    static Source requested(JsonObject body) {
+      final var value = RequestJson.optionalString(body, "source", "PRIMARY");
+      try {
+        return valueOf(value.trim().toUpperCase(Locale.ROOT));
+      } catch (IllegalArgumentException invalid) {
+        throw new HttpException(400, "source must be PRIMARY or SECONDARY");
+      }
+    }
+  }
+
   private final Vertx vertx;
-  private final CoverageNormalizationService service = new CoverageNormalizationService();
+  // Prepare one file at a time to keep temporary coverage arrays within the configured budget.
+  private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+    final var thread = new Thread(runnable, "hict-coverage-normalization");
+    thread.setDaemon(true);
+    thread.setPriority(Thread.MIN_PRIORITY);
+    return thread;
+  });
+  private final CoverageNormalizationService primary = new CoverageNormalizationService(executor, "Primary");
+  private final CoverageNormalizationService secondary = new CoverageNormalizationService(executor, "Secondary");
 
   public NormalizationHandlersHolder(final Vertx vertx) {
     this.vertx = vertx;
   }
 
   public List<BackgroundJob> backgroundJobs() {
-    return service.backgroundJobs();
+    return Stream.concat(primary.backgroundJobs().stream(), secondary.backgroundJobs().stream()).toList();
   }
 
   public boolean cancelBackgroundJob(String id) {
-    return service.cancelBackgroundJob(id);
+    return primary.cancelBackgroundJob(id) || secondary.cancelBackgroundJob(id);
   }
 
   public void cancelForMapChange() {
-    service.invalidateForMapChange();
+    primary.invalidateForMapChange();
+    cancelForSecondaryChange();
+  }
+
+  public void cancelForSecondaryChange() {
+    secondary.invalidateForMapChange();
   }
 
   public void close() {
-    service.close();
+    cancelForMapChange();
+    executor.shutdownNow();
   }
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/normalization/coverage/prepare").handler(ctx -> {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final var source = Source.requested(requestBody(ctx));
+      final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       synchronized (map) {
-        final var files = openFiles();
-        if (files.isEmpty()) {
-          ctx.fail(new HttpException(409, "Open a map first"));
-          return;
+        final var file = requireFile(map, source);
+        if (lacksContactData(file)) {
+          throw new HttpException(409, source.label + " needs contact data for square-root coverage");
         }
-        if (files.stream().anyMatch(NormalizationHandlersHolder::lacksContactData)) {
-          ctx.fail(new HttpException(409, "Square-root coverage needs contact data in every open source"));
-          return;
-        }
+        final var service = service(source);
         try {
-          final var status = service.start(files, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES);
-          ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(status, files)));
+          final var processed = ((ShareableWrappers.PathWrapper) map.get("processedDirectory")).getPath();
+          final var status = service.start(file, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES, processed);
+          ctx.json(describe(status, source, file));
         } catch (CoverageNormalizationService.AlreadyRunningException conflict) {
-          ctx.fail(new HttpException(409, conflict.getMessage()));
+          throw new HttpException(409, conflict.getMessage());
         }
       }
     });
     router.post("/normalization/coverage/status").handler(ctx -> {
-      final var files = openFiles();
-      ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(service.status(), files)));
+      final var source = Source.requested(requestBody(ctx));
+      final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      synchronized (map) {
+        ctx.json(describe(service(source).status(), source, openFile(map, source)));
+      }
     });
     router.post("/normalization/coverage/cancel").handler(ctx -> {
-      final var files = openFiles();
-      ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(service.cancel(), files)));
+      final var source = Source.requested(requestBody(ctx));
+      final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      synchronized (map) {
+        ctx.json(describe(service(source).cancel(), source, openFile(map, source)));
+      }
     });
     router.post("/normalization/weights").handler(ctx -> {
       final var scheduler = scheduler(ctx);
-      if (scheduler == null) {
-        return;
-      }
-      final var body = ctx.body().asJsonObject();
-      final var requested = body == null ? null : body.getString("mode");
+      if (scheduler == null) return;
+      final var body = requestBody(ctx);
+      final var source = Source.requested(body);
       final NormalizationWeights.Mode mode;
       try {
-        mode = NormalizationWeights.Mode.valueOf(String.valueOf(requested).trim().toUpperCase());
-      } catch (final IllegalArgumentException e) {
-        ctx.fail(new HttpException(400, "mode must be FILE or SQRT_COVERAGE"));
-        return;
+        mode = NormalizationWeights.Mode.valueOf(RequestJson.requireString(body, "mode").trim().toUpperCase(Locale.ROOT));
+      } catch (IllegalArgumentException invalid) {
+        throw new HttpException(400, "mode must be FILE or SQRT_COVERAGE");
       }
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         null,
         () -> {
-          final var files = openFiles();
-          if (files.isEmpty()) {
-            throw new HttpException(409, "Open a map first");
+          final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          synchronized (map) {
+            final var file = requireFile(map, source);
+            if (mode == NormalizationWeights.Mode.SQRT_COVERAGE
+              && file.getNormalizationWeights().prepared() == null) {
+              throw new HttpException(409, "Prepare square-root coverage for " + source.label + " first.");
+            }
+            file.getNormalizationWeights().select(mode);
+            return Map.of("source", source.name(), "mode", mode.name(),
+              "version", bumpTileVersion(requireFile(map, Source.PRIMARY), scheduler));
           }
-          if (mode == NormalizationWeights.Mode.SQRT_COVERAGE
-            && files.stream().anyMatch(f -> f.getNormalizationWeights().prepared() == null)) {
-            throw new HttpException(409, "Square-root coverage has not been prepared for every open source. Prepare it first.");
-          }
-          // Switch every source together, so the two triangles never use different weights.
-          files.forEach(f -> f.getNormalizationWeights().select(mode));
-          return Map.of("mode", mode.name(), "version", bumpTileVersion(files.get(0), scheduler));
         },
         result -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(result))
       );
     });
   }
 
-  private @NotNull Map<String, Object> describe(final @NotNull CoverageNormalizationService.Status status,
-                                                final @NotNull List<ChunkedFile> files) {
-    final boolean prepared = !files.isEmpty() && files.stream().allMatch(f -> f.getNormalizationWeights().prepared() != null);
-    final var mode = files.isEmpty() ? NormalizationWeights.Mode.FILE : files.get(0).getNormalizationWeights().mode();
+  private static JsonObject requestBody(io.vertx.ext.web.RoutingContext ctx) {
+    return ctx.body().length() == 0 ? new JsonObject() : RequestJson.requireObject(ctx);
+  }
+
+  private CoverageNormalizationService service(Source source) {
+    return source == Source.PRIMARY ? primary : secondary;
+  }
+
+  private static JsonObject describe(CoverageNormalizationService.Status status, Source source, ChunkedFile file) {
+    final var weights = file == null ? null : file.getNormalizationWeights();
+    final boolean prepared = weights != null && weights.prepared() != null;
+    final var mode = weights == null ? NormalizationWeights.Mode.FILE : weights.mode();
     final var effectiveState = prepared && status.state() != CoverageNormalizationService.State.RUNNING
       ? CoverageNormalizationService.State.READY : status.state();
     return new JsonObject()
+      .put("source", source.name())
+      .put("jobId", status.jobId())
       .put("state", effectiveState.name())
       .put("progress", prepared ? 1.0d : status.progress())
       .put("message", status.message())
@@ -157,28 +209,24 @@ public class NormalizationHandlersHolder extends HandlersHolder {
       .put("error", status.error())
       .put("prepared", prepared)
       .put("mode", mode.name())
-      .put("consistent", files.stream().allMatch(f -> f.getNormalizationWeights().mode() == mode))
-      .put("estimatedBytes", files.stream().mapToLong(CoverageWeightsBuilder::estimateBytes).sum())
-      .getMap();
+      .put("estimatedBytes", file == null || lacksContactData(file) ? 0L : CoverageWeightsBuilder.estimateBytes(file));
   }
 
-  private @NotNull List<ChunkedFile> openFiles() {
-    final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-    final var files = new ArrayList<ChunkedFile>(2);
-    final var primary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
-    if (primary != null) {
-      files.add(primary.getChunkedFile());
+  private static ChunkedFile openFile(LocalMap<String, Object> map, Source source) {
+    final var wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(source.key);
+    return wrapper == null ? null : wrapper.getChunkedFile();
+  }
+
+  private static ChunkedFile requireFile(LocalMap<String, Object> map, Source source) {
+    final var file = openFile(map, source);
+    if (file == null) {
+      throw new HttpException(409, source == Source.PRIMARY ? "Open a map first" : "Attach a secondary source first");
     }
-    final var secondary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFileSecondary");
-    if (primary != null && secondary != null) {
-      files.add(secondary.getChunkedFile());
-    }
-    return files;
+    return file;
   }
 
   private static boolean lacksContactData(ChunkedFile file) {
-    return file.getSourceMetadata().contactDataState()
-      == ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.ContactDataState.ABSENT;
+    return file.getSourceMetadata().contactDataState() == SourceMetadata.ContactDataState.ABSENT;
   }
 
   private long bumpTileVersion(final @NotNull ChunkedFile chunkedFile, final @NotNull RequestTaskScheduler scheduler) {

@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -66,13 +66,7 @@ def main():
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url
-                    + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             page.set_default_timeout(20000)
             dialog = page.get_by_role("dialog", name="Export figure", exact=True)
@@ -85,6 +79,8 @@ def main():
 
             def open_export():
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 expect(dialog).to_be_visible()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
@@ -159,8 +155,8 @@ def main():
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 dialog.get_by_label("Include 1D tracks", exact=True).uncheck()
                 expect(dialog.locator("#export-png-button")).to_be_disabled()
-                expect(dialog).to_contain_text("Options changed")
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                expect(dialog).to_contain_text("Update the preview to apply the changed options.")
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -169,12 +165,13 @@ def main():
                     "map": True,
                     "rulers": True,
                     "tracks": False,
+                    "secondary": True,
                 }
                 record(
                     "composition-changes-require-a-new-capture-and-can-remove-annotation-panels"
                 )
                 dialog.get_by_label("Include rulers and FASTA", exact=True).uncheck()
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -183,6 +180,7 @@ def main():
                     "map": True,
                     "rulers": False,
                     "tracks": False,
+                    "secondary": True,
                 }
                 record("map-only-composition-removes-ruler-and-track-margins")
                 view_before = page.evaluate(
@@ -191,7 +189,7 @@ def main():
                 dialog.get_by_label("Export area", exact=True).select_option(
                     "whole-map"
                 )
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -219,7 +217,7 @@ def main():
                 assert whole["wholeMapSizing"] == "FIT_WINDOW"
                 dialog.get_by_label("Expand small whole maps to fit window", exact=True).uncheck()
                 expect(dialog.locator("#export-png-button")).to_be_disabled()
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(timeout=90000)
                 compact = metadata(save("whole-map-native-grid", "png"))
                 assert compact["wholeMapSizing"] == "NATIVE_GRID"
@@ -237,7 +235,7 @@ def main():
                 dialog.get_by_label("Export area", exact=True).select_option(
                     "selection"
                 )
-                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                dialog.get_by_role("button", name="Update preview", exact=True).click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -302,6 +300,8 @@ def main():
 
                 page.route("**/session/snapshot", hold_final_snapshot)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 deadline = time.monotonic() + 60
                 while not held:
                     assert time.monotonic() < deadline
@@ -340,6 +340,8 @@ def main():
 
                 page.route("**/session/snapshot", hold_first_snapshot)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
                 deadline = time.monotonic() + 30
                 while not held:
                     assert time.monotonic() < deadline

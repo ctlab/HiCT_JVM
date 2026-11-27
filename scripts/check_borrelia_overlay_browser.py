@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -41,12 +41,7 @@ def main():
         page = browser.new_page(viewport={"width": 1600, "height": 1100})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, out)
 
         def post(path, payload=None):
@@ -97,7 +92,7 @@ def main():
             )
             check.settle()
             nan = page.get_by_role(
-                "button", name="Do not use Cooler weights", exact=True
+                "button", name="Show raw contacts (no balancing)", exact=True
             )
             if nan.is_visible():
                 nan.click()
@@ -106,14 +101,24 @@ def main():
             results["checks"].append({"openingMinimap": mini_pixels()})
             page.evaluate("""()=>{
                 const v=window.__hictBenchmark.manager().viewAndLayersManager;
-                v.currentViewState.selectionBorders.leftBP=[880000,880000];
-                v.currentViewState.selectionBorders.rightBP=[1080000,1080000];
+                v.setRegionBounds({rowStart:880000,rowEnd:1080000,columnStart:880000,columnEnd:1080000});
             }""")
-            check.menu("Tools", "Generate ModDotPlot…")
-            dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
             dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
+            if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                dialog.locator("details.hict-advanced:not([open]) > summary").click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
-            dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+            generate = dialog.get_by_role("button", name="Generate", exact=True)
+            fit = dialog.get_by_role("button", name="Use sizes that fit", exact=True)
+            warning = dialog.get_by_role("checkbox", name="Generate anyway", exact=True)
+            generate.and_(dialog.locator("button:enabled")).or_(fit).or_(warning).first.wait_for()
+            if fit.is_visible():
+                assert dialog.get_by_text("This size cannot run here.", exact=True).is_visible()
+                fit.click()
+            if warning.is_visible():
+                warning.check()
+            generate.click()
             dialog.locator("footer").get_by_role(
                 "button", name="Close", exact=True
             ).click()

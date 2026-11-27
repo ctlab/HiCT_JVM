@@ -94,6 +94,7 @@ public final class ReinforcementHdf5Fixture {
     if (args.length != 1) throw new IllegalArgumentException("Supply a fresh fixture output directory");
     Path directory = Path.of(args[0]);
     create(directory, "tiny-primary", List.of(4L, 10L));
+    create(directory, "tiny-extrema", List.of(4L), LENGTH, new long[][]{{0, 4, 17}, {16, 16, 83}});
     create(directory, "tiny-disjoint", List.of(3L, 7L));
     create(directory, "tiny-unrelated", List.of(3L, 7L), LENGTH + 1, CONTACTS);
     create(directory, "tiny-fine", List.of(1L));

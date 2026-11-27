@@ -36,12 +36,15 @@ fi
 
 cd "${JVM_DIR}"
 
-echo "[optional] Building fat jar"
-./gradlew shadowJar >/dev/null
-
 mkdir -p "${PROCESSED_DIR}"
-JAR_PATH="$(ls -1 build/libs/hict_server-*-fat.jar | head -n 1)"
-if [[ -z "${JAR_PATH}" ]]; then
+if [[ -n "${HICT_TEST_JAR:-}" ]]; then
+  JAR_PATH="${HICT_TEST_JAR}"
+else
+  echo "[optional] Building fat jar"
+  ./gradlew shadowJar >/dev/null
+  JAR_PATH="$(ls -t build/libs/hict_server-*-fat.jar | sed -n '1p')"
+fi
+if [[ ! -f "${JAR_PATH}" ]]; then
   echo "[optional] ERROR: fat jar was not produced"
   exit 1
 fi
@@ -52,8 +55,8 @@ if [[ ! -f "${HICT_ABS}" ]]; then
 fi
 
 echo "[optional] Starting API server on :${PORT}"
-VXPORT="${PORT}" SERVE_WEBUI=false DATA_DIR="${DATA_DIR}" PROCESSED_DIR="${PROCESSED_DIR}" \
-  java -jar "${JAR_PATH}" start-api-server >/tmp/hict_optional_tests_server.log 2>&1 &
+VXPORT="${PORT}" SERVE_WEBUI=false DATA_DIR="${DATA_DIR}" PROCESSED_DIR="${PROCESSED_DIR}" HICT_BIND_HOST=127.0.0.1 \
+  java -jar "${JAR_PATH}" start-api-server >"${PROCESSED_DIR}/optional-tests-server.log" 2>&1 &
 SERVER_PID=$!
 cleanup() {
   if ps -p "${SERVER_PID}" >/dev/null 2>&1; then
@@ -186,16 +189,27 @@ if [[ -n "${GFF_ABS}" && -f "${GFF_ABS}" ]]; then
     | select(.type=="GFF_GTF")
     | (.bins | length) > 0
   ' >/dev/null
-  echo "${GFF_QUERY_JSON}" | jq -e '
+  # An overview can show density for busy tracks. Zoom to occupied buckets
+  # before checking the individual features' strand and block metadata.
+  STRUCTURED_FOUND=false
+  while IFS= read -r start_px; do
+    GFF_DETAIL_JSON="$(curl -fsS -X POST "http://localhost:${PORT}/tracks/query_1d" \
+      -H 'content-type: application/json' \
+      -d "$(jq -cn --argjson start "${start_px}" \
+        '{unit:"PIXELS",startPx:$start,endPx:($start+10),widthPx:1536,bpResolution:50000}')")"
+    if jq -e '
     .tracks[]
     | select(.type=="GFF_GTF")
-    | (.bins | any((.blocks // []) | length > 0))
-  ' >/dev/null
-  echo "${GFF_QUERY_JSON}" | jq -e '
-    .tracks[]
-    | select(.type=="GFF_GTF")
-    | (.bins | any(.strand == "+" or .strand == "-"))
-  ' >/dev/null
+    | (.bins | any((.blocks // [] | length > 0) and (.strand == "+" or .strand == "-")))
+    ' <<<"${GFF_DETAIL_JSON}" >/dev/null; then
+      STRUCTURED_FOUND=true
+      break
+    fi
+  done < <(jq -r '[.tracks[] | select(.type=="GFF_GTF") | .bins[] | select(.count > 0).startPx] | unique | .[:20][]' <<<"${GFF_QUERY_JSON}")
+  if [[ "${STRUCTURED_FOUND}" != true ]]; then
+    echo "[optional] ERROR: No stranded GFF features with blocks in the checked detail windows"
+    exit 1
+  fi
 fi
 
 echo "[optional] OK"

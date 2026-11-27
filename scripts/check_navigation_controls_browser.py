@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -23,12 +23,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def view():
@@ -54,7 +49,7 @@ def main():
                 f"async()=>await {manager}.networkManager.requestManager.getRenderPipelineConfig()"
             )
             menus = page.locator('nav a[data-bs-toggle="dropdown"]')
-            assert menus.count() == 6
+            expect(menus).to_have_count(7)
             for menu in menus.all():
                 menu.focus()
                 menu.press("ArrowDown")
@@ -122,6 +117,21 @@ def main():
                     "test": "Toolbar and native zoom respect both constrained endpoints and preserve center"
                 }
             )
+            surface = page.get_by_role("region", name="Contact map", exact=True)
+            for key in ("=", "+"):
+                surface.press(key)
+                check.settle()
+                assert view()["resolution"] < before["resolution"]
+                assert view()["center"] == before["center"]
+                surface.press("-")
+                check.settle()
+                assert abs(view()["resolution"] - before["resolution"]) < before["resolution"] * 1e-9
+            text_entry = page.get_by_label("Lower signal threshold", exact=True)
+            text_entry.focus()
+            page.keyboard.press("=")
+            check.settle()
+            assert view() == before
+            results.append({"test": "Map keyboard zoom keeps the center and ignores text fields"})
             page.get_by_role("button", name="Hide side panel", exact=True).click()
             expect(page.locator("aside.sidebar")).to_have_class(
                 "sidebar sidebar-collapsed"
@@ -130,9 +140,9 @@ def main():
             check.settle()
             assert view() == before
             results.append({"test": "Sidebar collapse and restore preserve viewport"})
-            check.menu("View", "Restrict Resolutions…")
+            check.menu("View", "Restrict resolutions…")
             dialog = page.get_by_role("dialog").filter(
-                has=page.get_by_role("heading", name="Restrict Resolutions", exact=True)
+                has=page.get_by_role("heading", name="Restrict resolutions", exact=True)
             )
             switches = dialog.get_by_role("switch")
             levels = [
@@ -169,7 +179,7 @@ def main():
                 )
                 == coarsest
             )
-            check.menu("View", "Restrict Resolutions…")
+            check.menu("View", "Restrict resolutions…")
             dialog.locator("#resolution-finest-limit").fill(str(finest))
             dialog.locator("#resolution-coarsest-limit").fill(str(coarsest))
             dialog.get_by_role("button", name="Set limits", exact=True).click()

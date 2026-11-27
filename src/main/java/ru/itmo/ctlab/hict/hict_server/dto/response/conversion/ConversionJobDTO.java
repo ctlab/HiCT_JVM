@@ -1,5 +1,6 @@
 package ru.itmo.ctlab.hict.hict_server.dto.response.conversion;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -28,6 +29,8 @@ public record ConversionJobDTO(
   @NotNull List<@NotNull String> toolchainNotices,
   @NotNull List<@NotNull String> toolchainCitations,
   @NotNull List<@NotNull String> logs,
-  @NotNull String error
+  @NotNull String error,
+  @JsonInclude(JsonInclude.Include.NON_NULL) Integer stageIndex,
+  @JsonInclude(JsonInclude.Include.NON_NULL) Integer stageCount
 ) {
 }

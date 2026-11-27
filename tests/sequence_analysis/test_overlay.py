@@ -55,6 +55,51 @@ def test_custom_resolution_preserves_stored_atus_and_builds_independent_stripes(
         assert OverlayWriter._read_block(fine['treap_coo'], 3, 256)[0, 1] == 92 * SCALE
 
 
+def test_different_run_levels_union_and_preserve_another_regions_overview(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    first, second, third = (tmp_path / name for name in ('first.hdf5', 'second.hdf5', 'third.hdf5'))
+    with OverlayWriter(source, first, [1], {'k': 21}, overviews=[5], job_id='first') as writer:
+        writer.record_coverage(1, [[0, 0]], [[0, 0]], {})
+        writer.patch(1, [[0, 0]], [[0, 0]], [[95]])
+    with OverlayWriter(source, second, [3], {'k': 21}, previous=first, overviews=[5], job_id='second') as writer:
+        # At 3 bp, the second contig starts at source bin 3.
+        writer.record_coverage(3, [[0, 3]], [[0, 3]], {})
+        writer.patch(3, [[0, 3]], [[0, 3]], [[90]])
+    with h5py.File(second) as file:
+        assert file.attrs['template_name'] == source.name
+        assert set(file['resolutions']) == {'1', '3', '5'}
+        np.testing.assert_array_equal(file['sequence_analysis'].attrs['resolutions'], [1, 3, 5])
+        first_update, second_update = sorted(file['sequence_analysis/updates'].values(), key=lambda update: update.attrs['ordinal'])
+        assert set(first_update) == {'1', '5'}
+        assert set(second_update) == {'3', '5'}
+        np.testing.assert_array_equal(second_update.attrs['analysis_levels'], [3])
+        np.testing.assert_array_equal(second_update.attrs['overview_levels'], [5])
+        overview = OverlayWriter._read_block(file['resolutions/5/treap_coo'], 0, 256)
+        assert overview[0, 0] == 95 * SCALE
+        assert overview[2, 2] == 90 * SCALE
+    with OverlayWriter(source, third, [3], {'k': 21}, previous=second, overviews=[5]) as writer:
+        writer.record_coverage(3, [[0, 3]], [[0, 3]], {})
+        writer.patch(3, [[0, 3]], [[0, 3]], [[0]])
+    with h5py.File(third) as file:
+        overview = OverlayWriter._read_block(file['resolutions/5/treap_coo'], 0, 256)
+        assert overview[0, 0] == 95 * SCALE
+        assert overview[2, 2] == 0
+
+
+def test_overview_replaces_touched_cell_with_new_run_even_when_fine_cells_differ(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    first, second = tmp_path / 'first.hdf5', tmp_path / 'second.hdf5'
+    with OverlayWriter(source, first, [1], {'k': 21}, overviews=[5]) as writer:
+        writer.record_coverage(1, [[0, 0]], [[0, 0]], {})
+        writer.patch(1, [[0, 0]], [[0, 0]], [[95]])
+    with OverlayWriter(source, second, [1], {'k': 21}, overviews=[5], previous=first) as writer:
+        writer.record_coverage(1, [[0, 1]], [[0, 1]], {})
+        writer.patch(1, [[0, 1]], [[0, 1]], [[0]])
+    with h5py.File(second) as file:
+        assert OverlayWriter._read_block(file['resolutions/1/treap_coo'], 0, 256)[0, 0] == 95 * SCALE
+        assert OverlayWriter._read_block(file['resolutions/5/treap_coo'], 0, 256)[0, 0] == 0
+
+
 def test_accumulated_rectangles_replace_even_zero_and_preserve_previous(tmp_path):
     source = template(tmp_path / 'primary.hdf5')
     first, second = tmp_path / 'one.hdf5', tmp_path / 'two.hdf5'
@@ -192,3 +237,79 @@ def test_alignment_sample_counts_are_replaced_not_accumulated_and_retries_are_sa
             out.patch(2, rows, cols, np.array([[1.5, 2], [3, 4]]))
         with pytest.raises(ValueError):
             out.patch(2, rows, cols, np.array([[-1, 2], [3, 4]]))
+
+
+@pytest.mark.parametrize('presence', [False, True])
+def test_overview_nondivisible_reversed_partial_extension(tmp_path, presence):
+    source = template(tmp_path/'template')
+    with h5py.File(source, 'r+') as f:
+        f['resolutions/2/contigs/atl'] = [[0, 0], [1, 1]]
+    previous = None
+    expected_block = np.zeros((3, 3))
+    for step, (rows, cols, values) in enumerate([
+        ([0, 1, 2], [0, 1, 2], [[50, 70, 0], [70, 95, 80], [0, 80, 20]]),
+        ([1], [0, 1], [[0, 40]]),
+        ([0, 1, 2], [0, 1, 2], np.zeros((3, 3))),
+    ]):
+        path = tmp_path/f'version-{step}'
+        # Native ATUs run backwards. The 3 bp overview uses forward synthetic ATUs.
+        axis = lambda indices: [[0, 3-i] for i in indices]
+        with OverlayWriter(source, path, [2], {}, previous=previous, overviews=[3],
+                           unit='alignment_sample_count' if presence else 'identity_percent',
+                           scale=1 if presence else SCALE) as w:
+            w.record_coverage(2, axis(rows), axis(cols), {})
+            w.patch(2, axis(rows), axis(cols), values)
+        run = np.zeros((8, 8))
+        covered = np.zeros((8, 8), dtype=bool)
+        for a, row in enumerate(rows):
+            for b, col in enumerate(cols):
+                run[row*2:row*2+2, col*2:col*2+2] = values[a][b]
+                run[col*2:col*2+2, row*2:row*2+2] = values[a][b]
+                covered[row*2:row*2+2, col*2:col*2+2] = True
+                covered[col*2:col*2+2, row*2:row*2+2] = True
+        with h5py.File(path) as f:
+            group = f['resolutions/3']
+            assert group.attrs['source_resolution'] == 2
+            block = OverlayWriter._read_block(group['treap_coo'], 0, 256)
+            for r in range(3):
+                for c in range(r, 3):
+                    window = (slice(3*r, 3*r+3), slice(3*c, 3*c+3))
+                    if covered[window].any():
+                        bases = run[window]
+                        positive = bases[bases > 0]
+                        expected_block[r,c] = (bool(len(positive)) if presence else
+                                               round(positive.mean()*SCALE) if len(positive) else 0)
+                    assert block[r,c] == expected_block[r,c]
+            assert all('3' in update for update in f['sequence_analysis/updates'].values())
+        previous = path
+
+
+@pytest.mark.parametrize('external', [True, False])
+def test_legacy_cache_keeps_original_bytes_and_direct_values(tmp_path, external):
+    from overview import cache_existing
+    source = template(tmp_path / 'template')
+    with h5py.File(source, 'r+') as f:
+        f['resolutions/2/contigs/atl'] = [[0, 0], [1, 1]]
+    legacy = tmp_path / 'legacy'
+    with OverlayWriter(source, legacy, [2], {}, scale=1) as writer:
+        writer.record_coverage(2, [[0, 3]], [[0, 1]], {})
+        writer.patch(2, [[0, 3]], [[0, 1]], [[9]])
+    if external:
+        with h5py.File(legacy, 'r+') as f:
+            del f['sequence_analysis']
+    digest = hashlib.sha256(legacy.read_bytes()).digest()
+    output = tmp_path / 'cached'
+    cache_existing(dict(source=legacy, template=source, output=output, directLevels=[2],
+                        overviewLevels=[3], unit='counts' if external else 'identity_percent'))
+    assert hashlib.sha256(legacy.read_bytes()).digest() == digest
+    np.testing.assert_array_equal(read_matrix(output), read_matrix(legacy))
+    with h5py.File(output) as f:
+        root = f['resolutions/3/treap_coo']
+        offset = int(root['block_offset'][0])
+        # Source intervals [0,2) and [4,6) land wholly in coarse bins 0 and 1.
+        assert int(root['block_length'][0]) == 1
+        assert (root['block_rows'][offset],root['block_cols'][offset],root['block_vals'][offset]) == (0,1,9)
+        if external:
+            assert 'sequence_analysis' not in f
+        else:
+            assert all('3' in update for update in f['sequence_analysis/updates'].values())

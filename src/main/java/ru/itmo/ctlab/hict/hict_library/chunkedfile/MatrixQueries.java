@@ -53,6 +53,12 @@ public class MatrixQueries {
   private final BlockDataCache blockDataCache = new BlockDataCache(Long.getLong("HICT_BLOCK_DATA_CACHE_BYTES", 128L * 1024L * 1024L));
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
+    return getSubmatrix(resolutionDescriptor, startRowIncl, startColIncl, endRowExcl, endColExcl, excludeHiddenContigs, false);
+  }
+
+  public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor,
+      final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl,
+      final boolean excludeHiddenContigs, final boolean includeSequenceCoverage) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
     final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
@@ -83,6 +89,7 @@ public class MatrixQueries {
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
+    final var coverage = includeSequenceCoverage ? this.chunkedFile.getSequenceCoverage() : null;
 
     if (startCol < totalAssemblyLength && startRow < totalAssemblyLength && endRow > 0 && endCol > 0) {
 
@@ -126,7 +133,10 @@ public class MatrixQueries {
           startColIncl,
           blockMetaCache
         );
-        return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+        var computedCells = coverage == null ? null : coverage.mask(this.chunkedFile.getResolutions()[resolutionOrder],
+          rowATUs, colATUs, deltaRow, deltaCol, queryCols);
+        return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol,
+          endRow, endCol, units, resolutionDescriptor, computedCells);
       } catch (final Exception ex) {
         throw new RuntimeException("Dense matrix fetch failed", ex);
       } finally {
@@ -141,7 +151,9 @@ public class MatrixQueries {
     }
 
 
-    return new MatrixQueries.MatrixWithWeights(new LongMatrix(new long[queryRows][queryCols]), paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+    return new MatrixQueries.MatrixWithWeights(new LongMatrix(new long[queryRows][queryCols]), paddedRowWeights,
+      paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor,
+      coverage == null ? null : new java.util.BitSet());
   }
 
   private @NotNull RawMatrix fillSubmatrixAsLongs(
@@ -344,46 +356,50 @@ public class MatrixQueries {
     final long[] starts = stripeStartBins(resolutionOrder);
     final int denseBlockSize = this.chunkedFile.getDenseBlockSize();
     final var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
-    HDF5FileDatasetsBundle dsBundle = null;
     try {
-      dsBundle = pool.borrowObject();
-      final var reader = dsBundle.getReader();
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         if (cancelled.getAsBoolean()) {
           throw new ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException();
         }
-        final long rowOffset = ((long) rowStripe) * stripeCount;
-        final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
-        final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
-        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
-          final long length = lengths[colStripe];
-          if (length <= 0L) {
-            continue;
-          }
-          final long offset = offsets[colStripe];
-          final long rowBase = starts[rowStripe];
-          final long colBase = starts[colStripe];
-          if (offset >= 0L) {
-            final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
-            final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
-            final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
-            for (int i = 0; i < values.length; i++) {
-              visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+        // The view shares this reader pool. Yield the bundle after each stripe.
+        final var dsBundle = pool.borrowObject();
+        try {
+          final var reader = dsBundle.getReader();
+          final long rowOffset = ((long) rowStripe) * stripeCount;
+          final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+          final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+          for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+            final long length = lengths[colStripe];
+            if (length <= 0L) {
+              continue;
             }
-          } else {
-            final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
-            final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
-            final boolean diagonal = rowStripe == colStripe;
-            for (int r = 0; r < block.length; r++) {
-              final var line = block[r];
-              for (int c = diagonal ? r : 0; c < line.length; c++) {
-                final double v = line[c];
-                if (v != 0.0d) {
-                  visitor.accept(rowBase + r, colBase + c, v);
+            final long offset = offsets[colStripe];
+            final long rowBase = starts[rowStripe];
+            final long colBase = starts[colStripe];
+            if (offset >= 0L) {
+              final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
+              final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
+              final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
+              for (int i = 0; i < values.length; i++) {
+                visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+              }
+            } else {
+              final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
+              final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
+              final boolean diagonal = rowStripe == colStripe;
+              for (int r = 0; r < block.length; r++) {
+                final var line = block[r];
+                for (int c = diagonal ? r : 0; c < line.length; c++) {
+                  final double v = line[c];
+                  if (v != 0.0d) {
+                    visitor.accept(rowBase + r, colBase + c, v);
+                  }
                 }
               }
             }
           }
+        } finally {
+          pool.returnObject(dsBundle);
         }
         if (progress != null && (rowStripe & 15) == 0) {
           progress.accept((rowStripe + 1) / (double) stripeCount);
@@ -398,14 +414,6 @@ public class MatrixQueries {
       throw e;
     } catch (final Exception ex) {
       throw new RuntimeException("Scanning contacts failed", ex);
-    } finally {
-      if (dsBundle != null) {
-        try {
-          pool.returnObject(dsBundle);
-        } catch (final Exception ignored) {
-          // The pool is closed together with the file.
-        }
-      }
     }
   }
 
@@ -428,7 +436,6 @@ public class MatrixQueries {
     throw new IllegalArgumentException("No non-empty contig in query segment");
   }
 
-  // TODO: Implement
   public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
@@ -1364,7 +1371,16 @@ public class MatrixQueries {
   public record MatrixWithWeights(@NotNull RawMatrix matrix, double @NotNull [] rowWeights,
                                   double @NotNull [] colWeights, long startRowIncl, long startColIncl, long endRowExcl,
                                   long endColExcl, @NotNull QueryLengthUnit units,
-                                  @NotNull ResolutionDescriptor resolutionDescriptor) {
+                                  @NotNull ResolutionDescriptor resolutionDescriptor,
+                                  @Nullable java.util.BitSet computedCells) {
+    public MatrixWithWeights(RawMatrix matrix, double[] rowWeights, double[] colWeights, long startRowIncl,
+        long startColIncl, long endRowExcl, long endColExcl, QueryLengthUnit units, ResolutionDescriptor resolutionDescriptor) {
+      this(matrix, rowWeights, colWeights, startRowIncl, startColIncl, endRowExcl, endColExcl, units, resolutionDescriptor, null);
+    }
+
+    public boolean isComputed(int row, int column) {
+      return computedCells == null || computedCells.get(row * matrix.cols() + column);
+    }
   }
 
 }

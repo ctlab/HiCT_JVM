@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 from playwright.sync_api import expect,sync_playwright
-from sequence_browser_harness import BrowserCheck,HictTestServer
+from sequence_browser_harness import BrowserCheck,HictTestServer, configure_test_api
 
 
 def main():
@@ -51,12 +51,13 @@ with h5py.File(sys.argv[1],'r+') as f:
                 browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1440,'height':1000})
                 page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page.add_init_script("window.__workspaceErrors=[];window.addEventListener('error',event=>{if(event instanceof ErrorEvent)window.__workspaceErrors.push(event.message);},true)")
-                page.route('http://localhost:5000/**',lambda r:r.continue_(url=api.url+r.request.url.removeprefix('http://localhost:5000')))
-                check=BrowserCheck(page,out);dialog=page.get_by_role('dialog',name='Tracks and layers',exact=True)
-                def manager():check.menu('View','Tracks and layers…');dialog.wait_for()
+                configure_test_api(page, api.url)
+                check=BrowserCheck(page,out);dialog=page.locator('.track-manager-root [role=dialog]').first
+                def manager():check.menu('View','1D tracks…');dialog.wait_for()
                 def tab(name):
-                    control=dialog.get_by_role('tab',name=name,exact=True);control.click();expect(control).to_have_attribute('aria-selected','true')
-                    expect(dialog.get_by_role('tabpanel',name=name,exact=True)).to_be_visible()
+                    if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
+                    close();check.menu('View',name+'…');dialog.wait_for()
+                    if name=='1D tracks': dialog.get_by_label('Add track',exact=True).select_option('weights')
                 def close():dialog.get_by_role('button',name='Close',exact=True).click();dialog.wait_for(state='hidden');check.settle()
                 def browse(title,filename):
                     dialog.get_by_role('button',name='Browse…',exact=True).click()
@@ -75,18 +76,15 @@ with h5py.File(sys.argv[1],'r+') as f:
                 try:
                     page.goto(url);page.evaluate("api=>window.__hictBenchmark.open('tiny-weighted.hict.hdf5',api)",api.url);check.settle();manager()
                     def tabs():
-                        expect(dialog.get_by_role('tab',name='1D tracks',exact=True)).to_have_attribute('aria-selected','true')
+                        expect(dialog.get_by_role('tab')).to_have_count(0)
                         expect(dialog.get_by_role('button',name='Attach',exact=True)).not_to_be_visible()
-                        dialog.get_by_label('Display name',exact=True).fill('Keep draft')
-                        first=dialog.get_by_role('tab',name='1D tracks',exact=True);first.focus();page.keyboard.press('ArrowRight')
-                        expect(dialog.get_by_role('tab',name='Sources and layers',exact=True)).to_be_focused()
+                        tab('Sources and layers')
                         expect(dialog.get_by_role('button',name='Attach',exact=True)).to_be_visible()
                         expect(dialog.get_by_label('Track file',exact=True)).not_to_be_visible()
-                        page.keyboard.press('Home');expect(first).to_be_focused()
-                        expect(dialog.get_by_label('Display name',exact=True)).to_have_value('Keep draft')
-                        page.keyboard.press('End');page.keyboard.press('ArrowRight');expect(first).to_be_focused()
+                        tab('1D tracks')
+                        dialog.get_by_label('Add track',exact=True).select_option('file')
                         dialog.get_by_label('Display name',exact=True).fill('Workspace annotations')
-                    check.step('separate-tabs-keyboard-focus-and-retained-form',tabs)
+                    check.step('separate-track-and-source-managers',tabs)
                     def add_file():
                         browse('Select 1D track file','workspace-annotations.bed')
                         dialog.get_by_role('button',name='Add file',exact=True).click()
@@ -176,7 +174,7 @@ with h5py.File(sys.argv[1],'r+') as f:
                     check.step('manager-fits-three-window-sizes-without-horizontal-clipping',fitting)
                     def layers():
                         tab('Sources and layers');dialog.get_by_role('button',name='Borders and labels…',exact=True).click();dialog.wait_for(state='hidden')
-                        control=page.get_by_role('button',name='Borders and labels',exact=True)
+                        control=page.get_by_role('button',name='Borders & labels',exact=True)
                         expect(control).to_have_attribute('aria-expanded','true');expect(control).to_be_focused()
                         control.click();page.get_by_role('button',name='Hide side panel',exact=True).click()
                         manager();tab('Sources and layers');dialog.get_by_role('button',name='Borders and labels…',exact=True).click();dialog.wait_for(state='hidden')
@@ -212,7 +210,8 @@ with h5py.File(sys.argv[1],'r+') as f:
                     check.step('three-panel-sizes-dark-edge-pixels-keyboard-and-blur-cleanup',resizes)
                     def weight_sources():
                         page.locator('#normalization-mode').select_option('sqrt')
-                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.normalizationWeightsMode==='SQRT_COVERAGE'")
+                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.getNormalizationWeightsMode('PRIMARY')==='SQRT_COVERAGE'")
+                        assert json.loads(api.http('/normalization/coverage/status', {'source': 'SECONDARY'}))['mode'] == 'FILE'
                         check.settle();manager();dialog.get_by_label('Add track',exact=True).select_option('weights')
                         expect(dialog.get_by_text('Square-root coverage weights from the selected map.',exact=False)).to_be_visible()
                         expect(dialog.get_by_text('Coverage weights · Primary',exact=True)).to_be_visible()
@@ -227,6 +226,11 @@ with h5py.File(sys.argv[1],'r+') as f:
                         actual_weights=[b['value'] for b in weight['bins']]
                         assert len(actual_weights)==len(expected_weights)==4,actual_weights
                         assert all(math.isclose(a,b,rel_tol=1e-12) for a,b in zip(actual_weights,expected_weights)),(actual_weights,expected_weights)
+                        close()
+                        requests = 'window.__hictBenchmark.manager().networkManager.requestManager'
+                        page.evaluate(f"{requests}.prepareCoverageNormalization('SECONDARY')")
+                        page.wait_for_function(f"async () => (await {requests}.coverageNormalizationStatus('SECONDARY')).state === 'READY'")
+                        page.evaluate(f"{requests}.selectNormalizationWeights('SQRT_COVERAGE', 'SECONDARY')")
                         for source in ['PRIMARY','SECONDARY']:
                             queries=page.evaluate("""async source=>{const q={bpResolution:4,startRowPx:0,endRowPx:5,startColPx:0,endColPx:5,source},api=window.__hictBenchmark.manager().networkManager.requestManager;
                                 return {raw:Array.from((await api.queryMatrixFloat32({...q,signalMode:'RAW_COUNTS'})).values),normalized:Array.from((await api.queryMatrixFloat32({...q,signalMode:'COOLER_WEIGHTED'})).values)};}""",source)
@@ -237,7 +241,6 @@ with h5py.File(sys.argv[1],'r+') as f:
                             assert math.isclose(sum(queries['normalized']),total,rel_tol=1e-6),queries
                             coverage_oracle[source]=queries
                         coverage_oracle.update(rowSums=row_sums,total=total,scale=scale,weights=actual_weights)
-                        close()
                         explanation=page.locator('.coverage-explanation');summary=explanation.locator('summary')
                         expect(page.locator('#normalization-help')).to_be_visible()
                         summary.focus();page.keyboard.press('Enter');expect(explanation).to_have_attribute('open','')
@@ -249,7 +252,8 @@ with h5py.File(sys.argv[1],'r+') as f:
                         page.set_viewport_size({'width':1440,'height':1000})
                         page.screenshot(path=str(out/'coverage-map.png'));page.locator('#normalization-mode').select_option('file')
                         expect(explanation).to_have_count(0)
-                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.normalizationWeightsMode==='FILE'")
+                        page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.getNormalizationWeightsMode('PRIMARY')==='FILE'")
+                        assert json.loads(api.http('/normalization/coverage/status', {'source': 'SECONDARY'}))['mode'] == 'SQRT_COVERAGE'
                         check.settle();manager();dialog.get_by_label('Add track',exact=True).select_option('weights')
                         expect(dialog.get_by_text('Stored Cooler weights from the selected map.',exact=False)).to_be_visible()
                         expect(dialog.get_by_text('File weights · Primary',exact=True)).to_be_visible();close()
@@ -282,7 +286,9 @@ with h5py.File(sys.argv[1],'r+') as f:
                         expect(dialog.get_by_text('Weight provenance is unknown for this file.',exact=False)).to_be_visible()
                         dialog.get_by_role('button',name='Add weights',exact=True).click()
                         expect(dialog.get_by_role('group',name='Track Map weights - Primary',exact=True)).to_be_visible()
-                        dialog.locator('summary').filter(has_text='Preparation').click()
+                        advanced = dialog.locator('details[data-advanced-id="tracks"]')
+                        if advanced.get_attribute('open') is None:
+                            advanced.locator(':scope > summary').click()
                         expect(dialog.get_by_text('Map weights are read directly and need no preparation.',exact=True)).to_be_visible()
                         expect(dialog.get_by_role('button',name='Precompute all',exact=True)).to_be_disabled()
                         close()

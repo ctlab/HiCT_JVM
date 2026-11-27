@@ -63,10 +63,7 @@ public final class CoverageWeightsBuilder {
     return Math.addExact(total, largest);
   }
 
-  public static NormalizationWeights.@NotNull Prepared build(final @NotNull ChunkedFile file,
-                                                              final long budgetBytes,
-                                                              final @NotNull BooleanSupplier cancelled,
-                                                              final @Nullable DoubleConsumer progress) {
+  public static void requireWithinBudget(final @NotNull ChunkedFile file, final long budgetBytes) {
     final long needed = estimateBytes(file);
     if (needed > budgetBytes) {
       throw new IllegalStateException(
@@ -74,6 +71,13 @@ public final class CoverageWeightsBuilder {
           + (budgetBytes >> 20) + " MiB (HICT_COVERAGE_MAX_BYTES)"
       );
     }
+  }
+
+  public static NormalizationWeights.@NotNull Prepared build(final @NotNull ChunkedFile file,
+                                                              final long budgetBytes,
+                                                              final @NotNull BooleanSupplier cancelled,
+                                                              final @Nullable DoubleConsumer progress) {
+    requireWithinBudget(file, budgetBytes);
     final int levels = file.getResolutions().length;
     final double[][] weights = new double[levels][];
     final long[] valid = new long[levels];

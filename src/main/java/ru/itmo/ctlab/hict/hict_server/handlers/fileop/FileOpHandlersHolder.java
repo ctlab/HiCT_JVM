@@ -24,9 +24,16 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
+import ch.systemsx.cisd.hdf5.HDF5Factory;
+
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
@@ -69,14 +76,16 @@ import java.util.Objects;
 public class FileOpHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final Runnable cancelCoverage;
+  private final Runnable cancelSecondaryCoverage;
 
   public FileOpHandlersHolder(Vertx vertx) {
-    this(vertx, () -> {});
+    this(vertx, () -> {}, () -> {});
   }
 
-  public FileOpHandlersHolder(Vertx vertx, Runnable cancelCoverage) {
+  public FileOpHandlersHolder(Vertx vertx, Runnable cancelCoverage, Runnable cancelSecondaryCoverage) {
     this.vertx = vertx;
     this.cancelCoverage = cancelCoverage;
+    this.cancelSecondaryCoverage = cancelSecondaryCoverage;
   }
 
   private static final String PRIMARY_CHUNKED_FILE_KEY = "chunkedFile";
@@ -127,16 +136,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
 
-          final @NotNull var requestBody = ctx.body();
-          final @NotNull var requestJSON = requestBody.asJsonObject();
+          final var requestJSON = RequestJson.requireObject(ctx);
 
-          final @Nullable var filename = requestJSON.getString("filename");
-          final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
+          final @Nullable var filename = RequestJson.requireString(requestJSON, "filename");
+          final @Nullable var fastaFilename = RequestJson.optionalString(requestJSON, "fastaFilename", null);
 
           log.debug("Got filename: {} and FASTA filename: {}", filename, fastaFilename);
-          if (filename == null || filename.isBlank()) {
-            throw new IllegalArgumentException("Filename must be specified to open the file");
-          }
           final var requestedFilename = filename.trim();
           final var dataRoot = dataDirectory.normalize().toAbsolutePath();
           final var requestedFilePath = dataRoot.resolve(requestedFilename).normalize().toAbsolutePath();
@@ -145,6 +150,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           if (!Files.isRegularFile(requestedFilePath)) {
             throw new IllegalArgumentException("Path is not a regular HiCT file: " + requestedFilename);
+          }
+          if (!HDF5Factory.isHDF5File(requestedFilePath.toFile())) {
+            throw new IllegalArgumentException("Select a HiCT HDF5 contact map");
           }
           final boolean verbose = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
           if (verbose) {
@@ -289,137 +297,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         null,
         () -> {
-          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
-          if (primaryWrapper == null) {
-            throw new IllegalStateException("Open primary Hi-C source before attaching secondary source");
+          final var requestJson = RequestJson.requireObject(ctx);
+          final var filename = RequestJson.requireString(requestJson, "filename");
+          final var mismatchOption = requestJson.getValue("allowMismatch");
+          if (mismatchOption != null && !(mismatchOption instanceof Boolean)) {
+            throw new IllegalArgumentException("Missing or invalid field: allowMismatch");
           }
-          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
-          if (dataDirectoryWrapper == null) {
-            throw new RuntimeException("Data directory is not present in local map");
-          }
-          final var requestJson = ctx.body().asJsonObject();
-          final var filename = requestJson.getString("filename");
-          final var allowMismatch = requestJson.getBoolean("allowMismatch", false);
-          if (filename == null || filename.isBlank()) {
-            throw new IllegalArgumentException("Secondary source filename is required");
-          }
-          final var dataDirectory = dataDirectoryWrapper.getPath();
-          final var filePath = dataDirectory.resolve(filename).normalize().toAbsolutePath();
-          if (!filePath.startsWith(dataDirectory)) {
-            throw new IllegalArgumentException("Secondary source path " + filename + " is outside DATA_DIR");
-          }
-          if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
-            throw new IllegalArgumentException("Secondary source file " + filename + " does not exist");
-          }
-          final var secondaryChunkedFile = new ChunkedFile(
-            new ChunkedFile.ChunkedFileOptions(
-              filePath,
-              (int) map.getOrDefault("MIN_DS_POOL", 4),
-              (int) map.getOrDefault("MAX_DS_POOL", 16)
-            )
-          );
-          final SecondaryCompatibility compatibility;
-          final boolean generatedOverlay;
-          final io.vertx.core.json.JsonObject sequenceMetadata;
-          try {
-            generatedOverlay = ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile);
-            sequenceMetadata = generatedOverlay ? readSequenceMetadata(secondaryChunkedFile) : null;
-            if (generatedOverlay) {
-              final var source = primaryWrapper.getChunkedFile();
-              ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(source, secondaryChunkedFile);
-              // Prepare the candidate completely before closing or replacing an existing source.
-              if (source.getContigTree().getRoot() == null) {
-                final long length = secondaryChunkedFile.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
-                if (length > 0) secondaryChunkedFile.scaffoldingOperations().moveRegionToDebris(0, length,
-                  ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
-              } else {
-                final var agp = source.getAgpProcessor().getAssemblyAGPRecords().stream()
-                  .map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
-                try (var reader = new StringReader(agp)) { secondaryChunkedFile.importAGP(reader); }
-                synchronizeTargetVisibilityFromSource(source, secondaryChunkedFile);
-              }
-            }
-            compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
-            if (generatedOverlay && !compatibility.sameMatrixSizes()) {
-              throw new IllegalArgumentException("The generated overlay cannot be aligned with the current assembly at its calculated resolutions. The existing overlay was retained. Recompute it for the current map.");
-            }
-          } catch (final Exception ex) {
-            try {
-              secondaryChunkedFile.close();
-            } catch (final Exception ignored) {
-              // no-op
-            }
-            if (ex instanceof IllegalArgumentException) {
-              throw new io.vertx.ext.web.handler.HttpException(400, ex.getMessage());
-            }
-            throw ex;
-          }
-          // Generated overlays intentionally contain only requested resolutions.
-          // Their source contigs/ATUs and synchronized dimensions were verified
-          // above. An unrelated map still requires explicit confirmation.
-          if ((!compatibility.sharedReference() || !compatibility.sameMatrixSizes()) && !allowMismatch && !generatedOverlay) {
-            try {
-              secondaryChunkedFile.close();
-            } catch (final Exception ignored) {
-              // no-op
-            }
-            final var currentStatus = secondaryStatusJson(map);
-            return currentStatus
-              .put("requiresConfirmation", true)
-              .put("requestedFilename", filename)
-              .put("compatibility", compatibility.toJson())
-              .put("warnings", compatibility.warningsAsJsonArray());
-          }
-          final var assemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
-          final var primary = primaryWrapper.getChunkedFile();
-          final var primaryBefore = primary.snapshotAssembly();
-          final SecondaryCompatibility synchronizedCompatibility;
-          final io.vertx.core.json.JsonObject response;
-          try {
-            if (!generatedOverlay) {
-              synchronizeOverlayAssembly(primary, secondaryChunkedFile, assemblySource);
-            }
-            synchronizedCompatibility = analyzeSecondaryCompatibility(primary, secondaryChunkedFile);
-            response = new io.vertx.core.json.JsonObject()
-              .put("attached", true).put("filename", filename).put("assemblySource", assemblySource)
-              .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(
-                AssemblyInfoDTO.generateFromChunkedFile(primary)))
-              .put("capabilities", io.vertx.core.json.JsonObject.mapFrom(
-                ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(secondaryChunkedFile)))
-              .put("requiresConfirmation", false)
-              .put("compatibility", synchronizedCompatibility.toJson())
-              .put("warnings", synchronizedCompatibility.warningsAsJsonArray());
-            if (sequenceMetadata != null) response.put("sequenceAnalysis", sequenceMetadata.copy());
-          } catch (Exception failure) {
-            // With SECONDARY as assembly source, preparation can change primary's
-            // layout. Restore it before returning an error and keep the old source live.
-            primary.restoreAssembly(primaryBefore);
-            closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
-            throw failure;
-          }
-          final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
-          final var exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
-            dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath(), filePath,
-            new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
-          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
-          map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
-          map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
-          if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
-          else map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
-          map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          map.remove(SECONDARY_FASTA_PATH_KEY);
-          map.remove(SECONDARY_FASTA_FILENAME_KEY);
-          closeChunkedFileWrapper(oldSecondary);
-          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
-          catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
-          TileHandlersHolder.clearExpectedProfileCache(map);
-          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
-          if (schedulerWrapper != null) {
-            schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
-          }
-          return response;
+          final boolean allowMismatch = Boolean.TRUE.equals(mismatchOption);
+          return openSecondarySource(filename, allowMismatch);
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -437,23 +322,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         null,
         () -> {
-          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
-          map.remove(SECONDARY_CHUNKED_FILE_KEY);
-          map.remove(OPENED_SECONDARY_FILENAME_KEY);
-          map.remove(SECONDARY_COMPATIBILITY_KEY);
-          map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
-          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
-          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
-          TileHandlersHolder.clearExpectedProfileCache(map);
-          if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
-            map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          }
-          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
-          if (schedulerWrapper != null) {
-            schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
-          }
-          return secondaryStatusJson(map);
+          return closeSecondarySource();
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -725,6 +594,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
     });
 
+    router.get("/session/availability").handler(ctx -> {
+      final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+      ctx.response().putHeader("content-type", "application/json").end(
+        new JsonObject().put("available", map.get(PRIMARY_CHUNKED_FILE_KEY) != null).encode());
+    });
+
     router.post("/attach").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -784,88 +659,62 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
     router.post("/link_fasta").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
-      if (scheduler == null) {
-        return;
+      if (scheduler == null) return;
+      final var request = RequestJson.requireObject(ctx);
+      final var filename = RequestJson.requireString(request, "fastaFilename");
+      final var mismatchOption = request.getValue("allowMismatch");
+      if (mismatchOption != null && !(mismatchOption instanceof Boolean)) {
+        throw new IllegalArgumentException("Missing or invalid field: allowMismatch");
       }
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.ASSEMBLY,
-        null,
-        () -> {
-          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new IllegalStateException("Open a Hi-C file before linking FASTA");
+      final var source = RequestJson.optionalString(request, "source", ASSEMBLY_SOURCE_PRIMARY)
+        .trim().toUpperCase(java.util.Locale.ROOT);
+      if (!ASSEMBLY_SOURCE_PRIMARY.equals(source) && !ASSEMBLY_SOURCE_SECONDARY.equals(source)) {
+        throw new IllegalArgumentException("FASTA source must be PRIMARY or SECONDARY");
+      }
+      final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+      final var sourceKey = ASSEMBLY_SOURCE_SECONDARY.equals(source) ? SECONDARY_CHUNKED_FILE_KEY : PRIMARY_CHUNKED_FILE_KEY;
+      record FastaCandidate(ChunkedFile file, Path path) {}
+      record PreparedFasta(FastaLinkResponseDTO response, java.util.Map<String, String> aliases) {}
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final var target = resolveChunkedFileWrapperBySource(map, source).getChunkedFile();
+        final var data = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+        final var path = data.resolve(filename).normalize().toAbsolutePath();
+        if (!path.startsWith(data.toAbsolutePath().normalize())) {
+          throw new IllegalArgumentException("FASTA path must stay inside the configured data directory");
+        }
+        if (!Files.isRegularFile(path)) {
+          throw new IllegalArgumentException("FASTA file " + filename + " does not exist");
+        }
+        return new FastaCandidate(target, path);
+      }, candidate -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.EXPORT, null, () -> {
+        final var processor = candidate.file().getFastaProcessor();
+        final var report = processor.analyzeLinkCandidate(candidate.path());
+        final boolean needsConfirmation = report.hasWarnings() && !Boolean.TRUE.equals(mismatchOption);
+        final var aliases = !needsConfirmation && ASSEMBLY_SOURCE_PRIMARY.equals(source)
+          ? java.util.Map.copyOf(processor.buildSourceNameAliases(candidate.path()))
+          : java.util.Map.<String, String>of();
+        return new PreparedFasta(FastaLinkResponseDTO.fromReport(report, !needsConfirmation, needsConfirmation), aliases);
+      }, prepared -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        if (!(map.get(sourceKey) instanceof ShareableWrappers.ChunkedFileWrapper current) ||
+          current.getChunkedFile() != candidate.file()) {
+          throw new IllegalStateException("The open map changed while the FASTA was loading. Link it again.");
+        }
+        if (!prepared.response().linked()) return prepared.response();
+        final var path = new ShareableWrappers.PathWrapper(candidate.path());
+        if (ASSEMBLY_SOURCE_SECONDARY.equals(source)) {
+          map.put(SECONDARY_FASTA_PATH_KEY, path);
+          map.put(SECONDARY_FASTA_FILENAME_KEY, filename);
+        } else {
+          map.put("linkedFastaPath", path);
+          map.put("linkedFastaFilename", filename);
+          map.put(PRIMARY_FASTA_PATH_KEY, path);
+          map.put(PRIMARY_FASTA_FILENAME_KEY, filename);
+          if (map.get("Track1DManager") instanceof ShareableWrappers.Track1DManagerWrapper tracks) {
+            tracks.getTrack1DManager().setLinkedFastaAliasesBySource(prepared.aliases());
           }
-          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
-          if (dataDirectoryWrapper == null) {
-            throw new RuntimeException("Data directory is not present in local map");
-          }
-          final var requestJSON = ctx.body().asJsonObject();
-          final var fastaFilename = requestJSON.getString("fastaFilename");
-          final boolean allowMismatch = requestJSON.getBoolean("allowMismatch", false);
-          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
-            .trim()
-            .toUpperCase();
-          if (fastaFilename == null || fastaFilename.isBlank()) {
-            throw new IllegalArgumentException("FASTA filename is required");
-          }
-          final ChunkedFile targetChunkedFile;
-          final String normalizedSource;
-          if (ASSEMBLY_SOURCE_SECONDARY.equals(requestedSource)) {
-            final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-            if (secondaryWrapper == null) {
-              throw new IllegalStateException("Attach a secondary source before linking a secondary FASTA");
-            }
-            targetChunkedFile = secondaryWrapper.getChunkedFile();
-            normalizedSource = ASSEMBLY_SOURCE_SECONDARY;
-          } else {
-            targetChunkedFile = chunkedFileWrapper.getChunkedFile();
-            normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
-          }
-
-          final Path fastaPath = dataDirectoryWrapper.getPath().resolve(fastaFilename).normalize().toAbsolutePath();
-          if (!fastaPath.startsWith(dataDirectoryWrapper.getPath())) {
-            throw new IllegalArgumentException("FASTA path " + fastaFilename + " is outside DATA_DIR");
-          }
-          if (!Files.exists(fastaPath) || !Files.isRegularFile(fastaPath)) {
-            throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
-          }
-
-          log.info("Linking {} FASTA file {}", normalizedSource, fastaPath);
-          final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
-          final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
-          if (!requiresConfirmation) {
-            // Alias construction reads/indexes FASTA and can fail. Do it before
-            // publishing any of the paths that the sequence/track APIs consume.
-            final var aliases = ASSEMBLY_SOURCE_PRIMARY.equals(normalizedSource)
-              ? java.util.Map.copyOf(targetChunkedFile.getFastaProcessor().buildSourceNameAliases(fastaPath))
-              : java.util.Map.<String, String>of();
-            if (ASSEMBLY_SOURCE_SECONDARY.equals(normalizedSource)) {
-              map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
-              map.put(SECONDARY_FASTA_FILENAME_KEY, fastaFilename);
-            } else {
-              map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
-              map.put("linkedFastaFilename", fastaFilename);
-              map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
-              map.put(PRIMARY_FASTA_FILENAME_KEY, fastaFilename);
-              final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-              if (trackManagerWrapper != null) {
-                trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
-                  aliases
-                );
-              }
-            }
-            log.info("Linked {} FASTA file {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
-          } else {
-            log.info("FASTA link for {} needs confirmation: {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
-          }
-          return FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation);
-        },
-        response -> ctx.response()
-          .putHeader("content-type", "application/json")
-          .end(Json.encode(response))
-      );
+        }
+        return prepared.response();
+      }, response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response)))));
     });
 
     router.post("/get_fasta_for_assembly").handler(ctx -> {
@@ -987,11 +836,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         ctx, scheduler,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
-          }
-          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var chunkedFile = resolveActiveAssemblyChunkedFile(map);
 
           final var records = java.util.List.copyOf(requestJSON.getBoolean("preserveImportedGaps", false)
             ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()
@@ -1017,18 +862,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
           log.debug("Got map");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+            throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          final @NotNull var requestBody = ctx.body();
-          final @NotNull var requestJSON = requestBody.asJsonObject();
-          final var agpFilename = Objects.requireNonNull(
-            requestJSON.getString("agpFilename", requestJSON.getString("assemblyFilename")),
-            "AGP or assembly filename must be provided to load it."
-          );
-          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
+          final var requestJSON = RequestJson.requireObject(ctx);
+          final var filenameField = requestJSON.getValue("agpFilename") == null ? "assemblyFilename" : "agpFilename";
+          final var agpFilename = RequestJson.requireString(requestJSON, filenameField);
+          final var requestedSource = String.valueOf(RequestJson.optionalString(requestJSON, "source", ASSEMBLY_SOURCE_PRIMARY))
             .trim()
             .toUpperCase();
           final ShareableWrappers.ChunkedFileWrapper targetWrapper =
@@ -1043,12 +885,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var sourceLayoutFile = resolveAssemblyLayoutFile(dataDirectory, agpFilename);
           final var agpFile = materializeAgpLayoutFile(sourceLayoutFile);
           final var policy = ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.valueOf(
-            requestJSON.getString("missingComponentsPolicy", "REQUIRE_CHOICE"));
+            RequestJson.optionalString(requestJSON, "missingComponentsPolicy", "REQUIRE_CHOICE"));
           final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importReport;
           try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
             importReport = targetChunkedFile.importAGP(reader, policy);
-          } catch (IOException | NoSuchFieldException e) {
-            throw new RuntimeException(e);
+          } catch (NoSuchFieldException e) {
+            throw new IllegalArgumentException(e.getMessage());
           }
           if (importReport.requiresChoice()) return new io.vertx.core.json.JsonObject()
             .put("requiresMissingComponentsChoice", true).put("importReport", io.vertx.core.json.JsonObject.mapFrom(importReport));
@@ -1061,6 +903,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
           }
+          final var previousStats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          final var updatedStats = TileStatisticHolder.resetRangesWithIncrementedVersion(
+            previousStats, maxOpenResolutionCount(map, targetChunkedFile));
+          map.put("TileStatisticHolder", updatedStats);
           TileHandlersHolder.clearExpectedProfileCache(map);
           final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           if (trackManagerWrapper != null) {
@@ -1072,6 +918,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           return new io.vertx.core.json.JsonObject()
             .put("contigDescriptors", assembly.contigDescriptors())
             .put("scaffoldDescriptors", assembly.scaffoldDescriptors())
+            .put("version", updatedStats.versionCounter().get())
             .put("importReport", importReport)
             .put("warning", String.join(" ", importReport.warnings()));
         },
@@ -1153,7 +1000,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     } else {
       wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
       if (wrapper == null) {
-        throw new IllegalStateException("Open a Hi-C file before using FASTA/AGP operations");
+        throw new NoOpenFileException("Open a Hi-C file before using FASTA/AGP operations");
       }
     }
     return wrapper;
@@ -1174,7 +1021,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+      throw new NoOpenFileException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     final var chunkedFile = chunkedFileWrapper.getChunkedFile();
 
@@ -1249,6 +1096,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
       trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
     }
     return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
+  }
+
+  private static int maxOpenResolutionCount(LocalMap<String, Object> map, ChunkedFile fallback) {
+    int count = fallback.getResolutions().length;
+    for (var key : java.util.List.of(PRIMARY_CHUNKED_FILE_KEY, SECONDARY_CHUNKED_FILE_KEY)) {
+      if (map.get(key) instanceof ShareableWrappers.ChunkedFileWrapper source) {
+        count = Math.max(count, source.getChunkedFile().getResolutions().length);
+      }
+    }
+    return count;
   }
 
   private static @NotNull Path resolveAssemblyLayoutFile(final @NotNull Path dataDirectory,
@@ -1599,6 +1456,166 @@ public class FileOpHandlersHolder extends HandlersHolder {
       SessionAssemblyRestorer.restore(candidate, saved);
       SessionAssemblyRestorer.verifyContactBinMapping(source, candidate);
     }
+  }
+
+  /** Caller runs on the assembly scheduler. */
+  public io.vertx.core.json.JsonObject openSecondarySource(String filename, boolean allowMismatch) throws Exception {
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+    if (primaryWrapper == null) {
+      throw new IllegalStateException("Open primary Hi-C source before attaching secondary source");
+    }
+    final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
+    if (dataDirectoryWrapper == null) {
+      throw new RuntimeException("Data directory is not present in local map");
+    }
+    final var dataDirectory = dataDirectoryWrapper.getPath();
+    final var filePath = dataDirectory.resolve(filename).normalize().toAbsolutePath();
+    if (!filePath.startsWith(dataDirectory)) {
+      throw new IllegalArgumentException("Secondary source path " + filename + " is outside DATA_DIR");
+    }
+    if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+      throw new IllegalArgumentException("Secondary source file " + filename + " does not exist");
+    }
+    if (!HDF5Factory.isHDF5File(filePath.toFile())) {
+      throw new IllegalArgumentException("Select a HiCT HDF5 contact map");
+    }
+    final var secondaryChunkedFile = new ChunkedFile(
+      new ChunkedFile.ChunkedFileOptions(
+        filePath,
+        (int) map.getOrDefault("MIN_DS_POOL", 4),
+        (int) map.getOrDefault("MAX_DS_POOL", 16)
+      )
+    );
+    final SecondaryCompatibility compatibility;
+    final boolean generatedOverlay;
+    final io.vertx.core.json.JsonObject sequenceMetadata;
+    try {
+      generatedOverlay = ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile);
+      sequenceMetadata = generatedOverlay ? readSequenceMetadata(secondaryChunkedFile) : null;
+      if (generatedOverlay) {
+        final var source = primaryWrapper.getChunkedFile();
+        ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(source, secondaryChunkedFile);
+        // Prepare the candidate completely before closing or replacing an existing source.
+        if (source.getContigTree().getRoot() == null) {
+          final long length = secondaryChunkedFile.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
+          if (length > 0) secondaryChunkedFile.scaffoldingOperations().moveRegionToDebris(0, length,
+            ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+        } else {
+          final var agp = source.getAgpProcessor().getAssemblyAGPRecords().stream()
+            .map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
+          try (var reader = new StringReader(agp)) { secondaryChunkedFile.importAGP(reader); }
+          synchronizeTargetVisibilityFromSource(source, secondaryChunkedFile);
+        }
+      }
+      compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
+      if (generatedOverlay && !compatibility.sameMatrixSizes()) {
+        throw new IllegalArgumentException("The generated overlay cannot be aligned with the current assembly at its calculated resolutions. The existing overlay was retained. Recompute it for the current map.");
+      }
+    } catch (final Exception ex) {
+      try {
+        secondaryChunkedFile.close();
+      } catch (final Exception ignored) {
+        // no-op
+      }
+      if (ex instanceof IllegalArgumentException) {
+        throw new io.vertx.ext.web.handler.HttpException(400, ex.getMessage());
+      }
+      throw ex;
+    }
+    // Generated overlays intentionally contain only requested resolutions.
+    // Their source contigs/ATUs and synchronized dimensions were verified
+    // above. An unrelated map still requires explicit confirmation.
+    if ((!compatibility.sharedReference() || !compatibility.sameMatrixSizes()) && !allowMismatch && !generatedOverlay) {
+      try {
+        secondaryChunkedFile.close();
+      } catch (final Exception ignored) {
+        // no-op
+      }
+      final var currentStatus = secondaryStatusJson(map);
+      return currentStatus
+        .put("requiresConfirmation", true)
+        .put("requestedFilename", filename)
+        .put("compatibility", compatibility.toJson())
+        .put("warnings", compatibility.warningsAsJsonArray());
+    }
+    final var assemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+    final var primary = primaryWrapper.getChunkedFile();
+    final var primaryBefore = primary.snapshotAssembly();
+    final SecondaryCompatibility synchronizedCompatibility;
+    final io.vertx.core.json.JsonObject response;
+    try {
+      if (!generatedOverlay) {
+        synchronizeOverlayAssembly(primary, secondaryChunkedFile, assemblySource);
+      }
+      synchronizedCompatibility = analyzeSecondaryCompatibility(primary, secondaryChunkedFile);
+      response = new io.vertx.core.json.JsonObject()
+        .put("attached", true).put("filename", filename).put("assemblySource", assemblySource)
+        .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(
+          AssemblyInfoDTO.generateFromChunkedFile(primary)))
+        .put("capabilities", io.vertx.core.json.JsonObject.mapFrom(
+          ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(secondaryChunkedFile)))
+        .put("requiresConfirmation", false)
+        .put("compatibility", synchronizedCompatibility.toJson())
+        .put("warnings", synchronizedCompatibility.warningsAsJsonArray());
+      if (sequenceMetadata != null) response.put("sequenceAnalysis", sequenceMetadata.copy());
+    } catch (Exception failure) {
+      // With SECONDARY as assembly source, preparation can change primary's
+      // layout. Restore it before returning an error and keep the old source live.
+      primary.restoreAssembly(primaryBefore);
+      closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
+      throw failure;
+    }
+    final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+    final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+    final var exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
+      dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath(), filePath,
+      new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
+    synchronized (map) {
+      cancelSecondaryCoverage.run();
+      map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
+    }
+    map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
+    map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
+    if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
+    else map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+    map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+    map.remove(SECONDARY_FASTA_PATH_KEY);
+    map.remove(SECONDARY_FASTA_FILENAME_KEY);
+    closeChunkedFileWrapper(oldSecondary);
+    try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+    catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
+    TileHandlersHolder.clearExpectedProfileCache(map);
+    final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    if (schedulerWrapper != null) {
+      schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+    }
+    return response;
+  }
+
+  /** Caller runs on the assembly scheduler. */
+  public io.vertx.core.json.JsonObject closeSecondarySource() {
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final ShareableWrappers.ChunkedFileWrapper secondary;
+    synchronized (map) {
+      cancelSecondaryCoverage.run();
+      secondary = (ShareableWrappers.ChunkedFileWrapper) map.remove(SECONDARY_CHUNKED_FILE_KEY);
+    }
+    closeChunkedFileWrapper(secondary);
+    map.remove(OPENED_SECONDARY_FILENAME_KEY);
+    map.remove(SECONDARY_COMPATIBILITY_KEY);
+    map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+    try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+    catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
+    TileHandlersHolder.clearExpectedProfileCache(map);
+    if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
+      map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+    }
+    final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    if (schedulerWrapper != null) {
+      schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+    }
+    return secondaryStatusJson(map);
   }
 
   private io.vertx.core.json.JsonObject secondaryStatusJson(final @NotNull LocalMap<String, Object> map) {

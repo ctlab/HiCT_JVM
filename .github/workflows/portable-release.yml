@@ -52,11 +52,6 @@ on:
         required: true
         default: "v1.2"
         type: string
-      webui_ref:
-        description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
-        required: true
-        default: "same-as-jvm"
-        type: string
       create_windows_exe:
         description: "Create portable single-file Windows EXE in addition to portable ZIP"
         required: true
@@ -107,7 +102,7 @@ on:
           - "latest-master"
           - "release-tag"
       release_tag:
-        description: "Release tag to create/update when publish_target=release-tag. Leave empty to use latest-{selected branch}."
+        description: "Release tag when publish_target=release-tag. Leave empty for the branch default, which is versioned on jvm-sfx-native."
         required: false
         default: ""
         type: string
@@ -143,7 +138,6 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
-  REQUESTED_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1-slim.jar"
@@ -173,11 +167,9 @@ jobs:
         run: |
           set -euo pipefail
           args=(--repo https://github.com/ctlab/HiCT_WebUI.git --root "${RUNNER_TEMP}/webui")
-          if [[ "${REQUESTED_WEBUI_REF,,}" == "same-as-jvm" ]]; then
-            args+=(--ref "${GITHUB_REF_NAME}" --fallback master)
-          else
-            args+=(--ref "${REQUESTED_WEBUI_REF}")
-          fi
+          pin="$(cat webui-revision.txt)"
+          [[ "$pin" =~ ^[0-9a-f]{40}$ ]]
+          args+=(--ref "$pin")
           checkout="$(node scripts/portable/checkout_webui.mjs "${args[@]}")"
           echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
       - name: Pin the upstream toolchain commits for all platform jobs
@@ -397,6 +389,8 @@ jobs:
 
       - name: Build HiCT native libraries in manylinux2014
         if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.project.portableReleaseVersion=${{ env.HICT_BUILD_VERSION }}
         run: scripts/ci/linux_container_build.sh hict-native
 
       - name: Upload Linux HiCT native processing artifact
@@ -571,14 +565,18 @@ jobs:
         shell: bash
         run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/linux_x86_64 --target toolchains-dist/linux_x86_64
 
+      - name: Seal the Linux toolchain before building the fat JAR
+        run: python scripts/toolchains/prepare_bundled_tools.py --seal
+
       - name: Build fat JAR in manylinux2014
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.project.portableReleaseVersion=${{ env.HICT_BUILD_VERSION }}
         run: scripts/ci/linux_container_build.sh fatjar
 
       - name: Verify every bundled tool in the packaged JAR
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -994,12 +992,11 @@ jobs:
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' || ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe was not found. Visual Studio Build Tools are required for hictk/custom EXE builds."
+            throw "vswhere.exe was not found. Visual Studio Build Tools are required for the Windows portable launchers."
           }
 
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -1243,6 +1240,67 @@ jobs:
         shell: bash
         run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/windows_x86_64 --target toolchains-dist/windows_x86_64
 
+      - name: Seal the Windows toolchain before packaging
+        run: python scripts/toolchains/prepare_bundled_tools.py --seal
+
+      - name: Gate Windows process lifecycle and workspace discovery
+        shell: pwsh
+        env:
+          HICT_REQUIRE_HICTK_TESTS: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: |
+          $env:HICT_TOOLCHAIN_DIR = (Resolve-Path "toolchains-dist/windows_x86_64").Path
+          $manifest = Get-Content -Raw (Join-Path $env:HICT_TOOLCHAIN_DIR "manifest.json") | ConvertFrom-Json
+          foreach ($command in @(
+            @{ Key = "blastn"; Variable = "HICT_BLASTN_BIN" },
+            @{ Key = "seqkit"; Variable = "HICT_SEQKIT_BIN" },
+            @{ Key = "hict-moddotplot"; Variable = "HICT_MODDOTPLOT_BIN" }
+          )) {
+            $binary = Join-Path $env:HICT_TOOLCHAIN_DIR ($manifest.commands.($command.Key))
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing packaged $($command.Key): $binary" }
+            Set-Item -Path "Env:$($command.Variable)" -Value $binary
+          }
+          $selection = @('test', '-x', 'copyWebUI', '--tests', '*BackgroundJobsTest', '--tests', '*RemoteBlastRunnerTest',
+            '--tests', '*ExternalToolchainManagerTest', '--tests', '*ApiHttpIntegrationTest.workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp',
+            '--tests', '*BlastSearchRunnerTest', '--tests', '*SequenceSearchRunnerTest',
+            '--tests', '*ScaffoldEditingInvariantTest.nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance',
+            '--tests', '*ScaffoldEditingInvariantTest.nativeModDotPlotAccumulatesSeparateVersionsReadableByExistingMatrixEngine')
+          if ($env:HICT_REQUIRE_HICTK_TESTS -eq "true") {
+            $selection += @('--tests', '*HictkConversionPipelineTest', '--tests', '*SelfDotplotPipelineTest')
+          }
+          .\gradlew.bat @selection
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          function Assert-ProcessCases($class, $method, $count) {
+            $file = Get-ChildItem "build/test-results/test" -Filter "TEST-*.$class.xml"
+            if (-not $file) { throw "JUnit result for $class is missing." }
+            [xml]$result = Get-Content -Raw -LiteralPath $file.FullName
+            $cases = @($result.testsuite.testcase | Where-Object { $_.name -like "$method*" })
+            if ($cases.Count -ne $count -or @($cases | Where-Object { $_.SelectSingleNode('skipped|failure|error') }).Count -ne 0) {
+              throw "$class must pass all $count cases matching $method."
+            }
+          }
+          Assert-ProcessCases BackgroundJobsTest 'repetition ' 20
+          Assert-ProcessCases RemoteBlastRunnerTest controlledProcessProducesAReportAndUploadsOnlyGeneratedQueryIds 1
+          Assert-ProcessCases RemoteBlastRunnerTest timeoutStopsTheOwnedProcessAndDoesNotPublishAReport 1
+          Assert-ProcessCases RemoteBlastRunnerTest cancellationStopsTheOwnedProcessAndDoesNotPublishAReport 1
+          Assert-ProcessCases RemoteBlastRunnerTest propagatesTheExitCodeAndRemovesPartialOutput 1
+          Assert-ProcessCases BlastSearchRunnerTest realBlastFindsGappedAlignmentAndKeepsRawScores 1
+          Assert-ProcessCases SequenceSearchRunnerTest realSeqkitBothStrandsAndSubstitutionSearchMatchExhaustiveOracle 1
+          Assert-ProcessCases ScaffoldEditingInvariantTest nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance 1
+          Assert-ProcessCases ScaffoldEditingInvariantTest nativeModDotPlotAccumulatesSeparateVersionsReadableByExistingMatrixEngine 1
+          if ($env:HICT_REQUIRE_HICTK_TESTS -eq "true") {
+            Assert-ProcessCases HictkConversionPipelineTest importsCompressed4dnPairsUsingDefaultAndExplicitBinSizes 1
+            Assert-ProcessCases HictkConversionPipelineTest importsMultiResolutionCoolerThroughItsSelectedGroup 1
+            Assert-ProcessCases SelfDotplotPipelineTest pipelineCanUseMinimap2OutputAndHictkWithoutPythonCoolerWhenToolchainExists 1
+          }
+
+      - name: Upload Windows JVM qualification results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-jvm-qualification
+          path: build/test-results/test/TEST-*.xml
+          if-no-files-found: ignore
+
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
@@ -1253,11 +1311,113 @@ jobs:
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
 
+      - name: Exercise both Windows packages with a redirected runtime
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath "version.txt").Trim()
+          $basename = "HiCT-$version-windows-x86_64"
+          $downloads = Resolve-Path "build/distributions"
+          $workspace = Join-Path $env:RUNNER_TEMP ("HiCT version check " + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          try {
+            $env:DATA_DIR = Join-Path $workspace "data"
+            $env:PROCESSED_DIR = Join-Path $workspace "processed"
+            $env:HICT_PORTABLE_CACHE_ROOT = Join-Path $workspace "portable cache"
+            $jar = Resolve-Path "build/libs/hict_server-$version-fat.jar"
+            java --class-path $jar src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java $env:DATA_DIR
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # Test the installed package, independently of the build checkout's native archive.
+            Remove-Item Env:HICT_JHDF5_NATIVES_ARCHIVE, Env:HICT_JHDF5_NATIVE_ARCHIVE -ErrorAction SilentlyContinue
+            $inputMap = Join-Path $env:DATA_DIR "tiny-primary.mcool"
+            $inputHash = (Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash
+            (Get-Item -LiteralPath $inputMap).IsReadOnly = $true
+            $blockedTemp = Join-Path $workspace "Unavailable temp"
+            Set-Content -LiteralPath $blockedTemp -Value "This file cannot serve as a folder."
+            function Assert-BuildLines($label, $exitCode, $lines) {
+              if ($exitCode -ne 0 -or "HiCT $version" -notin $lines -or
+                  "JVM revision $env:GITHUB_SHA" -notin $lines -or
+                  "WebUI revision $env:HICT_WEBUI_REF" -notin $lines) {
+                throw "Unexpected build identity from $label. Output: $lines"
+              }
+            }
+            function Assert-BuildIdentity($launcher) {
+              $lines = & $launcher --version
+              Assert-BuildLines $launcher $LASTEXITCODE $lines
+            }
+            function Assert-NativeConversion($launcher, $label) {
+              $oldTemp = $env:TEMP
+              $oldTmp = $env:TMP
+              try {
+                $env:TEMP = $env:TMP = $env:HICT_TEMP_DIR = $blockedTemp
+                & $launcher check-toolchains --require-hdf5-native 2>&1 | Tee-Object -Variable nativeLog
+                if ($LASTEXITCODE -ne 0) { throw "HDF5 failed through $label." }
+                if (-not ($nativeLog -match "Using installed JHDF5 native library")) {
+                  throw "The $label launcher did not load the installed JHDF5 DLLs."
+                }
+                $outputMap = Join-Path $workspace "$label converted Δ.hict.hdf5"
+                # The tiny Java fixture exercises direct HDF5 I/O. The native-tool gate above supplies a hictk-built Cooler.
+                & $launcher convert mcool-to-hict --input $inputMap --output $outputMap --no-build-resolution-pyramid --no-balance-input-coolers --chunk-size 64 --parallelism 1
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputMap)) {
+                  throw "The $label launcher could not convert the fixture with redirected temp."
+                }
+                $roundTrip = Join-Path $workspace "$label reopened 測試.mcool"
+                & $launcher convert hict-to-mcool --input $outputMap --output $roundTrip --export-mode INTERNAL --chunk-size 64 --parallelism 1
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $roundTrip)) {
+                  throw "The $label launcher could not reopen the converted fixture."
+                }
+                if ((Get-FileHash -LiteralPath $inputMap -Algorithm SHA256).Hash -ne $inputHash) {
+                  throw "The $label launcher changed the source matrix."
+                }
+              } finally {
+                $env:TEMP = $oldTemp
+                $env:TMP = $oldTmp
+                Remove-Item Env:HICT_TEMP_DIR -ErrorAction SilentlyContinue
+              }
+            }
+            $exe = Join-Path $downloads "$basename.exe"
+            if (Test-Path -LiteralPath $exe) {
+              if ($env:HICT_WINDOWS_EXE_MODE -eq "custom") {
+                $coldStarts = @()
+                try {
+                  for ($i = 1; $i -le 2; $i++) {
+                    $log = Join-Path $workspace "cold-start-$i.log"
+                    $process = Start-Process -FilePath $exe -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput $log
+                    $coldStarts += @{ Process = $process; Log = $log }
+                  }
+                  foreach ($start in $coldStarts) {
+                    if (-not $start.Process.WaitForExit(240000)) {
+                      throw "A concurrent cold Windows launch exceeded its deadline."
+                    }
+                    Assert-BuildLines $exe $start.Process.ExitCode (Get-Content -LiteralPath $start.Log)
+                  }
+                } finally {
+                  foreach ($start in $coldStarts) {
+                    if (-not $start.Process.HasExited) { $start.Process.Kill($true) }
+                    $start.Process.Dispose()
+                  }
+                }
+              }
+              Assert-BuildIdentity $exe
+              Assert-NativeConversion $exe "EXE"
+            }
+            $zip = Join-Path $downloads "$basename-portable.zip"
+            $zipRoot = Join-Path $workspace "extracted ZIP"
+            Expand-Archive -LiteralPath $zip -DestinationPath $zipRoot
+            $launcher = Get-ChildItem -LiteralPath $zipRoot -Recurse -Filter "HiCT.cmd" | Select-Object -First 1
+            if (-not $launcher) { throw "The Windows ZIP does not contain HiCT.cmd." }
+            Assert-BuildIdentity $launcher.FullName
+            Assert-NativeConversion $launcher.FullName "ZIP"
+            if ((Test-Path -LiteralPath $exe) -and $env:HICT_WINDOWS_EXE_MODE -eq "custom") {
+              .\scripts\portable\check_windows_standard_user.ps1 -Workspace $workspace -ZipLauncher $launcher.FullName -Exe $exe -Version $version
+            }
+          } finally {
+            Remove-Item -Recurse -Force -LiteralPath $workspace
+          }
+
       - name: Verify every bundled tool in the packaged JAR
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1541,7 +1701,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1831,7 +1990,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/toolchains/prepare_bundled_tools.py --seal
           version="$(tr -d '[:space:]' < version.txt)"
           jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
@@ -1986,6 +2144,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tested WebUI against the release source
+        run: test "${HICT_WEBUI_REF}" = "$(cat webui-revision.txt)"
+
       - name: Assign run-specific release version
         run: |
           python scripts/ci/test_release_version.py
@@ -2003,6 +2164,7 @@ jobs:
         id: collect-assets
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
           SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
           PUBLISH_LINUX_APPIMAGE: ${{ github.event_name != 'workflow_dispatch' || inputs.build_linux_appimage == 'true' }}
@@ -2014,7 +2176,21 @@ jobs:
           default_latest_tag="latest-${GITHUB_REF_NAME}"
           release_tag="${GITHUB_REF_NAME}"
           rolling_release="false"
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          versioned_branch_release="false"
+          release_channel="${GITHUB_REF_NAME}"
+          if [[ "${release_channel}" == "master" ]]; then release_channel="main"; fi
+          if [[ ( "${release_channel}" == "jvm-sfx-native" || "${release_channel}" == "main" ) &&
+                ( "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ) ]]; then
+            release_tag="${release_channel}-${version}"
+            versioned_branch_release="true"
+            if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" &&
+                  ( ( "${PUBLISH_TARGET}" != "release-tag" &&
+                      ! ( "${PUBLISH_TARGET}" == "latest-master" && "${release_channel}" == "main" ) ) ||
+                    ( -n "${SELECTED_RELEASE_TAG}" && "${SELECTED_RELEASE_TAG}" != "${release_tag}" ) ) ]]; then
+              echo "::error::Publish a channel build with release_tag empty for the run-specific tag." >&2
+              exit 1
+            fi
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             release_tag="${default_latest_tag}"
             rolling_release="true"
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
@@ -2032,13 +2208,22 @@ jobs:
               fi
             fi
           fi
+          if [[ "${versioned_branch_release}" != "true" &&
+                ( "${release_tag}" == "latest-jvm-sfx-native" || "${release_tag}" == jvm-sfx-native-* ||
+                  "${release_tag}" == "latest-master" || "${release_tag}" == main-* ) ]]; then
+            echo "::error::This tag belongs to a managed channel. Run the workflow on the matching branch." >&2
+            exit 1
+          fi
+          git check-ref-format "refs/tags/${release_tag}"
           {
             echo "HICT_PORTABLE_RELEASE_TAG=${release_tag}"
             echo "HICT_PORTABLE_ROLLING_RELEASE=${rolling_release}"
+            echo "HICT_RELEASE_CHANNEL=${release_channel}"
           } >> "${GITHUB_ENV}"
           {
             echo "release_tag=${release_tag}"
             echo "rolling_release=${rolling_release}"
+            echo "versioned_branch_release=${versioned_branch_release}"
           } >> "${GITHUB_OUTPUT}"
 
           rm -rf release-dist
@@ -2150,61 +2335,11 @@ jobs:
               sort -k2 > "${checksum_file}"
           )
 
-          release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
-          linux_run="HiCT-${version}-linux-x86_64.run"
-          linux_appimage="HiCT-${version}-x86_64.AppImage"
-          windows_exe="HiCT-${version}-windows-x86_64.exe"
-          darwin_arm64_run="HiCT-${version}-darwin-arm64.run"
-          darwin_x86_64_run="HiCT-${version}-darwin-x86_64.run"
-          release_body_lines=(
-            "Automated HiCT portable build from \`${GITHUB_SHA}\`."
-            ""
-            "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
-            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            ""
-            "**⚠️ For quick testing, download the exact artifact for your OS:**"
-          )
-
-          if [[ -f "release-dist/${windows_exe}" ]]; then
-            release_body_lines+=("- Windows: [\`${windows_exe}\`](${release_base_url}/${windows_exe})")
-          fi
-          if [[ -f "release-dist/${linux_run}" ]]; then
-            release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
-            release_body_lines+=("  Recommended for most desktop/server Linux systems such as Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, Arch, and similar glibc-based distributions. It caches the extracted program next to the downloaded file, so repeated starts usually do less unpacking.")
-            release_body_lines+=("  Run it with: \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
-          fi
-          if [[ -f "release-dist/${linux_appimage}" ]]; then
-            release_body_lines+=("- Linux AppImage: [\`${linux_appimage}\`](${release_base_url}/${linux_appimage})")
-            release_body_lines+=("  Use this when the Linux runfile does not start, or on older/minimal Linux systems such as manylinux2010-like environments and Alpine/musl containers. On normal desktop Linux it uses the system loader; if that cannot start the bundled Java runtime, it falls back to its included glibc/ld-linux runtime.")
-            release_body_lines+=("  Run it with: \`chmod +x ${linux_appimage}\` and then \`./${linux_appimage}\`.")
-            release_body_lines+=("  If the AppImage reports a FUSE or mount error, run: \`APPIMAGE_EXTRACT_AND_RUN=1 ./${linux_appimage}\`. This mode is more compatible but may unpack the application to a temporary directory each time.")
-          fi
-          if [[ -f "release-dist/${linux_run}" || -f "release-dist/${linux_appimage}" ]]; then
-            release_body_lines+=("")
-            release_body_lines+=("Linux choice summary:")
-            release_body_lines+=("- Start with the \`.run\` file on normal Linux installations.")
-            release_body_lines+=("- Use the AppImage for older systems, Alpine/musl, containers, or if the \`.run\` file reports a glibc/runtime error.")
-            release_body_lines+=("- Both Linux packages can start the server from the command line, for example: \`start-server\` or \`start-server --help\` after the artifact name.")
-            release_body_lines+=("- For a remote SSH cluster, forward both ports from your local computer: \`ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org\`, then run HiCT on the remote machine with \`start-server\` and open \`http://localhost:8080\` locally.")
-          fi
-          darwin_assets=()
-          if [[ -f "release-dist/${darwin_arm64_run}" ]]; then
-            darwin_assets+=("[\`${darwin_arm64_run}\`](${release_base_url}/${darwin_arm64_run})")
-          fi
-          if [[ -f "release-dist/${darwin_x86_64_run}" ]]; then
-            darwin_assets+=("[\`${darwin_x86_64_run}\`](${release_base_url}/${darwin_x86_64_run})")
-          fi
-          if [[ ${#darwin_assets[@]} -gt 0 ]]; then
-            release_body_lines+=("- macOS: ${darwin_assets[*]}")
-            release_body_lines+=("  These are Terminal-run \`.run\` files, not \`.dmg\` installers. There is no application icon to drag into Applications.")
-            release_body_lines+=("  Open Terminal, go to the download folder, run \`xattr -d com.apple.quarantine ./HiCT-*.run\` if macOS blocks the file, then run \`chmod +x ./HiCT-*.run\` and \`./HiCT-*.run\`.")
-          else
-            echo "::warning::No macOS portable artifacts were collected; publishing Windows/Linux release only."
-          fi
-
-          release_body_lines+=("")
-          release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
-          printf '%s\n' "${release_body_lines[@]}" > release-body.md
+          python scripts/ci/test_portable_release_notes.py
+          python scripts/ci/portable_release_notes.py --repo "${GITHUB_REPOSITORY}" \
+            --tag "${release_tag}" --channel "${release_channel}" --version "${version}" \
+            --source "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" \
+            --assets release-dist --output release-body.md
 
       - name: Check rolling release publication safeguards
         run: node --test scripts/ci/rolling_release.test.cjs
@@ -2233,18 +2368,16 @@ jobs:
           # uploads. The following step verifies skipped files by SHA-256 too.
           overwrite_files: false
 
-      - name: Prune obsolete automated assets after successful rolling upload
+      - name: Verify rolling upload
         if: ${{ success() && steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: actions/github-script@v8
         env:
-          HICT_PREVIOUS_RELEASE_ASSETS: ${{ steps.rolling-release.outputs.previous_assets }}
           HICT_PREVIOUS_RELEASE_ID: ${{ steps.rolling-release.outputs.release_id }}
         with:
           script: |
-            const { prune } = require('./scripts/ci/rolling_release.cjs');
-            await prune({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
+            const { verifyAssets } = require('./scripts/ci/rolling_release.cjs');
+            await verifyAssets({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
               releaseId: process.env.HICT_PREVIOUS_RELEASE_ID,
-              previousAssets: JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
               directory: 'release-dist' });
 
       - name: Attach assets to release event
@@ -2253,13 +2386,51 @@ jobs:
         with:
           files: release-dist/*
           fail_on_unmatched_files: true
-          overwrite_files: true
+          overwrite_files: false
+
+      - name: Ensure the versioned channel tag points to the build
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { ensureVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
+            await ensureVersionedTarget({
+              github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
+            });
+
+      - name: Publish versioned channel release
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          python scripts/ci/test_publish_versioned_release.py
+          python scripts/ci/publish_versioned_release.py --directory release-dist --notes release-body.md
+
+      - name: Verify versioned channel assets
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' }}
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { verifyAssets, verifyVersionedTarget } = require('./scripts/ci/rolling_release.cjs');
+            const tag = process.env.HICT_PORTABLE_RELEASE_TAG;
+            await verifyVersionedTarget({ github, context, tag });
+            await verifyAssets({ github, context, tag, directory: 'release-dist', exact: true });
+
+      - name: Refresh the channel download links
+        if: ${{ steps.collect-assets.outputs.versioned_branch_release == 'true' && (github.event_name != 'workflow_dispatch' || (inputs.build_linux_appimage && inputs.create_windows_exe)) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          python scripts/ci/update_branch_release_index.py --repo "$GITHUB_REPOSITORY" \
+            --channel "$HICT_RELEASE_CHANNEL" --tag "$HICT_PORTABLE_RELEASE_TAG" --version "$HICT_BUILD_VERSION"
 
       - name: Attach assets to selected release tag
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' && steps.collect-assets.outputs.versioned_branch_release == 'false' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
           files: release-dist/*
           fail_on_unmatched_files: true
-          overwrite_files: true
+          overwrite_files: false

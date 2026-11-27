@@ -13,7 +13,7 @@ import time
 from urllib.parse import urlencode
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -47,11 +47,10 @@ def main():
             page = browser.new_page(viewport={'width':1440,'height':1000})
             page.set_default_timeout(30000)
             page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda route:route.continue_(
-                url=app.url+route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check = BrowserCheck(page,output)
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.menu('File','Attach'); check.settle()
+            check.menu('File','Join running session'); check.settle()
 
             def decode(url):
                 return page.evaluate('''async url => {
@@ -101,7 +100,7 @@ def main():
                 }''',offset)
                 check.settle()
             app.http('/reverse_selection_range',{'startBP':0,'endBP':17})
-            page.reload(); check.menu('File','Attach'); check.settle()
+            page.reload(); check.menu('File','Join running session'); check.settle()
             results = []
             preview_native = preview_sequence = None
             for enabled in (False,True):

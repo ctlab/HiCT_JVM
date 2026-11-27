@@ -8,8 +8,8 @@
  * File layout:
  *   launcher.exe || 7zr.exe || payload.7z || manifest.json || u64(manifestSize) || magic
  *
- * The launcher first tries a stable content-addressed cache next to the EXE,
- * then falls back to the OS temp directory when local extraction is blocked.
+ * The launcher prefers a per-user cache and can also use a cache next to the
+ * EXE or under the OS temp directory.
  * Subsequent launches skip extraction when the marker matches.
  */
 
@@ -24,6 +24,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +32,7 @@
 #include <cwchar>
 #include <cctype>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -220,11 +222,32 @@ std::wstring getFallbackCacheRoot() {
   return joinPath(getTempDirectory(), L"HiCT.portable\\payloads");
 }
 
+std::wstring getLocalHiCTDirectory() {
+  wchar_t localAppData[MAX_PATH]{};
+  if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_DONT_VERIFY,
+                            nullptr, SHGFP_TYPE_CURRENT, localAppData))) {
+    return L"";
+  }
+  return joinPath(localAppData, L"HiCT");
+}
+
+std::wstring chooseWorkingFolder(const wchar_t *message) {
+  BROWSEINFOW info{};
+  info.lpszTitle = message;
+  info.ulFlags = BIF_RETURNONLYFSDIRS;
+  const auto item = SHBrowseForFolderW(&info);
+  if (item == nullptr) return L"";
+  wchar_t path[MAX_PATH]{};
+  const bool found = SHGetPathFromIDListW(item, path);
+  CoTaskMemFree(item);
+  return found ? path : L"";
+}
+
 bool environmentVariableIsDefined(const wchar_t *name) {
   return GetEnvironmentVariableW(name, nullptr, 0) > 0;
 }
 
-void setEnvironmentVariableIfAbsent(const wchar_t *name, const std::wstring &value) {
+void defaultEnvironment(const wchar_t *name, const std::wstring &value) {
   if (!environmentVariableIsDefined(name)) {
     SetEnvironmentVariableW(name, value.c_str());
   }
@@ -233,7 +256,7 @@ void setEnvironmentVariableIfAbsent(const wchar_t *name, const std::wstring &val
 std::string shortPayloadCacheKey(const Manifest &manifest) {
   std::string key;
   key.reserve(18);
-  key += "p-";
+  key += "p2-";
   for (const char ch : manifest.payloadSha256) {
     const bool hex = (ch >= '0' && ch <= '9') ||
         (ch >= 'a' && ch <= 'f') ||
@@ -245,7 +268,7 @@ std::string shortPayloadCacheKey(const Manifest &manifest) {
       break;
     }
   }
-  if (key.size() <= 2) {
+  if (key.size() <= 3) {
     key += "unknown";
   }
   return key;
@@ -465,16 +488,29 @@ void writeSmallTextFile(const std::wstring &path, const std::string &text) {
   if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) {
     throw std::runtime_error("Failed to write cache marker.");
   }
-  std::fwrite(text.data(), 1, text.size(), file);
-  std::fclose(file);
+  const auto written = std::fwrite(text.data(), 1, text.size(), file);
+  const auto closed = std::fclose(file);
+  if (written != text.size() || closed != 0) {
+    throw std::runtime_error("Failed to finish writing the cache marker.");
+  }
 }
 
-int runProcess(const std::wstring &commandLine, const std::wstring &workingDirectory) {
+int runProcess(const std::wstring &commandLine, const std::wstring &workingDirectory, bool quiet = false) {
   std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
   mutableCommand.push_back(L'\0');
 
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
+  HANDLE sink = INVALID_HANDLE_VALUE;
+  if (quiet) {
+    SECURITY_ATTRIBUTES inherited{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    sink = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                       &inherited, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (sink != INVALID_HANDLE_VALUE) {
+      startup.dwFlags = STARTF_USESTDHANDLES;
+      startup.hStdInput = startup.hStdOutput = startup.hStdError = sink;
+    }
+  }
   PROCESS_INFORMATION process{};
   const BOOL ok = CreateProcessW(
       nullptr,
@@ -482,13 +518,15 @@ int runProcess(const std::wstring &commandLine, const std::wstring &workingDirec
       nullptr,
       nullptr,
       TRUE,
-      0,
+      quiet ? CREATE_NO_WINDOW : 0,
       nullptr,
       workingDirectory.empty() ? nullptr : workingDirectory.c_str(),
       &startup,
       &process);
+  const auto error = ok ? ERROR_SUCCESS : GetLastError();
+  if (sink != INVALID_HANDLE_VALUE) CloseHandle(sink);
   if (!ok) {
-    std::wcerr << L"Failed to start process: " << commandLine << L"\n";
+    std::wcerr << L"Failed to start process (Windows error " << error << L"): " << commandLine << L"\n";
     return 1;
   }
   WaitForSingleObject(process.hProcess, INFINITE);
@@ -497,6 +535,16 @@ int runProcess(const std::wstring &commandLine, const std::wstring &workingDirec
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
   return static_cast<int>(exitCode);
+}
+
+bool canLaunchBundledJava(const std::wstring &cache, const Manifest &manifest) {
+  const auto appHome = joinPath(cache, utf8ToWide(manifest.appDirName));
+  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
+  const auto status = runProcess(quoteArg(java) + L" -version", appHome, true);
+  if (status == 0) return true;
+  std::wcerr << L"The bundled Java executable could not run from " << appHome
+             << L" (exit " << status << L"). Trying another cache.\n";
+  return false;
 }
 
 int extractPayload(const std::wstring &selfPath,
@@ -516,6 +564,33 @@ int tryExtractPayload(const std::wstring &selfPath,
   }
 }
 
+class CacheLock {
+  HANDLE handle_;
+
+public:
+  explicit CacheLock(const std::wstring &path) : handle_(INVALID_HANDLE_VALUE) {
+    // The extractor inherits this handle. A killed launcher cannot release the
+    // cache to another process while its extractor is still writing.
+    SECURITY_ATTRIBUTES inherited{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    const auto deadline = GetTickCount64() + 300'000;
+    do {
+      handle_ = CreateFileW(path.c_str(), GENERIC_WRITE, 0, &inherited, OPEN_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+      if (handle_ != INVALID_HANDLE_VALUE) return;
+      const auto error = GetLastError();
+      if (error != ERROR_SHARING_VIOLATION) {
+        throw std::runtime_error("Cannot lock payload cache (Windows error " + std::to_string(error) + ").");
+      }
+      Sleep(100);
+    } while (GetTickCount64() < deadline);
+    throw std::runtime_error("Timed out waiting for another HiCT launch to finish extracting.");
+  }
+
+  ~CacheLock() { CloseHandle(handle_); }
+  CacheLock(const CacheLock &) = delete;
+  CacheLock &operator=(const CacheLock &) = delete;
+};
+
 std::wstring getEnvironmentVariableValue(const wchar_t *name) {
   const DWORD size = GetEnvironmentVariableW(name, nullptr, 0);
   if (size == 0) {
@@ -527,45 +602,109 @@ std::wstring getEnvironmentVariableValue(const wchar_t *name) {
   return value;
 }
 
-bool canUseRuntimeTempDir(const std::wstring &directory) {
+bool canWritePrivateFile(const std::wstring &directory) {
   if (directory.empty()) {
     return false;
   }
   try {
     createDirectories(directory);
-    const auto probePath = joinPath(directory, L".hict-exec-test-" + std::to_wstring(GetCurrentProcessId()) + L".cmd");
-    writeSmallTextFile(probePath, "@echo off\r\nexit /b 0\r\n");
-    const int status = runProcess(L"cmd.exe /d /c " + quoteArg(probePath), directory);
-    DeleteFileW(probePath.c_str());
-    return status == 0;
+    const auto probePath = joinPath(directory, L".hict-write-test-" + std::to_wstring(GetCurrentProcessId()));
+    const HANDLE probe = CreateFileW(probePath.c_str(), GENERIC_WRITE | DELETE, 0, nullptr,
+                                    CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+    if (probe == INVALID_HANDLE_VALUE) {
+      const auto error = GetLastError();
+      std::wcerr << L"Cannot create a runtime file in " << directory << L" (Windows error " << error << L").\n";
+      return false;
+    }
+    DWORD written = 0;
+    const bool usable = WriteFile(probe, "1", 1, &written, nullptr) && written == 1;
+    CloseHandle(probe);
+    return usable;
   } catch (...) {
     return false;
   }
 }
 
-std::wstring selectRuntimeTempDir(const std::wstring &dataDir, const std::wstring &appHome) {
-  const auto localTempDir = joinPath(dataDir, L"tmp");
+std::vector<std::wstring> runtimeTempCandidates(const std::wstring &dataDir, const std::wstring &appHome) {
+  const auto localHiCTDir = getLocalHiCTDirectory();
   const auto configuredTempDir = getEnvironmentVariableValue(L"HICT_TEMP_DIR");
-  const std::vector<std::wstring> candidates{
+  return {
       configuredTempDir,
-      localTempDir,
+      localHiCTDir.empty() ? L"" : joinPath(localHiCTDir, L"runtime"),
       joinPath(getTempDirectory(), L"HiCT\\runtime"),
+      joinPath(dataDir, L"tmp"),
       joinPath(appHome, L"tmp")};
+}
 
+std::wstring javaRuntimeTempOptions(const std::wstring &tempDir) {
+  return L" " + quoteArg(L"-Djava.io.tmpdir=" + tempDir)
+       + L" " + quoteArg(L"-Dvertx.cacheDirBase=" + joinPath(tempDir, L"vertx-cache"));
+}
+
+bool isAsciiPath(const std::wstring &path) {
+  return !path.empty() && std::all_of(path.begin(), path.end(), [](wchar_t unit) { return unit <= 0x7f; });
+}
+
+std::wstring shortPath(const std::wstring &path) {
+  if (!directoryExists(path)) return {};
+  const DWORD size = GetShortPathNameW(path.c_str(), nullptr, 0);
+  if (!size) return {};
+  std::wstring shortName(size, L'\0');
+  const DWORD length = GetShortPathNameW(path.c_str(), shortName.data(), size);
+  if (!length || length >= size) return {};
+  shortName.resize(length);
+  return shortName;
+}
+
+bool prepareRuntimeTempDir(const std::wstring &candidate, const std::wstring &appHome,
+                           const std::wstring &javaCommand, const std::wstring &jar,
+                           const std::wstring &configuredOptions, bool requireNative) {
+  if (!isAsciiPath(candidate) || !canWritePrivateFile(candidate)) return false;
+  SetEnvironmentVariableW(L"HICT_TEMP_DIR", candidate.c_str());
+  SetEnvironmentVariableW(L"TMP", candidate.c_str());
+  SetEnvironmentVariableW(L"TEMP", candidate.c_str());
+  if (!requireNative) return true;
+
+  const auto probe = javaCommand + L" " + configuredOptions + javaRuntimeTempOptions(candidate)
+                   + L" -jar " + quoteArg(jar)
+                   + L" check-toolchains --require-hdf5-native --quiet";
+  if (runProcess(probe, appHome, true) == 0) return true;
+  std::wcerr << L"The native HDF5 check failed with working folder " << candidate
+             << L". Trying another folder.\n";
+  return false;
+}
+
+std::wstring selectRuntimeTempDir(const std::wstring &requested, const std::wstring &appHome,
+                                  const std::wstring &javaCommand, const std::wstring &jar,
+                                  const std::wstring &configuredOptions, bool requireNative) {
+  if (requested.empty()) return {};
+  std::vector<std::wstring> candidates;
+  if (isAsciiPath(requested)) {
+    candidates.push_back(requested);
+  } else {
+    candidates.push_back(shortPath(requested));
+    const auto programData = getEnvironmentVariableValue(L"ProgramData");
+    const auto systemDrive = getEnvironmentVariableValue(L"SystemDrive");
+    if (!programData.empty()) candidates.push_back(joinPath(programData, L"HiCT\\tmp"));
+    if (!systemDrive.empty()) candidates.push_back(joinPath(systemDrive, L"HiCT-tmp"));
+  }
   for (const auto &candidate : candidates) {
-    if (candidate.empty()) {
-      continue;
-    }
-    if (canUseRuntimeTempDir(candidate)) {
-      if (candidate != localTempDir) {
-        const auto notice = L"DATA_DIR\\tmp could not be used as the runtime temp directory; using " + candidate + L".";
-        SetEnvironmentVariableW(L"HICT_PORTABLE_NOTICE", notice.c_str());
+    if (prepareRuntimeTempDir(candidate, appHome, javaCommand, jar, configuredOptions, requireNative)) {
+      if (candidate != requested) {
+        std::wcout << L"Contains non-ASCII characters. HiCT uses " << candidate
+                   << L" for Java temporary files instead.\n";
       }
       return candidate;
     }
-    std::wcerr << L"WARNING: Runtime temp candidate is not usable, trying fallback: " << candidate << L"\n";
   }
-  throw std::runtime_error("No usable runtime temp directory is available.");
+  return {};
+}
+
+bool needsNativePreflight(const std::vector<std::wstring> &args) {
+  if (std::find(args.begin(), args.end(), L"--help") != args.end()
+      || std::find(args.begin(), args.end(), L"-h") != args.end()) return false;
+  return args.empty() || args.front() == L"start-server" || args.front() == L"start-api-server"
+    || args.front() == L"launcher" || args.front() == L"convert";
 }
 
 std::wstring getDataDirectory(const std::wstring &selfPath) {
@@ -581,21 +720,31 @@ std::wstring getDataDirectory(const std::wstring &selfPath) {
   return selfDir;
 }
 
-std::wstring buildForwardedArguments() {
+std::vector<std::wstring> readArguments() {
   int argc = 0;
-  LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  const std::unique_ptr<LPWSTR, decltype(&LocalFree)> argv(
+      CommandLineToArgvW(GetCommandLineW(), &argc), &LocalFree);
   if (argv == nullptr) {
-    return L"";
+    throw std::runtime_error("Cannot read the Windows command line.");
   }
-  std::wstring result;
-  for (int i = 1; i < argc; ++i) {
-    if (!result.empty()) {
-      result.push_back(L' ');
-    }
-    result += quoteArg(argv[i]);
+  return {argv.get() + 1, argv.get() + argc};
+}
+
+std::wstring javaJarWithArguments(const std::wstring &jar, const std::vector<std::wstring> &args) {
+  if (args.empty()) return L" -jar " + quoteArg(jar);
+  // Java 21 narrows its Windows command line to the ANSI code page. Its
+  // Windows environment remains UTF-16. Each argument consumes one length
+  // code unit (length + 1, so there are no NULs) plus its original contents.
+  // This is no longer than the original command line's argument tail.
+  std::wstring payload;
+  for (const auto &arg : args) {
+    payload.push_back(static_cast<wchar_t>(arg.size() + 1));
+    payload.append(arg);
   }
-  LocalFree(argv);
-  return result;
+  if (!SetEnvironmentVariableW(L"HICT_WINDOWS_LAUNCHER_ARGV", payload.c_str())) {
+    throw std::runtime_error("Cannot pass the Windows command-line arguments to Java.");
+  }
+  return L" -Dhict.windows.launcher.argv=true -jar " + quoteArg(jar);
 }
 
 bool isConsoleOwnedByThisProcess() {
@@ -625,28 +774,61 @@ void printUsage() {
       << L"DATA_DIR defaults to the directory containing this EXE unless explicitly set.\n"
       << L"The toolbox command forwards arguments to bundled/configured third-party tools\n"
       << L"and prints their project, license, and citation notes before launching them.\n"
-      << L"Payload cache, processed data, and temporary files default to local subdirectories there.\n";
+      << L"Portable files and temporary files prefer the current user's local application data folder.\n";
 }
 
 int extractPayload(const std::wstring &selfPath,
                    const Manifest &manifest,
                    const std::wstring &targetRoot,
                    bool launchAfterExtract) {
+  if (launchAfterExtract) {
+    createDirectories(dirnameOf(targetRoot));
+    CacheLock lock(targetRoot + L".lock");
+    const auto appHome = joinPath(targetRoot, utf8ToWide(manifest.appDirName));
+    if (readSmallTextFile(joinPath(targetRoot, L".payload.sha256")) == manifest.payloadSha256
+        && fileExists(joinPath(appHome, L"HiCT.cmd"))
+        && fileExists(joinPath(appHome, L"runtime\\bin\\java.exe"))
+        && fileExists(joinPath(appHome, L"lib\\hict.jar"))) {
+      return 0;
+    }
+    if (directoryExists(targetRoot)) {
+      throw std::runtime_error("An incomplete payload cache is already present; trying another location.");
+    }
+    const auto staging = targetRoot + L".partial";
+    const auto owner = joinPath(staging, L".hict-extracting");
+    if (directoryExists(staging)) {
+      const auto attributes = GetFileAttributesW(staging.c_str());
+      if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) || readSmallTextFile(owner) != manifest.payloadSha256) {
+        throw std::runtime_error("The staging folder cannot be verified as HiCT-owned; trying another location.");
+      }
+      removeTreeIfExists(staging);
+    }
+    if (!CreateDirectoryW(staging.c_str(), nullptr)) {
+      throw std::runtime_error("Cannot create a private payload staging folder.");
+    }
+    try {
+      writeSmallTextFile(owner, manifest.payloadSha256);
+      const int status = extractPayload(selfPath, manifest, staging, false);
+      if (status != 0) {
+        removeTreeIfExists(staging);
+        return status;
+      }
+      if (!MoveFileExW(staging.c_str(), targetRoot.c_str(), MOVEFILE_WRITE_THROUGH)) {
+        const auto error = GetLastError();
+        throw std::runtime_error("Cannot publish the extracted payload (Windows error " + std::to_string(error) + ").");
+      }
+      DeleteFileW(joinPath(targetRoot, L".hict-extracting").c_str());
+      return 0;
+    } catch (...) {
+      removeTreeIfExists(staging);
+      throw;
+    }
+  }
+
   createDirectories(targetRoot);
   const auto extractorPath = joinPath(targetRoot, L"7zr.exe");
   const auto archivePath = joinPath(targetRoot, L"payload.7z");
   const auto markerPath = joinPath(targetRoot, L".payload.sha256");
-  const auto appHome = joinPath(targetRoot, utf8ToWide(manifest.appDirName));
-
-  if (launchAfterExtract) {
-    const auto cachedMarker = readSmallTextFile(markerPath);
-    if (cachedMarker == manifest.payloadSha256 && fileExists(joinPath(appHome, L"HiCT.cmd"))) {
-      return 0;
-    }
-    removeTreeIfExists(targetRoot);
-    createDirectories(targetRoot);
-  }
-
   std::wcout << L"Preparing HiCT portable files in " << targetRoot << L"\n";
   copySegmentToFile(selfPath, manifest.extractorOffset, manifest.extractorSize, extractorPath);
   copySegmentToFile(selfPath, manifest.payloadOffset, manifest.payloadSize, archivePath);
@@ -663,37 +845,81 @@ int extractPayload(const std::wstring &selfPath,
   return 0;
 }
 
+int startJava(const std::wstring &appHome, const std::wstring &dataDir,
+              const std::vector<std::wstring> &args, bool chooseFallback) {
+  const auto java = joinPath(appHome, L"runtime\\bin\\java.exe");
+  const auto jar = joinPath(appHome, L"lib\\hict.jar");
+  const auto configuredOptions = getEnvironmentVariableValue(L"HICT_JAVA_OPTS");
+  const auto command = quoteArg(java) + L" -XX:MaxRAMPercentage=50.0";
+  if (args.size() == 1 && args.front() == L"--version") {
+    return runProcess(command + L" " + configuredOptions + javaJarWithArguments(jar, args), appHome);
+  }
+
+  const bool preflight = needsNativePreflight(args);
+  std::wstring tempDir;
+  for (const auto &candidate : runtimeTempCandidates(dataDir, appHome)) {
+    tempDir = selectRuntimeTempDir(candidate, appHome, command, jar, configuredOptions, preflight);
+    if (!tempDir.empty()) break;
+  }
+  if (tempDir.empty() && chooseFallback && args.empty() && isConsoleOwnedByThisProcess()) {
+    const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its temporary files. Choose a writable working folder to retry.");
+    if (!chosen.empty()) {
+      tempDir = selectRuntimeTempDir(joinPath(chosen, L"HiCT\\runtime"), appHome, command, jar, configuredOptions, preflight);
+    }
+  }
+  if (tempDir.empty()) {
+    throw std::runtime_error("HiCT could not prepare its runtime. Choose a working folder or run check-toolchains --require-hdf5-native for details.");
+  }
+  if (!environmentVariableIsDefined(L"PROCESSED_DIR")) {
+    const auto processed = joinPath(dataDir, L"processed");
+    const auto fallback = joinPath(tempDir, L"processed");
+    if (canWritePrivateFile(processed)) SetEnvironmentVariableW(L"PROCESSED_DIR", processed.c_str());
+    else if (canWritePrivateFile(fallback)) SetEnvironmentVariableW(L"PROCESSED_DIR", fallback.c_str());
+    else throw std::runtime_error("No writable processed-data directory could be prepared.");
+  }
+  return runProcess(command + L" " + configuredOptions + javaRuntimeTempOptions(tempDir)
+                    + javaJarWithArguments(jar, args), dataDir);
+}
+
 int run() {
   const auto selfPath = getSelfPath();
+  const auto args = readArguments();
+#ifdef HICT_EXTRACTED_LAUNCHER
+  const auto appHome = dirnameOf(dirnameOf(selfPath));
+  const auto configuredData = getEnvironmentVariableValue(L"DATA_DIR");
+  return startJava(appHome, configuredData.empty() ? appHome : configuredData, args, false);
+#else
   const auto manifest = readManifest(selfPath);
   printStartupHeader();
 
-  int argc = 0;
-  LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-  if (argv != nullptr && argc >= 2 && std::wcscmp(argv[1], L"--hict-run-help") == 0) {
+  if (!args.empty() && args.front() == L"--hict-run-help") {
     printUsage();
-    LocalFree(argv);
     return 0;
   }
-  if (argv != nullptr && argc >= 3 && std::wcscmp(argv[1], L"--hict-extract-only") == 0) {
-    const std::wstring target = argv[2];
-    LocalFree(argv);
-    return extractPayload(selfPath, manifest, target, false);
+  if (args.size() >= 2 && args.front() == L"--hict-extract-only") {
+    return extractPayload(selfPath, manifest, args[1], false);
   }
-  if (argv != nullptr) {
-    LocalFree(argv);
-  }
-
+  const bool versionOnly = args.size() == 1 && args.front() == L"--version";
   const auto cacheKey = utf8ToWide(shortPayloadCacheKey(manifest));
-  auto cacheRoot = joinPath(getWritableCacheRoot(selfPath), cacheKey);
-  int extractExit = tryExtractPayload(selfPath, manifest, cacheRoot, true);
-  if (extractExit != 0) {
-    const auto fallbackCacheRoot = joinPath(getFallbackCacheRoot(), cacheKey);
-    std::wcerr << L"WARNING: Local HiCT payload cache is not usable, trying fallback: " << fallbackCacheRoot << L"\n";
-    const auto notice = L"The directory containing the EXE could not be used as the payload cache; using " + fallbackCacheRoot + L".";
-    SetEnvironmentVariableW(L"HICT_PORTABLE_NOTICE", notice.c_str());
-    cacheRoot = fallbackCacheRoot;
+  const auto localHiCTDir = getLocalHiCTDirectory();
+  std::wstring cacheRoot;
+  int extractExit = 1;
+  for (const auto &candidate : {getEnvironmentVariableValue(L"HICT_PORTABLE_CACHE_ROOT"),
+                               localHiCTDir.empty() ? std::wstring{} : joinPath(localHiCTDir, L"payloads"),
+                               getWritableCacheRoot(selfPath), getFallbackCacheRoot()}) {
+    if (candidate.empty()) continue;
+    cacheRoot = joinPath(candidate, cacheKey);
     extractExit = tryExtractPayload(selfPath, manifest, cacheRoot, true);
+    if (extractExit == 0 && canLaunchBundledJava(cacheRoot, manifest)) break;
+    if (extractExit == 0) extractExit = 1;
+  }
+  if (extractExit != 0 && args.empty() && isConsoleOwnedByThisProcess()) {
+    const auto chosen = chooseWorkingFolder(L"HiCT could not prepare its portable files. Choose a writable folder to retry.");
+    if (!chosen.empty()) {
+      cacheRoot = joinPath(joinPath(chosen, L"HiCT\\payloads"), cacheKey);
+      extractExit = tryExtractPayload(selfPath, manifest, cacheRoot, true);
+      if (extractExit == 0 && !canLaunchBundledJava(cacheRoot, manifest)) extractExit = 1;
+    }
   }
   if (extractExit != 0) {
     pauseOnFailureIfNeeded(extractExit);
@@ -701,37 +927,30 @@ int run() {
   }
 
   const auto appHome = joinPath(cacheRoot, utf8ToWide(manifest.appDirName));
-  const auto hictCmd = joinPath(appHome, L"HiCT.cmd");
-  if (!fileExists(hictCmd)) {
-    std::wcerr << L"HiCT portable payload is incomplete: " << hictCmd << L" was not found.\n";
-    pauseOnFailureIfNeeded(1);
-    return 1;
-  }
+  if (versionOnly) return startJava(appHome, appHome, args, false);
+  const auto jar = joinPath(appHome, L"lib\\hict.jar");
 
   const auto dataDir = getDataDirectory(selfPath);
-  const auto processedDir = joinPath(dataDir, L"processed");
   createDirectories(dataDir);
-  const auto tempDir = selectRuntimeTempDir(dataDir, appHome);
-  createDirectories(processedDir);
-  createDirectories(tempDir);
+  SetEnvironmentVariableW(L"HICT_APP_HOME", appHome.c_str());
+  SetEnvironmentVariableW(L"HICT_JAR_PATH", jar.c_str());
+  defaultEnvironment(L"HICT_BIND_HOST", L"127.0.0.1");
+  if (args.empty()) defaultEnvironment(L"HICT_LAUNCHER_MODE", L"gui");
+  const auto webRoot = joinPath(appHome, L"webui");
+  if (fileExists(joinPath(webRoot, L"index.html"))) defaultEnvironment(L"WEBUI_ROOT", webRoot);
+  const auto tools = joinPath(appHome, L"toolchains\\windows_x86_64");
+  if (fileExists(joinPath(tools, L"manifest.json"))) defaultEnvironment(L"HICT_TOOLCHAIN_DIR", tools);
+  const auto browsers = joinPath(appHome, L"browsers\\windows_x86_64");
+  if (directoryExists(browsers)) defaultEnvironment(L"HICT_BROWSER_DIR", browsers);
+
   SetEnvironmentVariableW(L"DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_EXE_PATH", selfPath.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_CACHE_DIR", cacheRoot.c_str());
-  SetEnvironmentVariableW(L"HICT_TEMP_DIR", tempDir.c_str());
-  setEnvironmentVariableIfAbsent(L"PROCESSED_DIR", processedDir);
-  setEnvironmentVariableIfAbsent(L"TMP", tempDir);
-  setEnvironmentVariableIfAbsent(L"TEMP", tempDir);
-
-  const auto args = buildForwardedArguments();
-  std::wstring command = L"cmd.exe /d /c call " + quoteArg(hictCmd);
-  if (!args.empty()) {
-    command.push_back(L' ');
-    command += args;
-  }
-  const int exitCode = runProcess(command, dataDir);
+  const int exitCode = startJava(appHome, dataDir, args, true);
   pauseOnFailureIfNeeded(exitCode);
   return exitCode;
+#endif
 }
 
 } // namespace

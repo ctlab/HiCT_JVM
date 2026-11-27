@@ -16,7 +16,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def sha(path):
@@ -81,7 +81,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(90000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route("http://localhost:5000/**", lambda route: route.continue_(url=api.url + route.request.url.removeprefix("http://localhost:5000")))
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             dialog = page.get_by_role("dialog", name="Export figure", exact=True)
 
@@ -136,15 +136,14 @@ def main():
                 receipt["descriptors"] = descriptors
                 page.evaluate("async()=>{const t=window.__hictBenchmark.manager().linearTrackManager;await t.openTrack('GC-fraction-10kb.bw','GC fraction');await t.openTrack('Illustrative-cut.gff3','Cut marker');}")
                 check.settle()
-                check.menu("Tools", "Generate ModDotPlot…")
-                generate = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+                check.menu("Tools", "ModDotPlot…")
+                generate = page.get_by_role("dialog", name="ModDotPlot", exact=True)
                 check.advanced()
                 generate.get_by_label("Worker threads", exact=True).fill("2")
-                for box in generate.locator(".resolution-options input").all():
-                    box.uncheck()
-                generate.locator(f'.resolution-options input[value="{args.resolution}"]').check()
-                generate.get_by_label("Display completed result").select_option("below")
-                generate.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
+                generate.get_by_label("Finest detail", exact=True).select_option("custom")
+                generate.locator("#sequence-overlay-resolutions").fill(str(args.resolution))
+                generate.get_by_label("Show result as").select_option("below")
+                generate.get_by_role("button", name="Generate", exact=True).click()
                 generate.locator("footer").get_by_role("button", name="Close", exact=True).click()
                 deadline = time.monotonic() + 600
                 while time.monotonic() < deadline:

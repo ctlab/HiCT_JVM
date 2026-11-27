@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -32,13 +32,12 @@ def main():
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
         BrowserCheck(page, out)  # Owned writable chooser shim for graph export, as in other UI suites.
         page.add_init_script("window.__editorWindowErrors=[];window.addEventListener('error',e=>{if(e instanceof ErrorEvent)window.__editorWindowErrors.push(e.message);},true)")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)
         page.wait_for_timeout(1500)
-        nan = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+        nan = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
         if nan.is_visible():
             nan.click()
         page.evaluate("""async () => {const m=window.__hictBenchmark.manager();
@@ -51,6 +50,9 @@ def main():
         def open_editor():
             page.get_by_role("link", name="View", exact=True).click()
             page.get_by_role("link", name="Rendering pipeline…", exact=True).click()
+            advanced = page.locator(".pipeline-root details.hict-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
             page.locator(".graph-canvas").wait_for(state="visible")
             page.wait_for_function("document.querySelector('.graph-canvas').data.graph._nodes.length>2")
             page.wait_for_timeout(300)
@@ -262,7 +264,7 @@ def main():
         record_result({"test": "Reload fetches changed server branches without reviving the stale preset draft"})
 
         with page.expect_response(lambda response: '/render_pipeline/reset' in response.url and response.request.method == 'POST') as response:
-            page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Reset', exact=True).click()
+            page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Reset to default', exact=True).click()
         assert response.value.ok
         reset = response.value.json()
         page.wait_for_timeout(400)

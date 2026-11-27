@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 import threading
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -64,12 +64,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             page.on(
                 "request",
@@ -113,7 +108,7 @@ def main():
                 print("Passed", name, flush=True)
 
             def mode(value):
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option(value)
                 expect(control).to_be_enabled()
                 wait()
@@ -129,14 +124,29 @@ def main():
                 ).to_have_count(0)
 
             def bounds():
-                return [
-                    page.get_by_role(
-                        "spinbutton", name="Slider minimum signal", exact=True
-                    ).input_value(),
-                    page.get_by_role(
-                        "spinbutton", name="Slider maximum signal", exact=True
-                    ).input_value(),
-                ]
+                values = []
+                for limit in ("from", "to"):
+                    field = page.get_by_label(f"Histogram view {limit}", exact=True)
+                    expect(field).to_be_visible()
+                    field.focus()
+                    expect(field).to_be_focused()
+                    values.append(field.input_value())
+                    field.blur()
+                return values
+
+            def assert_auto_bounds(minimum, maximum):
+                thresholds = []
+                for side in ("Lower", "Upper"):
+                    field = page.get_by_label(f"{side} signal threshold", exact=True)
+                    field.focus()
+                    thresholds.append(float(field.input_value()))
+                    field.blur()
+                current = list(map(float, bounds()))
+                assert math.isclose(current[0], min(minimum, *thresholds), abs_tol=1e-10), current
+                assert math.isclose(current[1], max(maximum, *thresholds), rel_tol=1e-10), current
+                expect(page.get_by_test_id("exact-range-status")).to_contain_text(
+                    f"{minimum:.3g} – {maximum:.3g}"
+                )
 
             try:
                 page.goto(f"http://127.0.0.1:{web.server_port}/")
@@ -153,16 +163,12 @@ def main():
                 advanced.locator(":scope > summary").click()
                 page.locator("#scaling-across-zoom").select_option("none")
                 wait()
-                page.get_by_role(
-                    "spinbutton", name="Lower signal threshold", exact=True
+                page.get_by_label("Lower signal threshold", exact=True
                 ).fill("0")
-                page.get_by_role(
-                    "spinbutton", name="Upper signal threshold", exact=True
+                page.get_by_label("Upper signal threshold", exact=True
                 ).fill("8")
                 page.get_by_role("button", name="Apply", exact=True).click()
                 wait()
-                details = page.locator(".range-details")
-                details.locator(":scope > summary").click()
                 graph = post("/render_pipeline/get")
                 opts = options()
                 start = len(requests)
@@ -170,7 +176,7 @@ def main():
                 expect(page.get_by_test_id("exact-range-status")).to_contain_text(
                     "263169 finite cells"
                 )
-                assert list(map(float, bounds())) == [0, 8], bounds()
+                assert_auto_bounds(0, 8)
                 assert all(
                     r.get("signalMode") == "PIPELINE_SIGNAL" for r in requests[start:]
                 )
@@ -200,7 +206,7 @@ def main():
                     status = page.get_by_test_id("exact-range-status")
                     expect(status).to_contain_text("whole-map")
                     expect(status).to_contain_text(str(count) + " finite cells")
-                    assert list(map(float, bounds())) == [0, maximum], bounds()
+                    assert_auto_bounds(0, maximum)
                     blocks = [r for r in requests[start:] if not r.get("metadataOnly")]
                     assert len(blocks) == 4 and all(
                         r.get("signalMode") == "TRADITIONAL_NORMALIZED"
@@ -297,7 +303,7 @@ def main():
                 page.locator("#signal-transform-log").click()
                 scan()
                 assert options()["postLogBase"] == 2
-                assert abs(float(bounds()[1]) - math.log2(9)) < 1e-10, bounds()
+                assert_auto_bounds(0, math.log2(9))
                 record("scan-waits-for-the-new-processing-draft-before-reading-limits")
                 page.set_viewport_size({"width": 640, "height": 800})
                 check.settle()

@@ -187,6 +187,29 @@ function Get-LittleEndianUInt64Bytes {
   return [BitConverter]::GetBytes($Value)
 }
 
+function Build-WindowsLauncher {
+  param(
+    [Parameter(Mandatory = $true)][string]$Output,
+    [switch]$Extracted
+  )
+  $clExe = Get-Command "cl.exe" -ErrorAction SilentlyContinue
+  if (-not $clExe) {
+    throw "cl.exe is required for Windows portable packaging. Run from a Visual Studio Developer shell or configure MSVC in CI."
+  }
+  $launcherSource = Join-Path $PSScriptRoot "windows_launcher\HiCTPortableLauncher.cpp"
+  $defines = @("/DUNICODE", "/D_UNICODE", "/D_WIN32_WINNT=0x0601")
+  if ($Extracted) {
+    $defines += "/DHICT_EXTRACTED_LAUNCHER"
+  }
+  Invoke-Native -FilePath $clExe.Source -Arguments (@(
+    "/nologo", "/std:c++17", "/O2", "/MT", "/EHsc"
+  ) + $defines + @(
+    "/Fo:$Output.obj", "/Fe:$Output", $launcherSource,
+    "shell32.lib", "ole32.lib", "/link", "/SUBSYSTEM:CONSOLE,6.01"
+  ))
+  Remove-Item -LiteralPath "$Output.obj"
+}
+
 function Build-CustomPortableExe {
   param(
     [Parameter(Mandatory = $true)][string]$SevenZipExe,
@@ -199,7 +222,6 @@ function Build-CustomPortableExe {
 
   $archivePath = Join-Path $BuildDir "payload.7z"
   $launcherStub = Join-Path $BuildDir "HiCTPortableLauncher.stub.exe"
-  $launcherSource = Join-Path $PSScriptRoot "windows_launcher\HiCTPortableLauncher.cpp"
   $lzmaNoticeTarget = Join-Path $AppDirectory "licenses\LZMA_SDK_NOTICE.txt"
 
   $extractorCandidates = @(Find-StandaloneSevenZipExtractors -Roots @($SevenZipRoot, $BuildDir))
@@ -220,25 +242,7 @@ function Build-CustomPortableExe {
     Pop-Location
   }
 
-  $clExe = Get-Command "cl.exe" -ErrorAction SilentlyContinue
-  if (-not $clExe) {
-    throw "cl.exe is required for the custom Windows portable EXE. Run from a Visual Studio Developer shell or configure MSVC in CI."
-  }
-  Invoke-Native -FilePath $clExe.Source -Arguments @(
-    "/nologo",
-    "/std:c++17",
-    "/O2",
-    "/MT",
-    "/EHsc",
-    "/DUNICODE",
-    "/D_UNICODE",
-    "/D_WIN32_WINNT=0x0601",
-    "/Fe:$launcherStub",
-    $launcherSource,
-    "shell32.lib",
-    "/link",
-    "/SUBSYSTEM:CONSOLE,6.01"
-  )
+  Build-WindowsLauncher -Output $launcherStub
 
   $launcherManifest = Join-Path $BuildDir "HiCTPortableLauncher.manifest"
   @'
@@ -300,10 +304,6 @@ function Build-CustomPortableExe {
 }
 
 $projectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$version = (Get-Content (Join-Path $projectDir "version.txt") -Raw).Trim()
-$platform = "windows-x86_64"
-$appName = "HiCT"
-$appDir = Join-Path $DistRoot "$appName-$version-$platform"
 $artifactDir = Join-Path $projectDir "build\distributions"
 $jlink = Get-JdkTool "jlink.exe"
 $jarTool = Get-JdkTool "jar.exe"
@@ -329,6 +329,10 @@ if (-not $SkipGradle) {
   }
 }
 
+$version = (Get-Content (Join-Path $projectDir "build\resources\main\version.txt") -Raw).Trim()
+$platform = "windows-x86_64"
+$appName = "HiCT"
+$appDir = Join-Path $DistRoot "$appName-$version-$platform"
 $fatJarPath = Join-Path $projectDir "build\libs\hict_server-$version-fat.jar"
 if (-not (Test-Path -LiteralPath $fatJarPath -PathType Leaf)) {
   throw "The current version fat JAR was not found: $fatJarPath. Build shadowJar before packaging."
@@ -346,6 +350,11 @@ if ($hasPreparedWindowsToolchain -and -not ($jarEntries -contains "toolchains/wi
   throw "toolchains-dist\windows_x86_64 exists, but the fat JAR does not contain the bundled Windows hictk manifest."
 }
 
+& python (Join-Path $PSScriptRoot "verify_package_inputs.py") $fatJar.FullName windows_x86_64
+if ($LASTEXITCODE -ne 0) {
+  throw "Portable Windows package input verification failed."
+}
+
 if (Test-Path $appDir) {
   Remove-Item -Recurse -Force $appDir
 }
@@ -356,6 +365,28 @@ New-Item -ItemType Directory -Force -Path (Join-Path $appDir "licenses") | Out-N
 New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
 Copy-Item -Force $fatJar.FullName (Join-Path $appDir "lib\hict.jar")
+
+# Load the packaged DLLs from a stable location independent of the user's
+# working and data folders. Keep the embedded archive as a fallback.
+$jhdf5ArchiveEntry = @($jarEntries | Where-Object { $_ -match '^libs/sis-jhdf5-[^/]+-natives\.tar\.gz$' })
+if ($jhdf5ArchiveEntry.Count -ne 1) {
+  throw "Expected one packaged JHDF5 native archive in the fat JAR."
+}
+$jhdf5Root = Join-Path $appDir "lib"
+Push-Location $jhdf5Root
+try {
+  Invoke-Native -FilePath $jarTool -Arguments @("xf", $fatJar.FullName, $jhdf5ArchiveEntry[0])
+  Invoke-Native -FilePath "tar" -Arguments @("-xzf", $jhdf5ArchiveEntry[0], "native/jhdf5/amd64-Windows/")
+  Remove-Item -LiteralPath (Join-Path $jhdf5Root "libs") -Recurse -Force
+}
+finally {
+  Pop-Location
+}
+foreach ($dependency in @("hdf5.dll", "jhdf5.dll")) {
+  if (-not (Test-Path -LiteralPath (Join-Path $jhdf5Root "native\jhdf5\amd64-Windows\$dependency"))) {
+    throw "The packaged JHDF5 DLL $dependency is missing."
+  }
+}
 Copy-Item -Force (Join-Path $projectDir "LICENSE") (Join-Path $appDir "licenses\HiCT_JVM_LICENSE")
 Copy-Item -Force (Join-Path $projectDir "THIRD_PARTY_LICENSES.md") (Join-Path $appDir "licenses\THIRD_PARTY_LICENSES.md")
 $webUiLicense = Join-Path $projectDir "..\HiCT_WebUI\LICENSE"
@@ -487,6 +518,21 @@ exact license text of the component used by the build runner.
   --no-man-pages `
   --compress=zip-6 `
   --output (Join-Path $appDir "runtime")
+if ($LASTEXITCODE -ne 0) { throw "jlink failed with exit code $LASTEXITCODE." }
+
+# Both HDF5 and its filter DLLs import this runtime. Keep that dependency
+# next to the bundled Java executable, where the Windows loader can find it.
+$runtimeBin = Join-Path $appDir "runtime\bin"
+$crt = Join-Path $runtimeBin "vcruntime140.dll"
+if (-not (Test-Path -LiteralPath $crt)) {
+  $jdkCrt = Join-Path (Split-Path -Parent $jlink) "vcruntime140.dll"
+  if (-not (Test-Path -LiteralPath $jdkCrt)) {
+    throw "The release JDK did not provide the app-local vcruntime140.dll required by HDF5."
+  }
+  Copy-Item -LiteralPath $jdkCrt -Destination $crt
+}
+
+Build-WindowsLauncher -Output (Join-Path $appDir "bin\hict-cli.exe") -Extracted
 
 @'
 @echo off
@@ -496,12 +542,6 @@ for %%I in ("%SCRIPT_DIR%..") do set "APP_HOME=%%~fI"
 
 if not defined DATA_DIR (
   set "DATA_DIR=%APP_HOME%"
-)
-if not defined PROCESSED_DIR (
-  set "PROCESSED_DIR=%DATA_DIR%\processed"
-)
-if not defined HICT_TEMP_DIR (
-  set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
 )
 set "HICT_APP_HOME=%APP_HOME%"
 set "HICT_JAR_PATH=%APP_HOME%\lib\hict.jar"
@@ -521,72 +561,27 @@ if not defined HICT_BIND_HOST (
   set "HICT_BIND_HOST=127.0.0.1"
 )
 
+if "%~1"=="--version" goto :Version
 call :WarnWebView2IfNeeded
-call :SelectRuntimeTempDir
-if errorlevel 1 exit /b 1
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
-if not exist "%PROCESSED_DIR%" mkdir "%PROCESSED_DIR%" >nul 2>nul
-if not exist "%HICT_TEMP_DIR%" mkdir "%HICT_TEMP_DIR%" >nul 2>nul
 pushd "%DATA_DIR%" >nul 2>nul
 if errorlevel 1 (
   echo Failed to enter DATA_DIR "%DATA_DIR%".
   exit /b 1
 )
 
-set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
-if "%~1"=="" (
-  if not defined HICT_LAUNCHER_MODE set "HICT_LAUNCHER_MODE=gui"
-  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
-) else (
-  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+if "%~1"=="" if not defined HICT_LAUNCHER_MODE (
+  set "HICT_LAUNCHER_MODE=gui"
 )
+"%APP_HOME%\bin\hict-cli.exe" %*
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
 exit /b %HICT_EXIT_CODE%
 
-:SelectRuntimeTempDir
-set "HICT_LOCAL_TEMP_DIR=%DATA_DIR%\tmp"
-if defined HICT_TEMP_DIR (
-  call :CanUseRuntimeTempDir "%HICT_TEMP_DIR%"
-  if not errorlevel 1 exit /b 0
-  echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_TEMP_DIR%"
-)
-call :CanUseRuntimeTempDir "%HICT_LOCAL_TEMP_DIR%"
-if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%HICT_LOCAL_TEMP_DIR%"
-  exit /b 0
-)
-echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_LOCAL_TEMP_DIR%"
-if defined TEMP (
-  call :CanUseRuntimeTempDir "%TEMP%\HiCT\runtime"
-  if not errorlevel 1 (
-    set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
-    set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %TEMP%\HiCT\runtime."
-    exit /b 0
-  )
-)
-call :CanUseRuntimeTempDir "%APP_HOME%\tmp"
-if not errorlevel 1 (
-  set "HICT_TEMP_DIR=%APP_HOME%\tmp"
-  set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %APP_HOME%\tmp."
-  exit /b 0
-)
-echo No usable runtime temp directory is available. Check DATA_DIR\tmp, HICT_TEMP_DIR, and %%TEMP%%.
-exit /b 1
-
-:CanUseRuntimeTempDir
-set "HICT_PROBE_DIR=%~1"
-if "%HICT_PROBE_DIR%"=="" exit /b 1
-if not exist "%HICT_PROBE_DIR%" mkdir "%HICT_PROBE_DIR%" >nul 2>nul
-if not exist "%HICT_PROBE_DIR%" exit /b 1
-set "HICT_PROBE=%HICT_PROBE_DIR%\.hict-exec-test-%RANDOM%-%RANDOM%.cmd"
-> "%HICT_PROBE%" echo @echo off
->> "%HICT_PROBE%" echo exit /b 0
-cmd.exe /d /c "%HICT_PROBE%" >nul 2>nul
-set "HICT_PROBE_STATUS=%ERRORLEVEL%"
-del /f /q "%HICT_PROBE%" >nul 2>nul
-exit /b %HICT_PROBE_STATUS%
+:Version
+"%APP_HOME%\bin\hict-cli.exe" %*
+exit /b %ERRORLEVEL%
 
 :WarnWebView2IfNeeded
 if not exist "%APP_HOME%\browsers\windows_x86_64" exit /b 0
@@ -611,7 +606,8 @@ exit /b 0
 @echo off
 setlocal
 set "HICT_URL=%~1"
-if "%HICT_URL%"=="" set "HICT_URL=http://localhost:8080/"
+if "%HICT_PORT%"=="" set "HICT_PORT=8080"
+if "%HICT_URL%"=="" set "HICT_URL=http://localhost:%HICT_PORT%/"
 for /l %%i in (1,1,90) do (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 '%HICT_URL%'; if ($r.StatusCode -ge 200) { exit 0 } } catch { exit 1 }" >nul 2>nul
   if not errorlevel 1 (

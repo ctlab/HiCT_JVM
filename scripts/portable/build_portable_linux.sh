@@ -6,13 +6,6 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
 PLATFORM="linux-x86_64"
 APP_NAME="HiCT"
-VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
-ABI_SUFFIX=""
-if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
-  ABI_SUFFIX="-musl"
-fi
-APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
-PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -89,6 +82,14 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   )
 fi
 
+VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/build/resources/main/version.txt")"
+ABI_SUFFIX=""
+if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
+  ABI_SUFFIX="-musl"
+fi
+APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
+PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
+
 FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
 if [[ ! -f "${FAT_JAR}" ]]; then
   echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
@@ -98,6 +99,7 @@ if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${FAT_JAR}" linux_x86_64
 if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]] &&
    ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'toolchains/linux_x86_64/manifest.json'; then
   echo "toolchains-dist/linux_x86_64 exists, but the fat JAR does not contain the bundled Linux hictk manifest." >&2
@@ -218,13 +220,31 @@ payload. It is used to keep the release inspectable, reduce bundled-browser
 release size, and avoid opaque native self-extracting packers.
 EOF
 
+runtime_options=()
+trim_native_heap_interval_ms=1000
+trim_native_heap_option="-XX:TrimNativeHeapInterval=${trim_native_heap_interval_ms}"
+jdk_java="$(dirname "$(readlink -f "${JLINK}")")/java"
+if [[ -z "${ABI_SUFFIX}" ]] &&
+   env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
+     "${jdk_java}" "${trim_native_heap_option}" -version >/dev/null 2>&1; then
+  # Keep this default in the runtime for both direct and GUI-started servers.
+  runtime_options+=("--add-options=${trim_native_heap_option}")
+fi
+
 "${JLINK}" \
   --add-modules "${RUNTIME_MODULES}" \
   --strip-debug \
   --no-header-files \
   --no-man-pages \
   --compress=zip-6 \
+  "${runtime_options[@]}" \
   --output "${APP_DIR}/runtime"
+
+if (( ${#runtime_options[@]} > 0 )); then
+  env -u JDK_JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS \
+    "${APP_DIR}/runtime/bin/java" -XX:+PrintFlagsFinal -version 2>&1 |
+    grep -E "TrimNativeHeapInterval[[:space:]]*=[[:space:]]*${trim_native_heap_interval_ms}[[:space:]]"
+fi
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
 #!/usr/bin/env bash

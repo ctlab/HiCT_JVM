@@ -16,7 +16,7 @@ import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def sha(path):
@@ -132,8 +132,9 @@ def main():
             with sync_playwright() as pw:
                 browser=pw.chromium.connect_over_cdp(endpoint);context=browser.contexts[0];context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page=context.pages[0];page.set_default_timeout(30000);check=BrowserCheck(page,out)
-                forward=lambda r:r.continue_(url=api+r.request.url.removeprefix('http://localhost:5000'))
-                page.route('http://localhost:5000/**',forward);page.reload();check.menu('File','Attach');check.settle()
+                configure_test_api(page, api)
+                page.reload(wait_until='domcontentloaded')
+                check.menu('File','Join running session');check.settle()
                 page.evaluate('api=>window.__hictBenchmark.manager().networkManager.onHostChanged(api)',api)
                 assert page.evaluate("typeof window.hictDesktop.saveCoordinateExport==='function' && typeof require==='undefined' && typeof process==='undefined'")
                 renderer_requests=[];page.on('request',lambda r:renderer_requests.append(r.url) if '/get_fasta_for_' in r.url or '/get_agp_for_' in r.url else None)
@@ -159,7 +160,7 @@ def main():
                 page.get_by_text('Selection FASTA saved: selection.fasta',exact=True).last.wait_for()
                 sequence=''.join(line for line in selection.read_text().splitlines() if not line.startswith('>'));assert sequence==('ACGTRYMKSWBDHVNAC'*3)[8:36]
                 results.append({'test':'native exact-region FASTA','sequence':sequence})
-                check.menu('Assembly','Export to AGP');agp=chosen/'assembly.agp';dialog(page,agp);page.get_by_text('Assembly AGP saved: assembly.agp',exact=True).last.wait_for();assert str(length) in agp.read_text()
+                check.menu('Assembly','Export AGP…');agp=chosen/'assembly.agp';dialog(page,agp);page.get_by_text('Assembly AGP saved: assembly.agp',exact=True).last.wait_for();assert str(length) in agp.read_text()
                 results.append({'test':'native AGP save'})
                 mode['value']='slow';cancelled=chosen/'cancelled.fasta';check.menu('Assembly','Export FASTA…');dialog(page,cancelled)
                 page.locator('[data-sonner-toast]').filter(has=page.get_by_text('Exporting Assembly FASTA…',exact=True)).get_by_role('button',name='Cancel',exact=True).click()
@@ -179,15 +180,16 @@ def main():
                 mode['value']='normal'
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,512000000)')
                 page.get_by_role('button',name='Reverse Selection',exact=True).click();check.settle()
-                check.menu('File','Save session');dialog(page);assert page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()')
-                check.menu('File','Save session');session=chosen/'session.json';dialog(page,session)
+                check.menu('File','Save session…');dialog(page);assert page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()')
+                check.menu('File','Save session…');session=chosen/'session.json';dialog(page,session)
                 page.get_by_role('button',name='Open saved session',exact=True).last.wait_for();assert not page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()')
                 assert json.loads(session.read_text())['version']==4
                 page.get_by_role('button',name='Open saved session',exact=True).last.click();page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for()
                 results.append({'test':'native Blob session cancellation, confirmation and readback restore'})
-                mode['value']='slow';navigation=chosen/'navigation.fasta';check.menu('Assembly','Export FASTA…');dialog(page,navigation);page.reload();page.wait_for_timeout(500)
+                mode['value']='slow';navigation=chosen/'navigation.fasta';check.menu('Assembly','Export FASTA…');dialog(page,navigation)
+                page.reload(wait_until='domcontentloaded');page.wait_for_timeout(500)
                 assert not navigation.exists() and not list(chosen.glob('.hict-save-*.tmp'));results.append({'test':'navigation aborts owned native transfer'})
-                check.menu('File','Attach');check.settle()
+                check.menu('File','Join running session');check.settle()
                 page.evaluate('api=>window.__hictBenchmark.manager().networkManager.onHostChanged(api)',api)
                 closing=chosen/'window-close.fasta';check.menu('Assembly','Export FASTA…');dialog(page,closing)
                 deadline=time.monotonic()+10

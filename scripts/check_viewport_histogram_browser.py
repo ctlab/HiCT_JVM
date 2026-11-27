@@ -13,7 +13,7 @@ import sys
 import threading
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -83,12 +83,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda r: r.continue_(
-                    url=api.url + r.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             publications = []
             request_timings = []
@@ -201,11 +196,9 @@ def main():
                     == 100
                     and r.status == 200
                 ):
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill("0")
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill("100")
                     page.locator("#gradient-apply-button").click()
                 check.settle()
@@ -215,7 +208,7 @@ def main():
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
                 assert (
-                    "25 finite" in label
+                    "25 values" in label
                     and "19 zeros" in label
                     and "0 missing" in label
                 ), label
@@ -288,7 +281,7 @@ def main():
                     )
                     small_windows.append(window)
                     expected_count = (window[1] - window[0]) * (window[3] - window[2])
-                    assert f"{expected_count} finite" in histogram.locator(
+                    assert f"{expected_count} values" in histogram.locator(
                         "svg"
                     ).get_attribute("aria-label")
                 # This 17 bp map fits entirely at the allowed zoom; larger windows below prove cropping.
@@ -302,14 +295,14 @@ def main():
                     "()=>window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()"
                 )
                 check.settle()
-                control = page.locator('select[title^="Expected and O/E"]')
+                control = page.locator('select[aria-label="Signal display"]')
                 control.select_option("OBSERVED_OVER_EXPECTED")
                 expect(control).to_be_enabled()
                 check.settle()
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
                 assert (
-                    "13 finite" in label
+                    "13 values" in label
                     and "7 zeros" in label
                     and "12 missing" in label
                 ), label
@@ -382,7 +375,7 @@ def main():
                 check.settle()
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
-                assert "25 finite" in label and "19 zeros" in label, label
+                assert "25 values" in label and "19 zeros" in label, label
                 before_primary = tile()
                 before_graph = post("/render_pipeline/get")
                 with page.expect_response(
@@ -410,8 +403,8 @@ def main():
                 check.settle()
                 hist = ready()
                 label = hist.locator("svg").get_attribute("aria-label")
-                assert label.startswith("Sampled viewport"), label
-                assert "65,536 finite" in label, label
+                assert label.startswith("Visible area"), label
+                assert "65,536 values" in label, label
                 record("large-viewport-is-explicitly-sampled-with-bounded-cell-count")
                 page.evaluate(
                     """()=>{window.__histTimings=[];const h=document.querySelector('.viewport-histogram');new MutationObserver(()=>{if(h.getAttribute('aria-busy')==='false'&&window.__histPanStart){window.__histTimings.push(performance.now()-window.__histPanStart);window.__histPanStart=0;}}).observe(h,{attributes:true,attributeFilter:['aria-busy']});}"""

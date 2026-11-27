@@ -6572,6 +6572,41 @@ Autobuild retains Gradle build verification and checks every bundled command bef
 
 Gradle refreshed the packaged manifest after changing only its version. A local JAR built with the remote checkout manifest and HDF5 native archive returned WebUI version 2.0.0 from /version.
 
+## Local browser checks with real assemblies
+
+The nightly browser workflow builds small fixtures. To validate browser rendering
+with real coverage, or exercise the sequence and large-file tools, run the
+following from the repository checkout using the same built JAR and WebUI as the
+release candidate. Serve the built WebUI from port 8187 and run HiCT on port 5107
+with the candidate toolchain and `HICT_BIND_HOST=127.0.0.1`. Start a fresh
+backend for each script and use a separate writable copy of its inputs.
+
+```sh
+work=$(mktemp -d /tmp/hict-browser-real.XXXXXXXX)
+mkdir "$work/data" "$work/results"
+cp --reflink=never /path/to/fixtures/combined_ind2_4DN.hict.hdf5 /path/to/fixtures/quad_combined_ind2.fasta "$work/data/"
+DATA_DIR="$work/data" PROCESSED_DIR="$work/processed" HICT_BIND_HOST=127.0.0.1 VXPORT=5107 WEBUI_PORT=8187 \
+  WEBUI_ROOT=/path/to/webui/dist HICT_TOOLCHAIN_DIR=/path/to/toolchain \
+  java -jar /path/to/hict.jar start-server
+```
+
+In a second shell, set `work` to the directory created above and run:
+
+```sh
+python scripts/check_moddotplot_zoom_browser.py \
+  --url http://127.0.0.1:8187/ --api http://127.0.0.1:5107 \
+  --data-dir "$work/data" --output "$work/results"
+```
+
+Use the same arguments with `check_blast_browser.py`,
+`check_sequence_search_delivery.py`, and `check_large_fasta_browser.py`. BLAST
+and ModDotPlot require their bundled tools. For
+`check_release_review_browser.py` and `check_rotated_export_browser.py`, also
+copy `ind2.self.hict.hdf5` into the working data directory before startup. For
+`check_sqrt_zoom_fit_browser.py`, replace `--data-dir "$work/data"` with
+`--files combined_ind2_4DN.hict.hdf5`. Keep the result JSON and logs, then
+remove the disposable inputs.
+
 ## Linux HDF5 startup — 2026-11-18
 
 Five paired JVM starts used the published 2.0.364 Linux JAR. The candidate

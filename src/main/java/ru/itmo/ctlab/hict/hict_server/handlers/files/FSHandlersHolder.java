@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
 import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
@@ -51,6 +52,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
@@ -58,6 +60,10 @@ import java.util.stream.Collectors;
 public class FSHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final FileFingerprintService fingerprintService = new FileFingerprintService();
+  private static final Pattern RUNTIME_COMPONENT = Pattern.compile(
+    "(?:(?:nativelib-loader_|hict-jhdf5-native-(?:archive-)?|hict-native-processing-|hict-hic-pipeline-|"
+      + "hict-hictk-load-pipeline-|hict-mcool-pyramid-pipeline-|hict-hict-to-mcool-)[0-9]+"
+      + "|hict-jhdf5-native-resource-[0-9]+\\.tar\\.gz|hict-current-assembly-[0-9]+\\.agp)");
   private static final List<String> FASTA_SUFFIXES = List.of(
     ".fasta", ".fa", ".fna", ".fas",
     ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
@@ -309,14 +315,18 @@ public class FSHandlersHolder extends HandlersHolder {
 
   private static @NotNull List<Path> listRegularFiles(final @NotNull Path dataDirectory) {
     final var files = new ArrayList<Path>();
-    final var uploadDirectory = dataDirectory.resolve(UPLOAD_DIRECTORY_NAME);
     try {
-      Files.walkFileTree(dataDirectory, new SimpleFileVisitor<>() {
+      // A configured data root may itself be a symlink. Resolve that root
+      // without following directory symlinks inside it during discovery.
+      final var discoveryRoot = dataDirectory.toRealPath();
+      final var exclusions = new DiscoveryExclusions(discoveryRoot,
+        discoveryRoot.resolve(UPLOAD_DIRECTORY_NAME), realPathIfAvailable(configuredRuntimeDirectory()));
+      Files.walkFileTree(discoveryRoot, new SimpleFileVisitor<>() {
         @Override
         public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
                                                           final @NotNull BasicFileAttributes attrs) {
-          if (dir.equals(uploadDirectory)) return FileVisitResult.SKIP_SUBTREE;
-          if (!dir.equals(dataDirectory) && attrs.isOther()) {
+          if (!dir.equals(discoveryRoot) && exclusions.contains(dir)) return FileVisitResult.SKIP_SUBTREE;
+          if (!dir.equals(discoveryRoot) && attrs.isOther()) {
             log.debug("Skipping non-standard directory while listing files: {}", dir);
             return FileVisitResult.SKIP_SUBTREE;
           }
@@ -326,8 +336,8 @@ public class FSHandlersHolder extends HandlersHolder {
         @Override
         public @NotNull FileVisitResult visitFile(final @NotNull Path file,
                                                   final @NotNull BasicFileAttributes attrs) {
-          if (attrs.isRegularFile() || Files.isRegularFile(file)) {
-            files.add(file);
+          if (!exclusions.contains(file) && (attrs.isRegularFile() || Files.isRegularFile(file))) {
+            files.add(dataDirectory.resolve(discoveryRoot.relativize(file)));
           }
           return FileVisitResult.CONTINUE;
         }
@@ -365,9 +375,9 @@ public class FSHandlersHolder extends HandlersHolder {
     if (!directory.startsWith(normalizedDataDirectory)) {
       throw new IllegalArgumentException("Directory is outside the configured data directory");
     }
-    final var uploadDirectory = normalizedDataDirectory.resolve(UPLOAD_DIRECTORY_NAME);
-    if (directory.startsWith(uploadDirectory)) {
-      throw new IllegalArgumentException("Conversion uploads are available through the conversion job");
+    final var exclusions = new DiscoveryExclusions(normalizedDataDirectory);
+    if (exclusions.contains(directory)) {
+      throw new IllegalArgumentException("This folder is reserved for HiCT runtime files");
     }
     if (!Files.isDirectory(directory)) {
       throw new IllegalArgumentException("Directory does not exist: " + cleanRequestedDirectory);
@@ -376,11 +386,16 @@ public class FSHandlersHolder extends HandlersHolder {
     final var entries = new ArrayList<FileEntry>();
     try (final var stream = Files.list(directory)) {
       stream.forEach(path -> {
-        if (path.equals(uploadDirectory)) return;
-        if (Files.isDirectory(path)) {
-          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "directory"));
-        } else if (Files.isRegularFile(path)) {
-          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "file"));
+        if (exclusions.contains(path)) return;
+        try {
+          final var attrs = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+          final var target = attrs.isSymbolicLink() ? Files.readAttributes(path, BasicFileAttributes.class) : attrs;
+          if (target.isDirectory() || target.isRegularFile()) {
+            entries.add(toDetailedFileEntry(normalizedDataDirectory, path, target.isDirectory() ? "directory" : "file",
+              attrs.isSymbolicLink(), target));
+          }
+        } catch (IOException ex) {
+          log.debug("Skipping unreadable directory entry: {}", path, ex);
         }
       });
     } catch (final IOException e) {
@@ -394,31 +409,54 @@ public class FSHandlersHolder extends HandlersHolder {
     return entries;
   }
 
-  private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
-                                                        final @NotNull java.nio.file.Path path) {
-    return toDetailedFileEntry(dataDirectory, path, Files.isDirectory(path) ? "directory" : "file");
+  private static Path configuredRuntimeDirectory() {
+    return Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+  }
+
+  private static Path realPathIfAvailable(Path path) {
+    try {
+      return path.toRealPath();
+    } catch (IOException unavailable) {
+      return path;
+    }
+  }
+
+  private record DiscoveryExclusions(Path root, Path uploadDirectory, Path runtimeDirectory) {
+    private DiscoveryExclusions(Path root) {
+      this(root.toAbsolutePath().normalize(),
+        root.toAbsolutePath().normalize().resolve(UPLOAD_DIRECTORY_NAME),
+        configuredRuntimeDirectory());
+    }
+
+    boolean contains(Path path) {
+      final var absolute = path.toAbsolutePath().normalize();
+      if (absolute.startsWith(uploadDirectory)) return true;
+      if (absolute.equals(root)) return false;
+      for (var part : root.relativize(absolute)) {
+        if (JobArtifacts.isStagingDirectoryName(part.toString())) return true;
+      }
+      if (!absolute.startsWith(runtimeDirectory) || absolute.equals(runtimeDirectory)) return false;
+      final var component = runtimeDirectory.relativize(absolute).getName(0).toString();
+      return component.equals("hict-toolchains") || RUNTIME_COMPONENT.matcher(component).matches();
+    }
   }
 
   private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
-                                                        final @NotNull java.nio.file.Path path,
-                                                        final @NotNull String type) {
-    final var relative = dataDirectory.relativize(path).toString();
-    final var fileName = path.getFileName() == null ? relative : path.getFileName().toString();
-    final var lowered = fileName.toLowerCase();
-    final int dotIndex = lowered.lastIndexOf('.');
-    final var extension = dotIndex >= 0 ? lowered.substring(dotIndex) : "";
-    final var symbolicLink = Files.isSymbolicLink(path);
+                                                        final @NotNull java.nio.file.Path path) {
     try {
-      final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
-      return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
-    } catch (final IOException e) {
-      try {
-        final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
-      } catch (final IOException ignored) {
-        return new FileEntry(relative, fileName, -1L, 0L, extension, type, symbolicLink);
-      }
+      final var attrs = Files.readAttributes(path, BasicFileAttributes.class);
+      return toDetailedFileEntry(dataDirectory, path, attrs.isDirectory() ? "directory" : "file", Files.isSymbolicLink(path), attrs);
+    } catch (IOException ignored) {
+      return toDetailedFileEntry(dataDirectory, path, "file", Files.isSymbolicLink(path), null);
     }
+  }
+
+  private static FileEntry toDetailedFileEntry(Path root, Path path, String type, boolean symlink, BasicFileAttributes attrs) {
+    final var name = path.getFileName().toString();
+    final var dot = name.lastIndexOf('.');
+    return new FileEntry(root.relativize(path).toString(), name, attrs == null ? -1L : attrs.size(),
+      attrs == null ? 0L : attrs.lastModifiedTime().toMillis(), dot < 0 ? "" : name.substring(dot).toLowerCase(java.util.Locale.ROOT),
+      type, symlink);
   }
 
   private record FileEntry(@NotNull String path,

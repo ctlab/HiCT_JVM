@@ -8,6 +8,7 @@ coverage independently of nonzero values.
 from __future__ import annotations
 import hashlib
 import json
+import time
 import uuid
 from pathlib import Path
 import h5py
@@ -17,7 +18,7 @@ SCALE = 10_000
 SCHEMA = "hict-sequence-overlay-v1"
 # Keep in sync with AssemblyAnalysisPlan's custom source-bin layout.
 SEQUENCE_STRIPE_WIDTH = 256
-MAX_SYNTHETIC_BINS = 4_000_000
+MAX_STRIPES = 1_000_000  # Bound metadata allocations in standalone adapter calls.
 
 
 def canonical_json(value):
@@ -58,7 +59,7 @@ def _sequence_grid(source, base, resolution):
     lengths = [int(value) for value in source['contig_info/contig_length_bp']]
     counts = [(length + resolution - 1) // resolution for length in lengths]
     size = sum(counts)
-    if not 0 < size <= MAX_SYNTHETIC_BINS:
+    if not 0 < size <= MAX_STRIPES * SEQUENCE_STRIPE_WIDTH:
         raise ValueError('Custom resolution exceeds the source bin budget')
     width = SEQUENCE_STRIPE_WIDTH
     stripe_count = (size + width - 1) // width
@@ -88,7 +89,8 @@ def _sequence_grid(source, base, resolution):
 
 
 def _create_empty(source, dest, resolutions):
-    source.copy('contig_info', dest)
+    if 'contig_info' not in dest:
+        source.copy('contig_info', dest)
     for resolution in resolutions:
         name = f'resolutions/{resolution}'
         base = dest.require_group(name)
@@ -120,51 +122,82 @@ def _create_empty(source, dest, resolutions):
 
 class OverlayWriter:
     """Append bounded physical-block patches to a never-before-existing file."""
-    def __init__(self, source_path, output_path, resolutions, settings, previous=None, unit='identity_percent', scale=SCALE):
+    def __init__(self, source_path, output_path, resolutions, settings, previous=None,
+                 unit='identity_percent', scale=SCALE, overviews=(), template_name=None, job_id=None):
         self.path = Path(output_path)
         self.handle = None
         if unit not in ('identity_percent', 'alignment_sample_count') or scale < 1:
             raise ValueError('Unsupported overlay score unit/scale')
         self.unit, self.scale = unit, scale
-        self.resolutions = sorted(set(map(int, resolutions)))
-        if not self.resolutions or any(r <= 0 for r in self.resolutions):
+        self.direct = sorted(set(map(int, resolutions)))
+        self.overviews = sorted(set(overviews) - set(self.direct))
+        run_levels = sorted(self.direct + self.overviews)
+        if not run_levels or any(r <= 0 for r in run_levels):
             raise ValueError('Choose positive map resolutions')
         # h5py mode x makes accidental overwrite impossible, even after a race.
         with h5py.File(source_path, 'r') as source:
-            identity = _metadata_digest(source, self.resolutions)
+            native_levels = sorted(map(int, source.get('resolutions', ())))
+            identity = _metadata_digest(source, native_levels)
             compatibility = dict(schema=SCHEMA, sourceMetadataSha256=identity,
-                                 resolutions=self.resolutions, settings=settings, scale=scale, unit=unit)
+                                 settings=settings, scale=scale, unit=unit)
             self.compatibility = canonical_json(compatibility)
             if previous:
                 with h5py.File(previous, 'r') as old:
-                    if not old['sequence_analysis'].attrs.get('complete', False):
+                    old_meta = old['sequence_analysis']
+                    if not old_meta.attrs.get('complete', False):
                         raise ValueError('Cannot accumulate an incomplete overlay')
-                    if old['sequence_analysis'].attrs.get('compatibility') != self.compatibility:
+                    old_compatibility = json.loads(old_meta.attrs.get('compatibility', '{}'))
+                    if 'resolutions' in old_compatibility:
+                        # Older files hashed only the selected levels. Verify that
+                        # hash against this template before adopting the new key.
+                        old_levels = old_compatibility.pop('resolutions')
+                        old_compatibility.pop('analysisLevels', None)
+                        if old_compatibility.get('sourceMetadataSha256') == _metadata_digest(source, old_levels):
+                            old_compatibility['sourceMetadataSha256'] = identity
+                        previous_settings = old_compatibility.get('settings', {})
+                        if previous_settings.get('kind') == 'alignment-dotplot':
+                            previous_settings.get('parameters', {}).pop('threads', None)
+                    if old_compatibility != compatibility:
                         raise ValueError('Overlay settings/source differ; create a separate overlay')
+                    previous_levels = set(map(int, old['resolutions']))
                     with h5py.File(self.path, 'x') as out:
                         for key in old:
                             old.copy(key, out)
                         for key, value in old.attrs.items():
                             out.attrs[key] = value
+                        _create_empty(source, out, sorted(set(run_levels) - previous_levels))
             else:
                 with h5py.File(self.path, 'x') as out:
-                    _create_empty(source, out, self.resolutions)
+                    _create_empty(source, out, run_levels)
                     meta = out.create_group('sequence_analysis')
-                    meta.attrs['compatibility'] = self.compatibility
                     meta.attrs['score_unit'] = unit
                     meta.attrs['score_scale'] = scale
                     meta.attrs['kind'] = settings.get('kind', 'moddotplot')
                     meta.create_group('updates')
         self.handle = h5py.File(self.path, 'r+')
-        self.handle['sequence_analysis'].attrs['complete'] = False
-        self.update = self.handle['sequence_analysis/updates'].create_group(str(uuid.uuid4()))
-        self.cursors = {}
+        self.resolutions = sorted(map(int, self.handle['resolutions']))
+        meta = self.handle['sequence_analysis']
+        meta.attrs['complete'] = False
+        meta.attrs['compatibility'] = self.compatibility
+        meta.attrs['resolutions'] = self.resolutions
+        meta.attrs['explicit_coverage'] = True
+        self.handle.attrs['template_name'] = template_name or Path(source_path).name
+        updates = meta['updates']
+        self.update = updates.create_group(str(uuid.uuid4()))
+        self.update.attrs['ordinal'] = len(updates)
+        self.update.attrs['created_at_ms'] = time.time_ns() // 1_000_000
+        self.update.attrs['analysis_levels'] = self.direct
+        self.update.attrs['overview_levels'] = np.asarray(self.overviews, dtype=np.int64)
+        if job_id:
+            self.update.attrs['job_id'] = job_id
+        for bp in self.direct:
+            self.handle[f"resolutions/{bp}"].attrs["method"] = "direct"
         self.capacities = {}
 
-    def record_coverage(self, resolution, rows, columns, provenance):
+    def record_coverage(self, resolution, rows, columns, provenance, update=None):
         """Axes contain physical (stripe, bin) pairs, in frozen assembly order."""
         rows, columns = self._axis(resolution, rows), self._axis(resolution, columns)
-        group = self.update.create_group(str(int(resolution)))
+        group = (self.update if update is None else update).create_group(str(int(resolution)))
         group.create_dataset('provenance', data=canonical_json(provenance), dtype=h5py.string_dtype('utf-8'))
         for name, axis in (('row_bins', rows), ('column_bins', columns)):
             group.create_dataset(name, data=axis, compression='gzip', shuffle=True)
@@ -266,7 +299,8 @@ class OverlayWriter:
 
     def close(self, success=True):
         if self.handle is not None:
-            self.handle['sequence_analysis'].attrs['complete'] = bool(success)
+            if 'sequence_analysis' in self.handle:
+                self.handle['sequence_analysis'].attrs['complete'] = bool(success)
             self.handle.flush()
             self.handle.close()
             self.handle = None
@@ -275,4 +309,14 @@ class OverlayWriter:
         return self
 
     def __exit__(self, kind, value, traceback):
+        try:
+            if kind is None and self.overviews:
+                from overview import summarize
+                for bp in self.overviews:
+                    source = max(r for r in self.direct if r < bp)
+                    print(f'Building {bp} bp overview from {source} bp scores', flush=True)
+                    summarize(self, source, bp, patch_only=True)
+        except BaseException:
+            self.close(success=False)
+            raise
         self.close(success=kind is None)

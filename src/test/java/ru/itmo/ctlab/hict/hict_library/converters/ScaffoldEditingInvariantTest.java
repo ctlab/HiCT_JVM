@@ -272,6 +272,46 @@ class ScaffoldEditingInvariantTest {
         if (firstDigest == null) firstDigest = digest; else assertEquals(firstDigest, digest, "Accumulation must not change the prior version");
       }
       assertNotEquals(outputs.getFirst(), outputs.getLast());
+      shared.remove("chunkedFile");
+      shared.remove("linkedFastaPrimaryPath");
+      var gzip = dir.resolve("standalone.fa.gz");
+      try (var compressed = new java.util.zip.GZIPOutputStream(java.nio.file.Files.newOutputStream(gzip))) {
+        java.nio.file.Files.copy(fasta, compressed);
+      }
+      var standalone = initialRequest.copy().put("scope", "assembly")
+        .put("sourceFastaFilename", gzip.getFileName().toString())
+        .put("resolutions", new io.vertx.core.json.JsonArray(List.of(1000L, 2000L)));
+      var standaloneRequest = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/moddotplot/jobs"))
+        .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString(standalone.encode())).build();
+      var accepted = client.send(standaloneRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+      assertEquals(202, accepted.statusCode(), accepted.body());
+      var id = new io.vertx.core.json.JsonObject(accepted.body()).getString("jobId");
+      var statusRequest = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/jobs/list"))
+        .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}")).build();
+      io.vertx.core.json.JsonObject status = null;
+      long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(45);
+      while (System.nanoTime() < deadline) {
+        var rows = new io.vertx.core.json.JsonArray(client.send(statusRequest, java.net.http.HttpResponse.BodyHandlers.ofString()).body());
+        status = rows.stream().map(x -> (io.vertx.core.json.JsonObject) x)
+          .filter(x -> id.equals(x.getString("jobId"))).findFirst().orElseThrow();
+        if (List.of("finished", "failed", "cancelled").contains(status.getString("status"))) break;
+        Thread.sleep(50);
+      }
+      assertNotNull(status);
+      assertEquals("finished", status.getString("status"), status.encode());
+      assertNull(status.getJsonObject("resultSet"));
+      var result = handler.backgroundJobs().stream().filter(entry -> id.equals(entry.id())).findFirst().orElseThrow();
+      assertEquals("open_map", result.outputs().getFirst().action());
+      assertEquals(gzip.getFileName().toString(), result.outputs().getFirst().fastaFilename());
+      try (var identityMap = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(dir.resolve(status.getString("outputFile")), 1, 2))) {
+        assertEquals(List.of("A", "B", "C"), identityMap.getAssemblyInfo().contigs().stream()
+          .map(tuple -> tuple.descriptor().getContigName()).toList());
+        assertArrayEquals(new long[]{0L, 1000L, 2000L}, identityMap.getResolutions());
+        assertEquals(ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.Units.IDENTITY_PERCENT, identityMap.getSourceMetadata().units());
+        var matrix = (ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix) identityMap.matrixQueries()
+          .getSubmatrix(ResolutionDescriptor.fromBpResolution(1000, identityMap), 0, 0, 3, 3, false).matrix();
+        assertEquals(1_000_000, matrix.values()[0][1]);
+      }
       server.close().toCompletionStage().toCompletableFuture().get();
     } finally { scheduler.close(); vertx.close().toCompletionStage().toCompletableFuture().get(); }
   }
@@ -590,6 +630,29 @@ class ScaffoldEditingInvariantTest {
       var before = f.snapshotAssembly();
       ops.moveSelectionRangeBp(6001, 6002, 10000);
       assertEquals(before, f.snapshotAssembly(), "Destination within source scaffold is a no-op");
+    }
+  }
+
+  @Test void exactMoveDetachesOnlyOneContigAndPreservesRemainingScaffold() {
+    try (var file = fixture()) {
+      final var operations = file.scaffoldingOperations();
+      final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      operations.scaffoldRegion(0, 18000, bp, QueryLengthUnit.BASE_PAIRS, null);
+      final var before = file.snapshotAssembly();
+      final var original = file.getScaffoldTree().getScaffoldList().getFirst();
+      assertThrows(IllegalArgumentException.class, () -> operations.moveSelectionRangeBp(6001, 12000, 18000, true));
+      assertThrows(IllegalArgumentException.class, () -> operations.moveSelectionRangeBp(0, 12000, 18000, true));
+      assertEquals(before, file.snapshotAssembly());
+
+      operations.moveSelectionRangeBp(6000, 12000, 18000, true);
+      assertEquals(List.of("A", "C", "B"), file.getContigTree().getOrderedContigList().stream()
+        .map(contig -> contig.descriptor().getContigName()).toList());
+      final var scaffolds = file.getScaffoldTree().getScaffoldList();
+      assertEquals(1, scaffolds.size());
+      assertEquals(original.scaffoldDescriptor(), scaffolds.getFirst().scaffoldDescriptor());
+      assertEquals(0, scaffolds.getFirst().scaffoldBordersBP().startBP());
+      assertEquals(12000, scaffolds.getFirst().scaffoldBordersBP().endBP());
+      assertNull(file.getScaffoldTree().getScaffoldAtBp(12000));
     }
   }
 

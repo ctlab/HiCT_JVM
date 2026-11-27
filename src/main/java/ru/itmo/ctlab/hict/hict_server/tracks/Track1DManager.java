@@ -75,6 +75,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 @Slf4j
@@ -90,12 +91,8 @@ public class Track1DManager implements AutoCloseable {
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
-  private static final int FEATURE_DIRECT_RENDER_MIN_FEATURES = 1_024;
   private static final int FEATURE_DIRECT_RENDER_MAX_FEATURES = 12_000;
-  private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
-  private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
   private static final int FEATURE_DENSITY_MAX_BINS = 2_500;
-  private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_SECONDARY = "__internal__/cooler_weights/SECONDARY";
@@ -226,6 +223,36 @@ public class Track1DManager implements AutoCloseable {
   public @NotNull TrackSummary openTrack(final @NotNull String relativeFilename,
                                          final String requestedName,
                                          final String requestedColor) {
+    try (var candidate = prepareTrack(relativeFilename, requestedName, requestedColor)) {
+      return registerTrack(candidate);
+    }
+  }
+
+  public static final class PreparedTrack implements AutoCloseable {
+    private final String filename, name, color;
+    private final TrackType type;
+    private final List<String> warnings;
+    private TrackDataSource source;
+
+    private PreparedTrack(String filename, String name, String color, TrackType type, TrackDataSource source,
+                          List<String> warnings) {
+      this.filename = filename;
+      this.name = name;
+      this.color = color;
+      this.type = type;
+      this.source = source;
+      this.warnings = warnings;
+    }
+
+    @Override public synchronized void close() {
+      if (source != null) {
+        closeDataSourceQuietly(source);
+        source = null;
+      }
+    }
+  }
+
+  public PreparedTrack prepareTrack(String relativeFilename, String requestedName, String requestedColor) {
     final var resolvedPath = resolveDataPath(relativeFilename);
     final var trackType = TrackType.fromPath(resolvedPath);
     if (trackType == TrackType.UNSUPPORTED) {
@@ -233,11 +260,9 @@ public class Track1DManager implements AutoCloseable {
         "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/GFF/GTF/BigWig/BAM."
       );
     }
-    final var trackId = "trk_" + this.trackCounter.incrementAndGet();
     final var resolvedName = (requestedName == null || requestedName.isBlank())
       ? resolvedPath.getFileName().toString()
       : requestedName.trim();
-    final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
     final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
     final var report = dataSource.importReport();
     if (dataSource instanceof InMemoryTrackDataSource && dataSource.featureCountHint() == 0L) {
@@ -248,31 +273,28 @@ public class Track1DManager implements AutoCloseable {
           + ". The track list was not changed."
       );
     }
-    final var state = new TrackState(
-      trackId,
-      resolvedName,
-      trackType,
-      relativeFilename,
-      color,
-      true,
-      dataSource,
-      BamRenderMode.COVERAGE,
-      BigWigAggregationMode.MAX,
-      false,
-      true,
-      0.0d,
-      1.0d
-    );
+    return new PreparedTrack(relativeFilename, resolvedName, requestedColor, trackType, dataSource, report.warnings());
+  }
+
+  public TrackSummary registerTrack(PreparedTrack candidate) {
+    this.lock.writeLock().lock();
     try {
-      this.lock.writeLock().lock();
-      this.tracks.put(trackId, state);
-    } catch (final RuntimeException ex) {
-      closeDataSourceQuietly(dataSource);
-      throw ex;
+      synchronized (candidate) {
+        if (candidate.source == null) throw new IllegalStateException("Track preparation was cancelled");
+        final long number = this.trackCounter.incrementAndGet();
+        final var trackId = "trk_" + number;
+        final var color = normalizeColor(candidate.color, colorForIndex((int) number - 1));
+        final var state = new TrackState(
+          trackId, candidate.name, candidate.type, candidate.filename, color, true,
+          candidate.source, BamRenderMode.COVERAGE, BigWigAggregationMode.MAX, false, true, 0, 1
+        );
+        this.tracks.put(trackId, state);
+        candidate.source = null;
+        return state.toSummary().withImportWarnings(candidate.warnings);
+      }
     } finally {
       this.lock.writeLock().unlock();
     }
-    return state.toSummary().withImportWarnings(report.warnings());
   }
 
   public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
@@ -3606,50 +3628,143 @@ public class Track1DManager implements AutoCloseable {
     }
   }
 
+  private static final class FeatureEndIndex {
+    private final List<FeatureRange> features;
+    private final long[] maxEnds;
+    private final long[] sortedEnds;
+    private final int leafCount;
+
+    private FeatureEndIndex(List<FeatureRange> features) {
+      this.features = features;
+      this.leafCount = features.size() <= 1 ? 1 : Integer.highestOneBit(features.size() - 1) << 1;
+      this.maxEnds = new long[2 * leafCount];
+      for (int i = 0; i < features.size(); i++) maxEnds[leafCount + i] = features.get(i).end();
+      for (int i = leafCount - 1; i > 0; i--) maxEnds[i] = Math.max(maxEnds[2 * i], maxEnds[2 * i + 1]);
+      this.sortedEnds = features.stream().mapToLong(FeatureRange::end).sorted().toArray();
+    }
+
+    private int nextOverlap(int from, int until, long start) {
+      return nextOverlap(1, 0, leafCount, from, until, start);
+    }
+
+    private int nextOverlap(int node, int left, int right, int from, int until, long start) {
+      if (until <= left || from >= right || maxEnds[node] <= start) return until;
+      if (right - left == 1) return left;
+      final int middle = (left + right) >>> 1;
+      final int inLeft = nextOverlap(node * 2, left, middle, from, until, start);
+      return inLeft < until ? inLeft : nextOverlap(node * 2 + 1, middle, right, from, until, start);
+    }
+  }
+
   private record InMemoryTrackDataSource(@NotNull Map<String, List<FeatureRange>> featuresBySource,
                                          long featureCount,
                                          boolean hasSignalValues,
                                          boolean hasStructuredFeatures,
                                          @NotNull RenderStyle preferredRenderStyle,
-                                         @NotNull Map<String, long[]> prefixEnds,
+                                         @NotNull Map<String, FeatureEndIndex> featureIndex,
+                                         @NotNull Map<String, FeatureEndIndex> densityIndex,
                                          @NotNull ParseReport report) implements TrackDataSource {
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style) {
-      this(features, count, signals, structured, style, indexEnds(features), ParseReport.EMPTY);
+      this(features, count, signals, structured, style, ParseReport.EMPTY);
     }
+
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style, ParseReport report) {
+      this(features, count, signals, structured, style, indexFeatures(features), report);
+    }
+
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style,
-                                   ParseReport report) {
-      this(features, count, signals, structured, style, indexEnds(features), report);
+                                   Map<String, FeatureEndIndex> index, ParseReport report) {
+      this(features, count, signals, structured, style, index, indexDensity(index), report);
     }
-    @Override
-    public @NotNull ParseReport importReport() {
+
+    @Override public @NotNull ParseReport importReport() {
       return report;
     }
-    private static Map<String, long[]> indexEnds(Map<String, List<FeatureRange>> features) {
-      var result = new HashMap<String, long[]>();
-      features.forEach((source, ranges) -> {
-        var ends = new long[ranges.size()]; long maximum = 0;
-        for (int i = 0; i < ranges.size(); i++) ends[i] = maximum = Math.max(maximum, ranges.get(i).end());
-        result.put(source, ends);
-      });
-      return result;
+
+    private static Map<String, FeatureEndIndex> indexFeatures(Map<String, List<FeatureRange>> features) {
+      var index = new HashMap<String, FeatureEndIndex>();
+      features.forEach((source, ranges) -> index.put(source, new FeatureEndIndex(ranges)));
+      return index;
     }
+
+    private static Map<String, FeatureEndIndex> indexDensity(Map<String, FeatureEndIndex> index) {
+      final var wholeSequenceTypes = java.util.Set.of("region", "chromosome", "contig", "scaffold", "supercontig");
+      var density = new HashMap<String, FeatureEndIndex>();
+      index.forEach((source, full) -> {
+        final var ranges = full.features.stream()
+          .filter(feature -> feature.featureType() == null ||
+            !wholeSequenceTypes.contains(feature.featureType().toLowerCase(java.util.Locale.ROOT)))
+          .toList();
+        density.put(source, ranges.size() == full.features.size() ? full : new FeatureEndIndex(ranges));
+      });
+      return density;
+    }
+
+    // Count half-open source intervals using immutable endpoint ranks. Edits only
+    // change the assembly-to-source mapping, including at a newly split bin.
+    private static long countOverlaps(FeatureEndIndex index, SourceInterval interval) {
+      return lowerBoundByStart(index.features, interval.end()) - firstEndAfter(index.sortedEnds, interval.start());
+    }
+
+    private long additionalOverlaps(String source, SourceInterval piece, long previousEnd) {
+      final var index = densityIndex.get(source);
+      if (previousEnd == 0) return countOverlaps(index, piece);
+      if (piece.end() <= previousEnd) return 0;
+      final var features = index.features;
+      final int previousStartLimit = lowerBoundByStart(features, previousEnd);
+      if (piece.start() <= previousEnd) {
+        return lowerBoundByStart(features, piece.end()) - previousStartLimit;
+      }
+      // Each feature spanning the gap has already contributed to this bucket.
+      long count = countOverlaps(index, piece);
+      for (int i = index.nextOverlap(0, previousStartLimit, piece.start()); i < previousStartLimit;
+           i = index.nextOverlap(i + 1, previousStartLimit, piece.start())) {
+        count--;
+      }
+      return count;
+    }
+
+    private static int firstEndAfter(long[] ends, long position) {
+      int lo = 0, hi = ends.length;
+      while (lo < hi) {
+        int mid = (lo + hi) >>> 1;
+        if (ends[mid] <= position) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    }
+
+    private static final Pattern BED_TRACK_SETTING = Pattern.compile(
+      "([a-zA-Z][a-zA-Z0-9_]*)=(?:\"([^\"]*)\"|(\\S+))"
+    );
+
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
       boolean hasSignalValues = false;
       boolean hasStructuredFeatures = false;
-      boolean hasStrandFeatures = false;
-      boolean hasThickFeatures = false;
-      boolean hasBed12Rows = false;
+      boolean annotationRows = false;
       final var report = new ParseReport();
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
+        String trackRgb = null;
         long lineNo = 0L;
         while ((line = reader.readLine()) != null) {
           lineNo++;
-          if (line.isBlank() || line.startsWith("#") || line.startsWith("track ") || line.startsWith("browser ")) {
+          if (line.startsWith("track ")) {
+            trackRgb = null;
+            final var settings = BED_TRACK_SETTING.matcher(line);
+            while (settings.find()) {
+              if (settings.group(1).equals("color")) {
+                trackRgb = settings.group(2) != null ? settings.group(2) : settings.group(3);
+              }
+            }
+            continue;
+          }
+          if (line.isBlank() || line.startsWith("#") || line.startsWith("browser ")) {
             continue;
           }
           final var fields = line.split("\t");
@@ -3697,7 +3812,6 @@ public class Track1DManager implements AutoCloseable {
               if (clampedThickEnd > clampedThickStart) {
                 thickStart = clampedThickStart;
                 thickEnd = clampedThickEnd;
-                hasThickFeatures = true;
               }
             } catch (final NumberFormatException ignored) {
               // Optional BED fields, ignore malformed thickStart/thickEnd.
@@ -3724,8 +3838,8 @@ public class Track1DManager implements AutoCloseable {
           if (fields.length >= 5 && !fields[4].isBlank()) {
             attributes.put("score", fields[4]);
           }
-          if (hasStrand) {
-            attributes.put("strand", Objects.requireNonNull(strand));
+          if (strand != null) {
+            attributes.put("strand", strand);
           }
           if (thickStart != null && thickEnd != null) {
             attributes.put("thickStart", Long.toString(thickStart));
@@ -3733,6 +3847,9 @@ public class Track1DManager implements AutoCloseable {
           }
           if (fields.length >= 9 && !fields[8].isBlank()) {
             attributes.put("itemRgb", fields[8]);
+          }
+          if (trackRgb != null) {
+            attributes.put("trackRgb", trackRgb);
           }
           if (fields.length >= 12) {
             attributes.put("blockCount", fields[9]);
@@ -3742,19 +3859,15 @@ public class Track1DManager implements AutoCloseable {
           for (int fieldIndex = 12; fieldIndex < fields.length; fieldIndex++) {
             attributes.put("field" + (fieldIndex + 1), fields[fieldIndex]);
           }
-          if (fields.length >= 12) {
-            hasBed12Rows = true;
-          }
+          annotationRows |= fields.length != 4 || col4Numeric == null;
+          final var blocks = fields.length >= 12 ? parseBedBlocks(fields, start, end, thickStart, thickEnd, report, lineNo) : List.<FeatureBlock>of();
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, List.of(), attributes));
+            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, blocks, attributes));
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
           }
           if (strand != null || (thickStart != null && thickEnd != null)) {
             hasStructuredFeatures = true;
-            if (strand != null) {
-              hasStrandFeatures = true;
-            }
           }
           total++;
         }
@@ -3767,7 +3880,7 @@ public class Track1DManager implements AutoCloseable {
         total,
         hasSignalValues,
         hasStructuredFeatures,
-        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows),
+        annotationRows ? RenderStyle.FEATURE : RenderStyle.SIGNAL,
         report
       );
     }
@@ -4024,171 +4137,81 @@ public class Track1DManager implements AutoCloseable {
                                                      final int widthPx,
                                                      final long bpResolution) {
       final int safeWidth = Math.max(1, widthPx);
-      final int maxDirectFeatures = Math.max(
-        FEATURE_DIRECT_RENDER_MIN_FEATURES,
-        Math.min(
-          Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES),
-          safeWidth * FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL
-        )
-      );
-      final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
-      forEachProjectedFeature(
-        sourceToAssemblySegments,
-        queryStartPx,
-        queryEndPx,
-        bpResolution,
-        projected::add,
-        maxDirectFeatures + 1
-      );
-      projected.sort(
-        Comparator.comparingLong(ProjectedFeature::startPx)
-          .thenComparingLong(ProjectedFeature::endPx)
-      );
-      if (projected.size() <= maxDirectFeatures) {
+      long overlaps = 0;
+      for (var source : featuresBySource.keySet()) {
+        for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
+          var interval = mapVisiblePxIntervalToSegmentSource(segment, queryStartPx, queryEndPx, bpResolution);
+          if (interval.isPresent()) overlaps += countOverlaps(featureIndex.get(source), interval.get());
+        }
+      }
+      if (overlaps <= FEATURE_DIRECT_RENDER_MAX_FEATURES) {
+        var projected = new ArrayList<ProjectedFeature>((int) overlaps);
+        forEachProjectedFeature(sourceToAssemblySegments, queryStartPx, queryEndPx, bpResolution,
+          projected::add, FEATURE_DIRECT_RENDER_MAX_FEATURES);
+        projected.sort(Comparator.comparingLong(ProjectedFeature::startPx).thenComparingLong(ProjectedFeature::endPx));
         return toBins(projected);
       }
-      final int structuredFeatureLimit = Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES);
-      if (maxDirectFeatures < structuredFeatureLimit) {
-        final var structuredProjected = new ArrayList<ProjectedFeature>(Math.min(structuredFeatureLimit, 16_384));
-        forEachProjectedFeature(
-          sourceToAssemblySegments,
-          queryStartPx,
-          queryEndPx,
-          bpResolution,
-          structuredProjected::add,
-          structuredFeatureLimit + 1
-        );
-        structuredProjected.sort(
-          Comparator.comparingLong(ProjectedFeature::startPx)
-            .thenComparingLong(ProjectedFeature::endPx)
-        );
-        if (structuredProjected.size() <= structuredFeatureLimit) {
-          return downsampleFeatureBins(structuredProjected, queryStartPx, queryEndPx, safeWidth);
+      long span = Math.max(1L, queryEndPx - queryStartPx);
+      int buckets = (int) Math.min(span, Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS));
+      double step = (double) span / buckets;
+      var counts = new long[buckets];
+      for (var source : featuresBySource.keySet()) {
+        var segments = sourceToAssemblySegments.getOrDefault(source, List.of());
+        // Visit fragments in source order so a model crossing an assembly cut
+        // contributes once to a display bucket, even after a move or reversal.
+        long[] previousEnds = null;
+        if (segments.size() > 1) {
+          segments = segments.stream().sorted(Comparator.comparingLong(AssemblySegment::sourceStart)).toList();
+          previousEnds = new long[buckets];
+        }
+        for (var segment : segments) {
+          long start = Math.max(queryStartPx, segment.visiblePxStart());
+          long end = Math.min(queryEndPx, segment.visiblePxEnd());
+          if (end <= start) continue;
+          int first = Math.max(0, (int) Math.floor((start - queryStartPx) / step) - 1);
+          int last = Math.min(buckets, (int) Math.ceil((end - queryStartPx) / step) + 1);
+          for (int i = first; i < last; i++) {
+            long left = queryStartPx + (long) Math.floor(i * step);
+            long right = i + 1 == buckets ? queryEndPx : queryStartPx + (long) Math.floor((i + 1) * step);
+            var interval = mapVisiblePxIntervalToSegmentSource(segment, left, right, bpResolution);
+            if (interval.isEmpty()) continue;
+            var piece = interval.get();
+            long previousEnd = previousEnds == null ? 0 : previousEnds[i];
+            counts[i] += additionalOverlaps(source, piece, previousEnd);
+            if (previousEnds != null) previousEnds[i] = Math.max(previousEnd, piece.end());
+          }
         }
       }
-      final var densityProjected = new ArrayList<ProjectedFeature>(Math.min(MAX_FEATURES_PER_QUERY, 65_536));
-      forEachProjectedFeature(
-        sourceToAssemblySegments,
-        queryStartPx,
-        queryEndPx,
-        bpResolution,
-        densityProjected::add,
-        MAX_FEATURES_PER_QUERY
-      );
-      return aggregateFeatures(
-        densityProjected,
-        queryStartPx,
-        queryEndPx,
-        Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS),
-        orderedSegments,
-        bpResolution
-      );
+      var bins = new ArrayList<TrackBin>(buckets);
+      for (int i = 0; i < buckets; i++) {
+        if (counts[i] == 0) continue;
+        long left = queryStartPx + (long) Math.floor(i * step);
+        long right = i + 1 == buckets ? queryEndPx : queryStartPx + (long) Math.floor((i + 1) * step);
+        bins.add(aggregateSignalBin(orderedSegments, bpResolution, left, right, counts[i], counts[i], null));
+      }
+      return bins;
     }
 
-    private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,
-                                                                 final long queryStartPx,
-                                                                 final long queryEndPx,
-                                                                 final int widthPx) {
-      if (projected.isEmpty()) {
+    private static List<FeatureBlock> parseBedBlocks(String[] fields, long start, long end, Long thickStart,
+                                                       Long thickEnd, ParseReport report, long line) {
+      try {
+        int count = Integer.parseInt(fields[9]);
+        String[] sizes = fields[10].split(","), offsets = fields[11].split(",");
+        if (count <= 0 || sizes.length != count || offsets.length != count) throw new IllegalArgumentException();
+        var blocks = new ArrayList<FeatureBlock>(count);
+        for (int i = 0; i < count; i++) {
+          long left = Math.addExact(start, Long.parseLong(offsets[i]));
+          long right = Math.addExact(left, Long.parseLong(sizes[i]));
+          if (left < start || right > end || left >= right) throw new IllegalArgumentException();
+          blocks.add(new FeatureBlock(left, right, false));
+          if (thickStart != null && thickEnd != null && left < thickEnd && right > thickStart)
+            blocks.add(new FeatureBlock(Math.max(left, thickStart), Math.min(right, thickEnd), true));
+        }
+        return List.copyOf(blocks);
+      } catch (IllegalArgumentException | ArithmeticException ex) {
+        report.correct(line, "invalid BED12 blocks; displaying the feature interval");
         return List.of();
       }
-      final int bucketCount = Math.max(1, widthPx);
-      final double bucketSpan = Math.max(1.0d, Math.max(1L, queryEndPx - queryStartPx) / (double) bucketCount);
-      final int maxFeaturesPerBucket = FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL;
-      @SuppressWarnings("unchecked")
-      final ArrayList<ProjectedFeature>[] byBucket = new ArrayList[bucketCount];
-      for (final var feature : projected) {
-        if (feature.endPx() <= queryStartPx || feature.startPx() >= queryEndPx) {
-          continue;
-        }
-        final var centerPx = feature.startPx() + Math.max(0L, (feature.endPx() - feature.startPx()) / 2L);
-        final int bucket = Math.max(
-          0,
-          Math.min(
-            bucketCount - 1,
-            (int) Math.floor((centerPx - queryStartPx) / bucketSpan)
-          )
-        );
-        var list = byBucket[bucket];
-        if (list == null) {
-          list = new ArrayList<>(maxFeaturesPerBucket + 1);
-          byBucket[bucket] = list;
-        }
-        list.add(feature);
-      }
-
-      final var selected = new ArrayList<ProjectedFeature>(bucketCount * maxFeaturesPerBucket);
-      for (final var bucketFeatures : byBucket) {
-        if (bucketFeatures == null || bucketFeatures.isEmpty()) {
-          continue;
-        }
-        bucketFeatures.sort(InMemoryTrackDataSource::compareProjectedFeaturesForDisplay);
-        for (int idx = 0; idx < Math.min(maxFeaturesPerBucket, bucketFeatures.size()); idx++) {
-          selected.add(bucketFeatures.get(idx));
-        }
-      }
-      selected.sort(
-        Comparator.comparingLong(ProjectedFeature::startPx)
-          .thenComparingInt(feature -> featureHierarchyDepth(feature.featureType()))
-          .thenComparingLong(ProjectedFeature::endPx)
-      );
-      return toBins(selected);
-    }
-
-    private static int compareProjectedFeaturesForDisplay(final @NotNull ProjectedFeature left,
-                                                          final @NotNull ProjectedFeature right) {
-      final int depthCmp = Integer.compare(
-        featureHierarchyDepth(right.featureType()),
-        featureHierarchyDepth(left.featureType())
-      );
-      if (depthCmp != 0) {
-        return depthCmp;
-      }
-      final int blockCmp = Integer.compare(right.blocks().size(), left.blocks().size());
-      if (blockCmp != 0) {
-        return blockCmp;
-      }
-      final long leftSpan = Math.max(1L, left.endPx() - left.startPx());
-      final long rightSpan = Math.max(1L, right.endPx() - right.startPx());
-      final int spanCmp = Long.compare(rightSpan, leftSpan);
-      if (spanCmp != 0) {
-        return spanCmp;
-      }
-      final int startCmp = Long.compare(left.startPx(), right.startPx());
-      if (startCmp != 0) {
-        return startCmp;
-      }
-      return Long.compare(left.endPx(), right.endPx());
-    }
-
-    private static int featureHierarchyDepth(final @Nullable String featureType) {
-      if (featureType == null || featureType.isBlank()) {
-        return 1;
-      }
-      final var normalized = featureType.trim().toLowerCase(Locale.ROOT);
-      if (isGffGeneLikeFeature(normalized)) {
-        return 0;
-      }
-      if (isGffTranscriptLikeFeature(normalized)) {
-        return 1;
-      }
-      if (isGffBlockLikeFeature(normalized)) {
-        return 2;
-      }
-      return 1;
-    }
-
-    private static @NotNull RenderStyle resolveBedRenderStyle(final long featureCount,
-                                                              final boolean hasStrandFeatures,
-                                                              final boolean hasThickFeatures,
-                                                              final boolean hasBed12Rows) {
-      if (hasThickFeatures || hasBed12Rows) {
-        return RenderStyle.FEATURE;
-      }
-      if (!hasStrandFeatures) {
-        return RenderStyle.SIGNAL;
-      }
-      return featureCount <= BED_FEATURE_STYLE_MAX_FEATURES ? RenderStyle.FEATURE : RenderStyle.SIGNAL;
     }
 
     private void forEachProjectedFeature(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
@@ -4219,23 +4242,11 @@ public class Track1DManager implements AutoCloseable {
             continue;
           }
           final var sourceInterval = sourceIntervalOptional.get();
-          // A long/nested feature can start before many short features. Searching
-          // starts and backing up by one loses it; prefix maxima retain all overlaps.
-          var ends = prefixEnds.get(sourceName);
-          int index = 0, limit = ends.length;
-          while (index < limit) {
-            int mid = (index + limit) >>> 1;
-            if (ends[mid] <= sourceInterval.start()) index = mid + 1;
-            else limit = mid;
-          }
-          for (int i = index; i < sourceFeatures.size(); i++) {
+          final var index = featureIndex.get(sourceName);
+          final int until = lowerBoundByStart(sourceFeatures, sourceInterval.end());
+          for (int i = index.nextOverlap(0, until, sourceInterval.start()); i < until;
+               i = index.nextOverlap(i + 1, until, sourceInterval.start())) {
             final var feature = sourceFeatures.get(i);
-            if (feature.start() >= sourceInterval.end()) {
-              break;
-            }
-            if (feature.end() <= sourceInterval.start()) {
-              continue;
-            }
             final var projected = projectSourceFeatureOnSegment(
               segment,
               feature,

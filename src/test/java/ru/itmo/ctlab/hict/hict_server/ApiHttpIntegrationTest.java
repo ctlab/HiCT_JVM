@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
@@ -35,14 +36,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.files.ProcessedStorageHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
+import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
+import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
 
 import java.io.IOException;
 import java.net.URI;
@@ -53,14 +59,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -273,6 +282,7 @@ class ApiHttpIntegrationTest {
       "micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5"
     );
     for (final var input : inputs) assertTrue(Files.isRegularFile(dataRoot.resolve(input)), input);
+    HDF5LibraryInitializer.initializeHDF5Library();
     startServerWithInfoAndFileHandlers();
     final var map = vertx.sharedData().getLocalMap("hict_server");
     map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataRoot));
@@ -489,6 +499,42 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void workspaceDiscoveryHidesRuntimeArtifactsAndKeepsDatasetsInTmp() throws Exception {
+    final var runtime = Files.createDirectories(tempDataDir.resolve("tmp"));
+    final var library = Files.createDirectories(runtime.resolve("hict-jhdf5-native-328"));
+    Files.writeString(library.resolve("jhdf5.dll"), "runtime library");
+    Files.writeString(library.resolve("private.mcool"), "intermediate data");
+    final var nativeLoader = Files.createDirectories(runtime.resolve("nativelib-loader_328"));
+    Files.writeString(nativeLoader.resolve("blosc.dll"), "runtime library");
+    final var incomplete = ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts.stage(runtime, java.util.UUID.randomUUID().toString());
+    Files.writeString(incomplete.resolve("incomplete.mcool"), "partial conversion");
+    Files.writeString(runtime.resolve("sample.pairs.gz"), "user data");
+    Files.writeString(runtime.resolve("sample.mcool"), "user data");
+    final var outsideRuntime = Files.createDirectories(tempDataDir.resolve("project/hict-jhdf5-native-328"));
+    Files.writeString(outsideRuntime.resolve("another.mcool"), "user data");
+    startServerWithInfoAndFileHandlers();
+
+    final var savedTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", runtime.toString());
+      for (var route : List.of("/list_files", "/list_files_detailed", "/list_convertible_matrices", "/list_directory")) {
+        final var response = post(route, "{\"directory\":\"tmp\"}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("sample.pairs.gz"), response.body());
+        assertTrue(response.body().contains("sample.mcool"), response.body());
+        assertFalse(response.body().contains("private.mcool"), response.body());
+        assertFalse(response.body().contains("jhdf5.dll"), response.body());
+        assertFalse(response.body().contains("nativelib-loader_328"), response.body());
+        assertFalse(response.body().contains("incomplete.mcool"), response.body());
+      }
+      assertTrue(post("/list_files", "{}").body().contains("another.mcool"));
+      assertEquals(400, post("/list_directory", "{\"directory\":\"tmp/hict-jhdf5-native-328\"}").statusCode());
+    } finally {
+      System.setProperty("java.io.tmpdir", savedTemp);
+    }
+  }
+
+  @Test
   void infoAndFileEndpointsRespondOverHttpWithScheduler() throws Exception {
     Files.createDirectories(tempDataDir.resolve("build/quad"));
     final var uploads = Files.createDirectories(tempDataDir.resolve(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME));
@@ -554,6 +600,34 @@ class ApiHttpIntegrationTest {
     final var agp = post("/list_agp_files", "{}");
     assertEquals(200, agp.statusCode());
     assertTrue(agp.body().contains("example.agp"));
+  }
+
+  @Test
+  void discoversNestedGzipFastaUnderASymlinkedDataRoot() throws Exception {
+    final var real = Files.createDirectory(tempDataDir.resolve("data-target"));
+    Files.createDirectory(real.resolve("nested"));
+    Files.writeString(real.resolve("nested/assembly.fasta.gz"), "fixture", StandardCharsets.UTF_8);
+    final var runtime = Files.createDirectories(real.resolve("runtime/hict-jhdf5-native-328"));
+    Files.writeString(runtime.resolve("internal.fasta.gz"), "runtime artifact", StandardCharsets.UTF_8);
+    final var link = tempDataDir.resolve("data-link");
+    try {
+      Files.createSymbolicLink(link, real);
+    } catch (UnsupportedOperationException | IOException unavailable) {
+      assumeTrue(false, "Directory symlinks are unavailable: " + unavailable);
+    }
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server")
+      .put("dataDirectory", new ShareableWrappers.PathWrapper(link));
+    final var savedTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", link.resolve("runtime").toString());
+      final var response = post("/list_fasta_files", "{}");
+      assertEquals(200, response.statusCode(), response.body());
+      final var files = new io.vertx.core.json.JsonArray(response.body());
+      assertEquals(List.of(Path.of("nested", "assembly.fasta.gz").toString()), files.getList());
+    } finally {
+      System.setProperty("java.io.tmpdir", savedTemp);
+    }
   }
 
   @Test
@@ -713,7 +787,12 @@ class ApiHttpIntegrationTest {
     map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(visualization));
     var attach = new JsonObject(post("/attach", "{}").body());
     var workspaceVersion = attach.getJsonObject("workspaceVersion");
-    var view = new JsonObject().put("version", 1).put("center", new io.vertx.core.json.JsonArray().add(3).add(4));
+    var selection = new JsonObject().put("kind", "selection").put("label", "Selection");
+    var view = new JsonObject().put("version", 1).put("center", new io.vertx.core.json.JsonArray().add(3).add(4))
+      .put("axisScopes", new JsonObject()
+        .put("row", selection.copy().put("startBp", 2).put("endBp", 13))
+        .put("column", selection.copy().put("startBp", 0).put("endBp", 17)
+          .put("contigIds", new io.vertx.core.json.JsonArray().add(0))));
     assertEquals(200, post("/workspace/state", new JsonObject().put("filename", "primary.hict.hdf5")
       .put("expectedVersion", workspaceVersion).put("state", view).encode()).statusCode());
 
@@ -1256,6 +1335,152 @@ class ApiHttpIntegrationTest {
       new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getJsonObject("assemblyInfo"));
   }
 
+  @Test
+  void historySurvivesOverlayAttachmentAndDetachment() throws Exception {
+    for (var name : List.of("primary", "overlay")) {
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, List.of(4L, 10L));
+    }
+    startValidationServer();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    final var original = post("/get_agp_for_assembly", "{}").body();
+    assertEquals(200, post("/reverse_selection_range", "{\"startBP\":0,\"endBP\":5}").statusCode());
+    final var edited = post("/get_agp_for_assembly", "{}").body();
+    assertTrue(!original.equals(edited));
+    final var history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"overlay.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    assertEquals(history, new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary"));
+    assertEquals(200, post("/secondary/close", "{}").statusCode());
+    assertEquals(history, new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary"));
+    var undo = post("/assembly/history/restore", new JsonObject()
+      .put("session", history.getString("session")).put("revision", history.getLong("revision"))
+      .put("action", "undo").encode());
+    assertEquals(200, undo.statusCode(), undo.body());
+    assertEquals(original, post("/get_agp_for_assembly", "{}").body());
+  }
+
+  @Test
+  void jobCannotReplaceEitherOpenSource() throws Exception {
+    for (var name : List.of("primary", "overlay")) {
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, List.of(4L, 10L));
+    }
+    startValidationServer();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"overlay.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    final var map = vertx.sharedData().<String, Object>getLocalMap("hict_server");
+    final var staged = Files.writeString(tempDataDir.resolve("candidate"), "staged");
+    for (var filename : List.of("primary.hict.hdf5", "overlay.hict.hdf5")) {
+      final var output = tempDataDir.resolve(filename);
+      final var original = Files.readAllBytes(output);
+      final var rejected = org.junit.jupiter.api.Assertions.assertThrows(io.vertx.ext.web.handler.HttpException.class, () ->
+        ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts.publish(map, staged, output, true));
+      assertEquals(409, rejected.getStatusCode());
+      org.junit.jupiter.api.Assertions.assertArrayEquals(original, Files.readAllBytes(output));
+      assertTrue(Files.exists(staged));
+    }
+  }
+
+  @Test
+  void processedStorageRechecksCleanupSelectionsAndProtectsWorkspaceFiles() throws Exception {
+    final var data = tempDataDir.toRealPath();
+    final var processed = Files.createDirectory(data.resolve("processed"));
+    final var cache = Files.createDirectory(processed.resolve("track_precompute"));
+    final var firstCache = Files.writeString(cache.resolve("a".repeat(64) + ".h5"), "cache");
+    final var changedCache = Files.writeString(cache.resolve("b".repeat(64) + ".h5"), "previous");
+    final var external = Files.writeString(data.resolve("raw.fasta"), "source");
+    final var cacheLink = cache.resolve("c".repeat(64) + ".h5");
+    try {
+      Files.createSymbolicLink(cacheLink, external);
+    } catch (UnsupportedOperationException | IOException noSymlinksOnThisHost) {
+      assertFalse(Files.exists(cacheLink));
+    }
+    final var jobId = UUID.randomUUID().toString();
+    final var job = Files.createDirectories(processed.resolve("sequence-analysis").resolve(jobId));
+    final var record = Files.writeString(job.resolve("job.json"),
+      new JsonObject().put("jobId", jobId).put("status", "finished").encode());
+    final var obsolete = Files.writeString(job.resolve("assembly-chunks.fasta"), "obsolete");
+    Files.setLastModifiedTime(obsolete, FileTime.from(java.time.Instant.now().minus(java.time.Duration.ofDays(31))));
+    final var recent = Files.writeString(job.resolve("assembly.fasta"), "recent");
+    final var analysisResult = Files.writeString(job.resolve("matches.bed"), "analysis result");
+    final var source = Files.writeString(data.resolve("source.mcool"), "matrix");
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(data, "converted", List.of(4L, 10L));
+    final var converted = data.resolve("converted.hict.hdf5");
+    final var conversions = new MatrixConversionCacheManager(data, processed, new FileFingerprintService());
+    conversions.recordSuccessfulConversion(source, converted, ConversionDirection.MCOOL_TO_HICT);
+    final var manual = Files.writeString(processed.resolve("manual.hict.hdf5"), "personal map");
+    final var jobsActive = new AtomicBoolean();
+    startServerWithInfoAndFileHandlers(router ->
+      new ProcessedStorageHandlersHolder(vertx, scheduler, jobsActive::get).addHandlersToRouter(router));
+
+    final var listing = get("/storage/processed");
+    assertEquals(200, listing.statusCode(), listing.body());
+    final var files = new JsonObject(listing.body()).getJsonArray("files");
+    final var byPath = new java.util.HashMap<String, JsonObject>();
+    for (var file : files) {
+      final var entry = (JsonObject) file;
+      byPath.put(entry.getString("path"), entry);
+    }
+    assertEquals(Files.size(converted), byPath.get(converted.toString()).getLong("bytes"));
+    assertEquals("maps", byPath.get(converted.toString()).getString("action"));
+    assertEquals("old", byPath.get(obsolete.toString()).getString("action"));
+    assertNull(byPath.get(recent.toString()).getString("action"));
+    assertNull(byPath.get(manual.toString()).getString("action"));
+    assertFalse(byPath.containsKey(external.toString()));
+    assertFalse(byPath.containsKey(cacheLink.toString()));
+
+    final var cleanupPath = "/storage/processed/cleanup";
+    final var request = new JsonObject().put("action", "cache").put("ids", new JsonArray(List.of(
+      byPath.get(firstCache.toString()).getString("id"), byPath.get(changedCache.toString()).getString("id"))));
+    jobsActive.set(true);
+    assertEquals(409, post(cleanupPath, request.encode()).statusCode());
+    assertTrue(Files.exists(firstCache));
+    jobsActive.set(false);
+    Files.writeString(changedCache, "replacement with a new size");
+    final var prune = post(cleanupPath, request.encode());
+    assertEquals(200, prune.statusCode(), prune.body());
+    assertEquals(1, new JsonObject(prune.body()).getInteger("deleted"));
+    assertEquals(1, new JsonObject(prune.body()).getInteger("changedOrMissing"));
+    assertFalse(Files.exists(firstCache));
+    assertTrue(Files.exists(changedCache));
+
+    request.put("action", "old").put("ids", new JsonArray(List.of(
+      byPath.get(obsolete.toString()).getString("id"), byPath.get(analysisResult.toString()).getString("id"))));
+    final var old = new JsonObject(post(cleanupPath, request.encode()).body());
+    assertEquals(1, old.getInteger("deleted"));
+    assertEquals(1, old.getJsonArray("skipped").size());
+    assertFalse(Files.exists(obsolete));
+    assertTrue(Files.exists(recent));
+    assertTrue(Files.exists(analysisResult));
+    assertTrue(Files.exists(record));
+
+    request.put("action", "maps").put("ids", new JsonArray(List.of(byPath.get(converted.toString()).getString("id"))));
+    final var open = post("/open", "{\"filename\":\"converted.hict.hdf5\"}");
+    assertEquals(200, open.statusCode(), open.body());
+    final var blocked = new JsonObject(post(cleanupPath, request.encode()).body());
+    assertEquals(0, blocked.getInteger("deleted"));
+    assertTrue(Files.exists(converted));
+    assertTrue(blocked.getJsonArray("skipped").getJsonObject(0).getString("reason").contains("workspace"));
+    assertEquals(200, post("/close", "{}").statusCode());
+    final var removed = new JsonObject(post(cleanupPath, request.encode()).body());
+    assertEquals(1, removed.getInteger("deleted"));
+    assertFalse(Files.exists(converted));
+    assertTrue(Files.exists(source));
+    assertTrue(Files.exists(external));
+    assertTrue(Files.exists(manual));
+  }
+
+  void startValidationServer() throws Exception {
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, scheduler).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder(vertx).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder(vertx).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder(vertx).addHandlersToRouter(router);
+    });
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+  }
+
   private void startServerWithInfoAndFileHandlers() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {});
   }
@@ -1274,19 +1499,7 @@ class ApiHttpIntegrationTest {
     final var router = Router.router(vertx);
     router.route().handler(BodyHandler.create());
     configure.accept(router);
-    router.route().failureHandler(ctx -> {
-      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
-        ? ctx.failure().getMessage()
-        : "Request failed";
-      // Match MainVerticle's input-validation classification.
-      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode()
-        : ctx.failure() instanceof IllegalArgumentException ? 400 : 500;
-      final var payload = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getPayload() : null;
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .setStatusCode(status)
-        .end("{\"error\":\"" + (payload != null ? payload : message).replace("\"", "\\\"") + "\"}");
-    });
+    router.route().failureHandler(MainVerticle::respondFailure);
 
     new InfoHandlersHolder(vertx).addHandlersToRouter(router);
     new FSHandlersHolder(vertx).addHandlersToRouter(router);
@@ -1317,7 +1530,7 @@ class ApiHttpIntegrationTest {
     return new RequestTaskScheduler.SchedulerConfig(10, 16, 10, sizing);
   }
 
-  private HttpResponse<String> get(final @NotNull String path) throws IOException, InterruptedException {
+  HttpResponse<String> get(final @NotNull String path) throws IOException, InterruptedException {
     return get(path, Map.of());
   }
 
@@ -1333,7 +1546,7 @@ class ApiHttpIntegrationTest {
     return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
   }
 
-  private HttpResponse<String> post(final @NotNull String path,
+  HttpResponse<String> post(final @NotNull String path,
                                     final @NotNull String body) throws IOException, InterruptedException {
     return post(path, body, Map.of());
   }

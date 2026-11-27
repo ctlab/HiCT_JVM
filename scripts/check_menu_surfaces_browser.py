@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise declared menu destinations and record controls without claiming functional coverage."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import hashlib
 import json
@@ -27,8 +28,7 @@ def main():
             context = browser.new_context(viewport={'width': width, 'height': height})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
-            context.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(context, args.api)
             page = context.new_page()
             page.set_default_timeout(15000)
             errors = []
@@ -104,8 +104,7 @@ def main():
             context = browser.new_context(viewport={'width': 1280, 'height': 720})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
-            context.route('http://localhost:5000/**', lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(context, args.api)
             errors, http_errors = [], []
             context.on('console', lambda message: errors.append(message.text) if message.type=='error' else None)
             context.on('page', lambda page: page.on('pageerror', lambda error: errors.append(str(error))))
@@ -120,7 +119,7 @@ def main():
                 page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
                 page.wait_for_function('window.__hictBenchmark')
                 page.evaluate('args=>window.__hictBenchmark.open(args.file,args.api)', vars(args))
-                prompt = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+                prompt = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
                 if prompt.is_visible():
                     prompt.click()
                 before_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})
@@ -154,9 +153,9 @@ def main():
                         target.wait_for_function("document.querySelector('#pipeline-enabled')?.checked")
                         result['pipelineEnabled'] = 'matches server'
                     if case['id'] in ('menu-12', 'menu-13', 'menu-14'):
-                        link = target.get_by_role('button', name='Link FASTA…', exact=True)
+                        link = target.get_by_role('dialog').get_by_role('button', name='Link FASTA…', exact=True)
                         link.wait_for(state='visible', timeout=30000)
-                        submit_name = 'Find sequences' if case['id'] == 'menu-12' else case['heading']
+                        submit_name = 'Search' if case['id'] == 'menu-12' else 'Generate'
                         assert target.get_by_role('button', name=submit_name, exact=True).is_disabled()
                         result['missingFastaGuidance'] = 'visible with computation disabled'
                 if case['heading'] is not None:
@@ -191,8 +190,35 @@ def main():
                         entry['surfaces'].append(case['id'])
                 result['controls'] = controls
                 target.screenshot(path=str(output / (case['id'] + '.png')))
+                if case['id'] == 'menu-20':
+                    contents = dialog.get_by_role('navigation', name='Guide sections')
+                    section = contents.get_by_role('link', name='Navigate and select', exact=True)
+                    section.click()
+                    assert section.get_attribute('aria-current') == 'location'
+                    heading = dialog.get_by_role('heading', name='Navigate and select', exact=True)
+                    assert heading.evaluate('element => document.activeElement === element')
+                    with target.expect_popup() as opened_guide:
+                        dialog.get_by_role('link', name='Open in a new tab', exact=True).click()
+                    standalone_guide = opened_guide.value
+                    standalone_guide.get_by_role('heading', name='HiCT user guide', exact=True).wait_for()
+                    standalone_guide.close()
+                    result['guideNavigation'] = 'Guide sections move focus and the standalone guide opens successfully'
+                if case['id'] in ('menu-02', 'menu-03'):
+                    if case['id'] == 'menu-02':
+                        dialog.locator('details[data-advanced-id="convert-matrices"] > summary').click()
+                        picker_name = 'Select optional .assembly file'
+                    else:
+                        picker_name = 'Select source .hict.hdf5'
+                    browse = dialog.get_by_role('button', name='Browse…', exact=True).first
+                    browse.click()
+                    picker = target.get_by_role('dialog', name=picker_name, exact=True)
+                    picker.wait_for()
+                    target.keyboard.press('Escape')
+                    picker.wait_for(state='hidden')
+                    assert browse.evaluate('button => document.activeElement === button')
+                    result['nestedEscape'] = 'Escape closes the file picker and returns focus to Browse'
                 if case['id'] in ('menu-12', 'menu-13', 'menu-14'):
-                    target.get_by_role('button', name='Link FASTA…', exact=True).click()
+                    target.get_by_role('dialog').get_by_role('button', name='Link FASTA…', exact=True).click()
                     target.get_by_role('heading', name='Select FASTA file', exact=True).wait_for(state='visible')
                     result['missingFastaRecovery'] = 'link action opens FASTA selector'
                     child = target.get_by_role('dialog').filter(has=target.get_by_role('heading', name='Select FASTA file', exact=True))
@@ -224,6 +250,13 @@ def main():
                     target.wait_for_function('document.activeElement!==document.body && document.activeElement.getClientRects().length>0')
                     result['dismissal'] = 'actual Close preserves assembly and restores visible focus'
                     result['focusReturn'] = target.evaluate('document.activeElement.outerHTML')
+                    if case['id'] in ('menu-02', 'menu-03'):
+                        target.get_by_role('link', name=case['menu'], exact=True).click()
+                        action.click()
+                        dialog.wait_for()
+                        target.keyboard.press('Escape')
+                        dialog.wait_for(state='hidden')
+                        result['quickEscape'] = 'Escape closes the newly opened dialog'
                 elif case['heading'] is None:
                     target.close()
                 after_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})

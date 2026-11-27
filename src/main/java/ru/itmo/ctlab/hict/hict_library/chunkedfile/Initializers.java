@@ -106,6 +106,7 @@ public class Initializers {
       final int blockSize = stripeWeightBlockRows(stripeCount, rowLen, chunkRows, Runtime.getRuntime().maxMemory());
       log.debug("Reading weights at resolution {}: {} stripes, {} rows/chunk, {} rows/read", resolution, stripeCount, chunkRows, blockSize);
 
+      final var unitRows = new java.util.HashMap<Integer,double[]>();
       for (int start = 0; start < stripeCount; start += blockSize) {
         final int count = Math.min(blockSize, stripeCount - start);
         final var block = reader.float64().readMDArrayBlockWithOffset(
@@ -119,9 +120,12 @@ public class Initializers {
           final int len = (int) stripeLengthBins[stripeId];
           final int rowOffset = i * rowLen;
           final int copyLen = Math.min(len, Math.max(0, rowLen));
-          final double[] weights = copyLen > 0
-            ? Arrays.copyOfRange(flat, rowOffset, rowOffset + copyLen)
-            : new double[0];
+          // Unit weights are immutable and common to every stripe in a sequence overlay.
+          boolean unit = true;
+          for (int j = 0; j < copyLen; j++) if (flat[rowOffset + j] != 1.0d) { unit = false; break; }
+          final double[] weights = unit ? unitRows.computeIfAbsent(copyLen, n -> {
+            var row = new double[n]; Arrays.fill(row,1.0d); return row;
+          }) : Arrays.copyOfRange(flat, rowOffset, rowOffset + copyLen);
           result.add(new StripeDescriptor(stripeId, stripeLengthBins[stripeId], weights));
         }
         reportProgress("Reading stripe weights", (double) Math.min(stripeCount, start + count) / Math.max(1, stripeCount));

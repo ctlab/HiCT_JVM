@@ -5,11 +5,11 @@ import argparse
 import json
 import re
 from pathlib import Path
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
-def prepare_fixture(directory, jar):
-    """Build an independent four-contig, two-level map through the real converter."""
+def prepare_fixture(directory, jar, *, first_contig="one", resolutions=(100, 200), contigs=None):
+    """Build an independent map through the real converter."""
     import subprocess
     import cooler
     import numpy as np
@@ -22,16 +22,22 @@ def prepare_fixture(directory, jar):
     target = directory / "structural.hict.hdf5"
     if matrix.exists() or target.exists():
         raise ValueError("Fixture generation requires fresh output paths")
-    for resolution in (100, 200):
-        bins_per_contig = 400000 // resolution
-        count = bins_per_contig * 4
-        bins = pd.DataFrame(
-            {
-                "chrom": np.repeat(["one", "two", "three", "four"], bins_per_contig),
-                "start": np.tile(np.arange(bins_per_contig) * resolution, 4),
-                "end": np.tile(np.arange(1, bins_per_contig + 1) * resolution, 4),
-            }
+    if contigs is None:
+        contigs = dict.fromkeys((first_contig, "two", "three", "four"), 400000)
+    for resolution in resolutions:
+        starts = {name: np.arange(0, length, resolution) for name, length in contigs.items()}
+        bins = pd.concat(
+            [
+                pd.DataFrame({
+                    "chrom": name,
+                    "start": starts[name],
+                    "end": np.minimum(starts[name] + resolution, length),
+                })
+                for name, length in contigs.items()
+            ],
+            ignore_index=True,
         )
+        count = len(bins)
         pixels = pd.DataFrame(
             {
                 "bin1_id": np.arange(count),
@@ -48,12 +54,13 @@ def prepare_fixture(directory, jar):
         )
     converter = directory / "StructuralFixture.java"
     converter.write_text("""import java.nio.file.Path;
-import java.util.List;
+import java.util.Arrays;
 import ru.itmo.ctlab.hict.hict_library.converters.*;
 class StructuralFixture {
     public static void main(String[] args) {
         new McoolToHictConverter().convert(new ConversionOptions(
-            Path.of(args[0]), Path.of(args[1]), List.of(100L, 200L), 8192, 1,
+            Path.of(args[0]), Path.of(args[1]),
+            Arrays.stream(args[2].split(",")).map(Long::valueOf).toList(), 8192, 1,
             ConversionOptions.CompressionAlgorithm.DEFLATE, "", false, 4,
             true, false, false, false, ConversionOptions.ExportMode.INTERNAL),
             System.err::println);
@@ -69,6 +76,7 @@ class StructuralFixture {
                 str(converter),
                 str(matrix),
                 str(target),
+                ",".join(map(str, resolutions)),
             ],
             check=True,
             stdout=log,
@@ -99,12 +107,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(60000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on(
             "console",
@@ -153,12 +156,14 @@ def main():
             )
 
         def button_action(name, endpoint):
-            if name in ("Undo assembly edit", "Redo assembly edit"):
-                page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response(
                 lambda response: response.url.endswith(endpoint)
             ) as response:
-                page.locator("button[aria-label=" + json.dumps(name) + "]").click()
+                page.get_by_role("button", name=name, exact=True).click()
+                if endpoint == "/unscaffold_all":
+                    page.get_by_role("alertdialog", name="Remove all scaffolds?").get_by_role(
+                        "button", name=re.compile(r"^Remove \d+ scaffolds?$")
+                    ).click()
             assert response.value.ok, response.value.text()
             check.settle()
 
@@ -168,9 +173,9 @@ def main():
             after = snapshot()
             assert after["agpSha256"] != before["agpSha256"], name
             for button, expected in [
-                ("Undo assembly edit", before),
-                ("Redo assembly edit", after),
-                ("Undo assembly edit", before),
+                ("Undo", before),
+                ("Redo", after),
+                ("Undo", before),
             ]:
                 button_action(button, "/assembly/history/restore")
                 actual = snapshot()
@@ -203,7 +208,16 @@ def main():
                 )
                 == 4
             )
-            button_action("Unscaffold all", "/unscaffold_all")
+            before_cancel = snapshot()
+            page.get_by_role("button", name="Remove all scaffolds…", exact=True).click()
+            confirm = page.get_by_role("alertdialog", name="Remove all scaffolds?")
+            assert confirm.get_by_role("button", name="Cancel").evaluate(
+                "button => document.activeElement === button"
+            )
+            page.keyboard.press("Escape")
+            confirm.wait_for(state="hidden")
+            assert snapshot() == before_cancel
+            button_action("Remove all scaffolds…", "/unscaffold_all")
             select_orders()
             round_trip(
                 "reverse",
@@ -230,14 +244,14 @@ def main():
             )
             round_trip(
                 "unscaffold-all",
-                lambda: button_action("Unscaffold all", "/unscaffold_all"),
+                lambda: button_action("Remove all scaffolds…", "/unscaffold_all"),
             )
-            button_action("Unscaffold all", "/unscaffold_all")
+            button_action("Remove all scaffolds…", "/unscaffold_all")
             select_orders()
             round_trip(
                 "debris",
                 lambda: button_action(
-                    "Move selection to debris", "/move_selection_to_debris"
+                    "Move to unplaced (debris)…", "/move_selection_to_debris"
                 ),
             )
 
@@ -338,6 +352,37 @@ def main():
                 )
 
             round_trip("move-arrow-after-resolution-change", move_by_arrow)
+            def move_to_end(first):
+                select_orders(1, 1)
+                manager = "window.__hictBenchmark.manager()"
+                order = page.evaluate(f"{manager}.contigDimensionHolder.contigDescriptors.map(c=>c.contigId)")
+                page.get_by_role("button", name="Enter translocation mode", exact=True).click()
+                target = page.evaluate(
+                    """first => {
+                        const m = window.__hictBenchmark.manager(), l = m.viewAndLayersManager;
+                        const resolution = l.currentViewState.resolutionDesciptor.bpResolution;
+                        const feature = l.layersHolder.bpResolutionToContigTranslocationArrowsLayer
+                            .get(resolution).getSource().getFeatures().find(f =>
+                                !f.get(first ? 'leftContigDescriptor' : 'rightContigDescriptor'));
+                        const [x, y] = m.getMap().getPixelFromCoordinate(
+                            feature.getGeometry().getInteriorPoints().getCoordinates()[0]);
+                        const rect = m.getMap().getViewport().getBoundingClientRect();
+                        const prefix = m.contigDimensionHolder.prefix_sum_bp;
+                        return {x: rect.left + x, y: rect.top + y, bp: first ? 0 : prefix[prefix.length - 1]};
+                    }""",
+                    first,
+                )
+                with page.expect_response("**/move_selection_range") as response:
+                    page.mouse.move(target["x"], target["y"])
+                    page.mouse.click(target["x"], target["y"])
+                assert response.value.ok, response.value.text()
+                assert response.value.request.post_data_json["targetStartBP"] == target["bp"]
+                check.settle()
+                actual = page.evaluate(f"{manager}.contigDimensionHolder.contigDescriptors.map(c=>c.contigId)")
+                assert actual == ([order[1], order[0], *order[2:]] if first else [order[0], *order[2:], order[1]]), actual
+
+            round_trip("move-arrow-to-first-position", lambda: move_to_end(True))
+            round_trip("move-arrow-to-last-position", lambda: move_to_end(False))
             select_orders()
 
             def split():

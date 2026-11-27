@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -37,13 +37,14 @@ def main():
         page = browser.new_page(viewport={"width": 1600, "height": 1100})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, out)
+        failed_track_queries = []
+        def record_failed_track_query(response):
+            if response.status >= 400 and response.url.endswith("/tracks/query_1d"):
+                failed_track_queries.append(response)
+
+        page.on("response", record_failed_track_query)
         page.on(
             "request",
             lambda request: (
@@ -86,23 +87,48 @@ def main():
             return post("/render_pipeline/get")
 
         def feature_point(orientation, index):
-            return page.evaluate(
-                """({orientation,index}) => {
+            label = f"UX-lane-{index}"
+            find_hit = """({orientation,label}) => {
                 const t=window.__hictBenchmark.manager().linearTrackManager;
                 const snapshot=t.lastRenderedSnapshot[orientation];
-                const hits=snapshot.featureHits.filter(h=>h.bin.label?.startsWith('UX-lane-'));
-                const hit=hits[index];
-                const commonStart=Math.max(...hits.map(h=>h.axisStart));
-                const commonEnd=Math.min(...hits.map(h=>h.axisEnd));
-                if(commonEnd<=commonStart)throw Error('Fixture features need a common painted interval');
-                const axis=(commonStart+commonEnd)/2,cross=(hit.crossStart+hit.crossEnd)/2;
+                const hit=snapshot?.featureHits.find(h=>h.bin.label===label && h.crossEnd>h.crossStart);
+                if(!hit)return null;
+                const axis=(hit.axisStart+hit.axisEnd)/2,cross=(hit.crossStart+hit.crossEnd)/2;
                 const r=document.querySelector('#'+orientation+'-igv-track-div').getBoundingClientRect();
                 return {x:r.x+(orientation==='horizontal'?axis:cross),
                         y:r.y+(orientation==='horizontal'?cross:axis),
                         start:hit.bin.startBp,end:hit.bin.endBp,label:hit.bin.label};
-            }""",
-                {"orientation": orientation, "index": index},
+            }"""
+            parameters = {"orientation": orientation, "label": label}
+            rows = page.locator(f"#{orientation}-igv-track-div").get_by_role(
+                "region", name="UX overlapping features feature rows", exact=True
             )
+            offsets = rows.evaluate("""(element,horizontal) => {
+                const size=horizontal?element.clientHeight:element.clientWidth;
+                const total=horizontal?element.scrollHeight:element.scrollWidth;
+                const limit=Math.max(0,total-size),step=Math.max(1,size-24);
+                return [...Array.from({length:Math.ceil(limit/step)},(_,i)=>i*step),limit];
+            }""", orientation == "horizontal")
+            point = page.evaluate(find_hit, parameters)
+            if point:
+                return point
+            for offset in offsets:
+                previous = page.evaluate("""orientation => window.__hictBenchmark.manager()
+                    .linearTrackManager.lastRenderedSnapshot[orientation]?.renderedAtMs""", orientation)
+                moved = rows.evaluate("""(element,{horizontal,offset}) => {
+                    const property=horizontal?'scrollTop':'scrollLeft';
+                    const before=element[property];
+                    element[property]=offset;
+                    return element[property]!==before;
+                }""", {"horizontal": orientation == "horizontal", "offset": offset})
+                if moved:
+                    page.wait_for_function("""({orientation,previous}) => window.__hictBenchmark.manager()
+                        .linearTrackManager.lastRenderedSnapshot[orientation]?.renderedAtMs>previous""",
+                        arg={"orientation": orientation, "previous": previous})
+                point = page.evaluate(find_hit, parameters)
+                if point:
+                    return point
+            raise AssertionError(f"Could not reveal {label} in the {orientation} track")
 
         try:
             page.goto(args.url)
@@ -122,7 +148,7 @@ def main():
                 };
             }""")
             nan = page.get_by_role(
-                "button", name="Do not use Cooler weights", exact=True
+                "button", name="Show raw contacts (no balancing)", exact=True
             )
             if nan.is_visible():
                 nan.click()
@@ -130,25 +156,39 @@ def main():
             page.evaluate("""() => {
                 const m=window.__hictBenchmark.manager(),v=m.viewAndLayersManager;
                 m.getView().setResolution(v.getPixelResolutionForBpResolution(10000));
-                v.currentViewState.selectionBorders.leftBP=[1000000,1000000];
-                v.currentViewState.selectionBorders.rightBP=[1040000,1040000];
+                v.setRegionBounds({rowStart:1000000,rowEnd:1040000,columnStart:1000000,columnEnd:1040000});
             }""")
             check.settle()
-            check.menu("Tools", "Generate ModDotPlot…")
-            dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
-            selected = dialog.locator(".resolution-options input:checked").evaluate_all(
+            check.menu("Tools", "ModDotPlot…")
+            dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
+            detail = dialog.get_by_label("Finest detail", exact=True)
+            offered = detail.locator("option:not([value=custom])").evaluate_all(
                 "(items)=>items.map(i=>Number(i.value))"
             )
-            assert selected == [1000, 5000, 10000], selected
-            assert dialog.locator("#dotplot-display").input_value() == "below"
-            dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
+            native_resolutions = page.evaluate("""()=>{
+                const manager = window.__hictBenchmark.manager();
+                return [...manager.viewAndLayersManager.resolutions].filter(r => r >= 1000).sort((a,b) => a-b);
+            }""")
+            assert native_resolutions[0] == 1000
+            assert offered == [21, 25, 50, 100, 250, 500, *native_resolutions], offered
+            active_bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+            assert int(detail.input_value()) == min(offered, key=lambda size: abs(size - active_bp))
+            detail.select_option("1000")
+            scope = dialog.get_by_label("Analysis scope", exact=True)
+            assert scope.input_value() == "selection"
             assert dialog.locator("#dotplot-display").input_value() == "overlay"
+            scope.select_option("assembly")
+            assert dialog.locator("#dotplot-display").input_value() == "below"
+            scope.select_option("selection")
+            assert dialog.locator("#dotplot-display").input_value() == "overlay"
+            if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                dialog.locator("details.hict-advanced:not([open]) > summary").click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
             with page.expect_response(
                 lambda response: response.url.endswith("/sequence/moddotplot/jobs")
             ) as submitted:
                 dialog.get_by_role(
-                    "button", name="Generate ModDotPlot", exact=True
+                    "button", name="Generate", exact=True
                 ).click()
             identity_id = submitted.value.json()["jobId"]
             dialog.locator("footer").get_by_role(
@@ -158,7 +198,7 @@ def main():
             # Start a separate search before opening either job from the Jobs list.
             check.menu("Tools", "Find sequences in linked FASTA…")
             search = page.get_by_role(
-                "dialog", name="Find sequences in the linked FASTA", exact=True
+                "dialog", name="Find sequences", exact=True
             )
             search.get_by_label("FASTA records, or one DNA sequence per line").fill(
                 "GAGAGAGAGAGA"
@@ -167,7 +207,7 @@ def main():
             with page.expect_response(
                 lambda response: response.url.endswith("/sequence/search/jobs")
             ) as submitted:
-                search.get_by_role("button", name="Find sequences", exact=True).click()
+                search.get_by_role("button", name="Search", exact=True).click()
             search_id = submitted.value.json()["jobId"]
             search.locator("footer").get_by_role(
                 "button", name="Close", exact=True
@@ -247,40 +287,42 @@ def main():
             assert graph()["upperExpression"]["type"] == "pixel_blend"
             result["checks"].append({"manualJobOpeningRetainsOverlayPreference": True})
             # Exercise the same default-resolution behavior in alignment dotplot generation.
-            check.menu("Tools", "Generate dotplot from active assembly…")
+            check.menu("Tools", "Dotplot from current assembly…")
             alignment = page.get_by_role("dialog").filter(
                 has=page.locator("#dotplot-display")
             )
-            expected = page.evaluate("""()=>{
-                const v=window.__hictBenchmark.manager().viewAndLayersManager;
-                return [...v.resolutions].sort((a,b)=>a-b).filter(r=>r<=v.currentViewState.resolutionDesciptor.bpResolution);
-            }""")
-            actual = alignment.locator(
-                ".resolution-options input:checked"
-            ).evaluate_all("(items)=>items.map(i=>Number(i.value))")
-            assert actual == expected, (actual, expected)
+            detail = alignment.get_by_label("Finest detail", exact=True)
+            options = detail.locator("option:not([value=custom])").evaluate_all("(items)=>items.map(i=>Number(i.value))")
+            expected = [15, 25, 50, 100, 250, 500, *native_resolutions]
+            assert options == expected, (options, expected)
+            active_bp = page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution")
+            actual = int(detail.input_value())
+            assert actual == min(expected, key=lambda size: abs(size - active_bp))
             alignment.locator("footer").get_by_role(
                 "button", name="Close", exact=True
             ).click()
             result["checks"].append({"alignmentDefaultResolutions": actual})
-            check.menu("Tools", "Generate dotplot from FASTA files…")
+            expected_legacy = page.evaluate("""()=>{
+                const view = window.__hictBenchmark.manager().viewAndLayersManager;
+                return [...view.resolutions].filter(r => r <= view.currentViewState.resolutionDesciptor.bpResolution).sort((a,b) => a-b);
+            }""")
+            check.menu("Tools", "Dotplot from FASTA files…")
             legacy = page.get_by_role("dialog").filter(
                 has=page.get_by_role(
-                    "heading", name="Generate self-alignment dotplots", exact=True
+                    "heading", name="Dotplots from FASTA files", exact=True
                 )
             )
             legacy.get_by_text("quad_combined_ind2.fasta", exact=True).first.wait_for(
                 state="visible"
             )
-            legacy.get_by_role("button", name="Select All", exact=True).click()
-            legacy.get_by_role("button", name="Continue", exact=True).click()
+            legacy.locator("details.hict-advanced:not([open]) > summary").click()
             assert (
                 float(
                     legacy.get_by_label(
                         "Base dotplot resolution, bp/bin", exact=True
                     ).input_value()
                 )
-                == expected[0]
+                == expected_legacy[0]
             )
             legacy_levels = [
                 int(value.strip())
@@ -288,8 +330,8 @@ def main():
                 .input_value()
                 .split(",")
             ]
-            assert legacy_levels == expected, (legacy_levels, expected)
-            legacy.locator(".modal-header .btn-close").click()
+            assert legacy_levels == expected_legacy, (legacy_levels, expected_legacy)
+            legacy.get_by_role("button", name="Close dialog", exact=True).click()
             legacy.wait_for(state="hidden")
             result["checks"].append(
                 {"FASTAFileDotplotDefaultResolutions": legacy_levels}
@@ -307,7 +349,7 @@ def main():
             check.settle()
             for orientation in ("horizontal", "vertical"):
                 page.wait_for_function(
-                    """o=>window.__hictBenchmark.manager().linearTrackManager.lastRenderedSnapshot[o]?.featureHits.filter(h=>h.bin.label?.startsWith('UX-lane-')).length===6""",
+                    """o=>window.__hictBenchmark.manager().linearTrackManager.lastRenderedSnapshot[o]?.featureHits.some(h=>h.bin.label?.startsWith('UX-lane-'))""",
                     arg=orientation,
                 )
                 for index in range(6):
@@ -351,11 +393,16 @@ def main():
             assert state["pixelsPerBase"] > 12, state
             assert page.locator("canvas.sequence-axis.horizontal").is_visible()
             result["checks"].append({"zoomToFeatureAtReadableBaseScale": state})
+            assert not failed_track_queries, [response.text() for response in failed_track_queries]
             assert not check.errors, check.errors
             result["status"] = "passed"
             page.screenshot(path=str(out / "feature-zoom.png"))
         except BaseException:
             result["browserErrors"] = check.errors
+            result["failedTrackQueries"] = [
+                {"status": response.status, "request": response.request.post_data_json, "body": response.text()}
+                for response in failed_track_queries
+            ]
             result["optionCallStacks"] = page.evaluate("window.uxOptionCalls")
             page.screenshot(path=str(out / "failure.png"))
             raise

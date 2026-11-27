@@ -80,6 +80,13 @@ public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
   private final @NotNull SourceMetadata sourceMetadata;
+  @Getter(lombok.AccessLevel.PACKAGE)
+  private final @org.jetbrains.annotations.Nullable SequenceCoverage sequenceCoverage;
+
+  public boolean hasComputedSequenceCoverage() {
+    return sequenceCoverage != null;
+  }
+  private final java.util.Set<Long> alignmentPresenceLevels;
   private final @org.jetbrains.annotations.Nullable ApproximationProvenance.Summary approximationProvenance;
   //  private final long[] blockCount;
   private final int denseBlockSize;
@@ -162,7 +169,12 @@ public class ChunkedFile implements AutoCloseable {
       }
 
       this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+      this.alignmentPresenceLevels = effectiveResolutions.stream().filter(bp -> {
+        var root = "/resolutions/" + bp;
+        return reader.object().hasAttribute(root, "method") && "any_alignment".equals(reader.string().getAttr(root, "method"));
+      }).collect(java.util.stream.Collectors.toUnmodifiableSet());
       this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
+      this.sequenceCoverage = SequenceCoverage.read(reader, effectiveResolutions);
       this.approximationProvenance = ApproximationProvenance.read(reader, effectiveResolutions);
 
       this.denseBlockSize = (int) effectiveResolutions.stream()
@@ -513,6 +525,7 @@ public class ChunkedFile implements AutoCloseable {
       if (position == contigTree.getLengthInUnits(fromUnits, fromResolution)) {
         return contigTree.getLengthInUnits(toUnits, toResolution);
       }
+      if (es.segment() == null || position < 0) throw new IllegalArgumentException("Coordinate outside the assembly");
       final var node = es.segment().push().updateSizes();
       final var descriptor = node.getContigDescriptor();
       final boolean reversed = node.getTrueDirection() == ru.itmo.ctlab.hict.hict_library.domain.ContigDirection.REVERSED;

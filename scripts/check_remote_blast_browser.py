@@ -14,7 +14,7 @@ import threading
 import time
 from playwright.sync_api import expect, sync_playwright
 from remote_blast_fixture import make_executable
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -78,13 +78,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url
-                    + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             search = page.get_by_role(
                 "dialog", name="Search NCBI databases", exact=True
@@ -159,7 +153,7 @@ def main():
                     "FASTA records, or one DNA sequence per line", exact=True
                 ).fill(query_text)
                 expect(
-                    search.get_by_role("button", name="Find sequences", exact=True)
+                    search.get_by_role("button", name="Search", exact=True)
                 ).to_be_disabled()
                 return search
 
@@ -175,7 +169,7 @@ def main():
                     lambda response: response.url.endswith("/sequence/search/jobs")
                 ) as response:
                     search.get_by_role(
-                        "button", name="Find sequences", exact=True
+                        "button", name="Search", exact=True
                     ).click()
                 assert response.value.status == 202, response.value.text()
                 assert "x-hict-history-revision" not in response.value.request.headers
@@ -324,7 +318,7 @@ def main():
                 )
                 check.menu("Tools", "Find sequences in linked FASTA…")
                 local_dialog = page.get_by_role(
-                    "dialog", name="Find sequences in the linked FASTA", exact=True
+                    "dialog", name="Find sequences", exact=True
                 )
                 local_dialog.get_by_label("Matching", exact=True).select_option("blast")
                 expect(

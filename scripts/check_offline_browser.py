@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -27,17 +27,14 @@ def main():
 
         def local_only(route):
             url = route.request.url
-            if url.startswith("http://localhost:5000/"):
-                route.continue_(
-                    url=args.api + url.removeprefix("http://localhost:5000")
-                )
-            elif urlsplit(url).hostname in ("127.0.0.1", "localhost"):
+            if urlsplit(url).hostname in ("127.0.0.1", "localhost"):
                 route.continue_()
             else:
                 evidence["externalRequests"].append(url)
                 route.abort()
 
         context.route("**/*", local_only)
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(60000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
@@ -60,11 +57,11 @@ def main():
             check.reverse()
             changed = assembly()
             assert before["agpSha256"] != changed["agpSha256"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             prompt = page.get_by_role("alertdialog", name="Unsaved assembly edits")
             prompt.get_by_role("button", name="Cancel", exact=True).click()
             assert assembly()["agpSha256"] == changed["agpSha256"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             with page.expect_download() as saved:
                 prompt.get_by_role("button", name="Save session", exact=True).click()
             session = output / "offline-session.json"
@@ -74,10 +71,10 @@ def main():
             ).wait_for()
             page.reload()
             with page.expect_file_chooser() as cancelled:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             cancelled.value.set_files([])
             with page.expect_file_chooser() as chooser:
-                page.get_by_role("button", name="Load saved session…", exact=True).click()
+                page.get_by_role("button", name="Open session…", exact=True).click()
             chooser.value.set_files(session)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

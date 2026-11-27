@@ -9,7 +9,7 @@ import time
 import h5py
 import numpy as np
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -33,12 +33,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(60000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
         try:
             page.goto(args.url)
@@ -60,7 +55,7 @@ def main():
                 ("hictk", True, True, True, 0),
                 ("hictk", False, False, False, 9),
             ):
-                check.menu("File", "Export matrix")
+                check.menu("File", "Export matrix…")
                 dialog = page.get_by_role("dialog").filter(
                     has=page.get_by_role(
                         "heading", name="Export matrix to Cooler", exact=True
@@ -68,7 +63,7 @@ def main():
                 )
                 if not results:
                     dialog.get_by_role(
-                        "button", name="Browse...", exact=True
+                        "button", name="Browse…", exact=True
                     ).first.click()
                     picker = page.get_by_role("dialog").filter(
                         has=page.get_by_role(
@@ -81,7 +76,7 @@ def main():
                         == source.name
                     )
                     dialog.get_by_role(
-                        "button", name="Browse...", exact=True
+                        "button", name="Browse…", exact=True
                     ).first.click()
                     check.choose_file(source.name)
                     picker.get_by_role("button", name="Load", exact=True).click()
@@ -90,6 +85,7 @@ def main():
                         dialog.locator("input[readonly]").first.input_value()
                         == source.name
                     )
+                check.advanced()
                 selects = dialog.locator("select")
                 selects.nth(0).select_option(mode)
                 compression = selects.nth(1)
@@ -111,10 +107,16 @@ def main():
                 else:
                     assert balancing.is_enabled()
                     balancing.set_checked(balance)
-                dialog.locator("#export-current-assembly").set_checked(current)
                 uses_custom_agp = mode == "hictk" and not current and level == 4
+                order = dialog.get_by_role('group', name='Assembly order', exact=True)
+                if current:
+                    assert order.get_by_role('radio', name='Current edited assembly').is_checked()
+                else:
+                    order.get_by_role('radio', name='Original order in the file').check()
                 if uses_custom_agp:
-                    dialog.get_by_role("button", name="Browse...", exact=True).nth(
+                    order.get_by_role('radio', name='From an AGP file…').check()
+                    assert dialog.get_by_role('button', name='Export', exact=True).is_disabled()
+                    dialog.get_by_role("button", name="Browse…", exact=True).nth(
                         1
                     ).click()
                     picker = page.get_by_role("dialog").filter(
@@ -129,6 +131,10 @@ def main():
                         dialog.locator("input[readonly]").nth(1).input_value()
                         == custom_agp.name
                     )
+                    order.get_by_role('radio', name='Original order in the file').check()
+                    assert dialog.get_by_label('Assembly file', exact=True).count() == 0
+                    order.get_by_role('radio', name='From an AGP file…').check()
+                    assert dialog.get_by_label('Assembly file', exact=True).input_value() == custom_agp.name
                 dialog.locator("#export-all-resolutions").set_checked(all_levels)
                 target = f"export-{mode}-{level}." + ("mcool" if all_levels else "cool")
                 dialog.get_by_placeholder("matrix.mcool", exact=True).fill(target)
@@ -172,7 +178,7 @@ def main():
                     lambda response: response.url.endswith("/convert/jobs")
                 ) as response:
                     dialog.get_by_role(
-                        "button", name="Export Cooler", exact=True
+                        "button", name="Export", exact=True
                     ).click()
                 assert response.value.status in (200, 202), response.value.text()
                 request = response.value.request.post_data_json

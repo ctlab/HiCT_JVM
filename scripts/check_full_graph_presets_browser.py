@@ -6,7 +6,7 @@ import copy
 import json
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -22,12 +22,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
         group = page.get_by_role("group", name="Visualization presets", exact=True)
         picker = page.get_by_role("combobox", name="Visualization preset", exact=True)
@@ -61,6 +56,9 @@ def main():
 
         def editor_open():
             check.menu("View", "Rendering pipeline…")
+            advanced = page.locator(".pipeline-root details.hict-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
             page.locator(".graph-canvas").wait_for(state="visible")
             page.wait_for_function(
                 "document.querySelector('.graph-canvas').data.graph._nodes.length>2"
@@ -370,7 +368,7 @@ def main():
 
         def native_session():
             with page.expect_download() as download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / "full-graph-session.json"
             download.value.save_as(path)
             document = json.loads(path.read_text())
@@ -378,13 +376,13 @@ def main():
             saved = next(item for item in library if item["name"] == preset_name)
             assert saved["renderPipeline"] == baseline["saved"]["renderPipeline"]
             preserved_id = saved["option_id"]
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.wait_for_function("!window.__hictBenchmark.manager()")
             page.evaluate(
                 "Object.keys(sessionStorage).filter(key=>key.startsWith('hict.renderPipeline.editor.v1:')).forEach(key=>sessionStorage.removeItem(key))"
             )
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",
@@ -444,13 +442,13 @@ def main():
                 saved["renderPipeline"] == deep
             ), "A stale shallow layout must not replace a deeper applied graph"
             with page.expect_download() as download:
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
             path = output / "deep-graph-session.json"
             download.value.save_as(path)
-            check.menu("File", "Close")
+            check.menu("File", "Close map")
             page.wait_for_function("!window.__hictBenchmark.manager()")
             with page.expect_file_chooser() as chooser:
-                check.menu("File", "Open session")
+                check.menu("File", "Open session…")
             chooser.value.set_files(path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",

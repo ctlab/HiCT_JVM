@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Read-only browser checks for whole-resolution contrast bounds; no generation jobs."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from browser_review_helpers import expand_slider_limits, select_visualization_source
+from browser_review_helpers import expand_signal_advanced, select_visualization_source
 
 
 def main():
@@ -12,6 +13,7 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:8186")
     parser.add_argument("--api", default="http://127.0.0.1:5106")
     parser.add_argument("--output", default="/tmp/hict-review-20261018/exact-browser")
+    parser.add_argument("--delay-source-hydration", action="store_true")
     args = parser.parse_args()
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -24,13 +26,12 @@ def main():
         page.on("request", lambda request: blocks.append(request.post_data_json)
                 if request.url.endswith("/matrix/statistics") and not request.post_data_json.get("metadataOnly") else None)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         page.evaluate("api => window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5', api)", args.api)
         page.wait_for_timeout(1500)
-        button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+        button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
         if button.is_visible():
             button.click()
         page.evaluate("""async () => {
@@ -43,7 +44,7 @@ def main():
                 upperExpression:color('PRIMARY'),lowerExpression:color('SECONDARY')});
             await m.reloadTilesFromBackend();m.viewAndLayersManager.fitViewToActiveExtent();
         }""")
-        expand_slider_limits(page)
+        expand_signal_advanced(page)
         page.get_by_role("button", name="Scan whole map", exact=True).click()
         page.wait_for_function("""() => {
             const t=document.querySelector('[data-testid="exact-range-status"]')?.textContent ?? '';
@@ -58,13 +59,39 @@ def main():
         assert page.get_by_test_id("exact-range-status").inner_text() == before
         assert len(blocks) == block_count, "Panning restarted a completed whole-resolution scan"
         results.append({"test": "pan retains exact bounds and cache", "status": before, "blocks": block_count})
-        select_visualization_source(page, "SECONDARY")
-        page.get_by_role("button", name="Scan whole map", exact=True).click()
+        held_options = []
+        route_pattern = "**/get_visualization_options"
+        scans_while_held = 0
+
+        def hold_options(route):
+            held_options.append(route)
+
+        if args.delay_source_hydration:
+            page.route(route_pattern, hold_options)
+        try:
+            select_visualization_source(page, "SECONDARY")
+            page.get_by_role("button", name="Scan whole map", exact=True).click()
+            if args.delay_source_hydration:
+                page.wait_for_timeout(200)
+                assert held_options, "Source option hydration was not delayed"
+                scans_while_held = len(blocks) - block_count
+        finally:
+            if args.delay_source_hydration:
+                page.unroute(route_pattern, hold_options)
+                for route in held_options:
+                    route.fallback()
+        if args.delay_source_hydration:
+            page.wait_for_load_state("networkidle")
+            assert scans_while_held == 0, "The scan ran with unsettled source options"
         page.wait_for_function("""previous => {
             const t=document.querySelector('[data-testid="exact-range-status"]')?.textContent ?? '';
             return t.includes('Exact limits:') && !t.includes('blocks') && t!==previous;
         }""", arg=before)
         secondary = page.get_by_test_id("exact-range-status").inner_text()
+        assert blocks[block_count:] and all(
+            block.get("expression", {}).get("source") == "SECONDARY"
+            for block in blocks[block_count:]
+        ), "The new scan must use only secondary data"
         results.append({"test": "independent secondary bounds", "status": secondary})
         page.screenshot(path=str(out / "exact-range-desktop.png"))
         before_return = len(blocks)

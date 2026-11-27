@@ -13,7 +13,7 @@ import threading
 import xml.etree.ElementTree as ET
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -62,13 +62,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(90000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url
-                    + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             requests, released, checks = [], [], []
             failures, mutations = [], []
@@ -189,7 +183,7 @@ def main():
                                 "Export area", exact=True
                             ).select_option(scope)
                             dialog.get_by_role(
-                                "button", name="Refresh capture", exact=True
+                                "button", name="Update preview", exact=True
                             ).click()
                             expect(dialog.locator("#export-svg-button")).to_be_enabled(
                                 timeout=90000
@@ -280,7 +274,7 @@ def main():
                                 "Export area", exact=True
                             ).select_option(scope)
                             dialog.get_by_role(
-                                "button", name="Refresh capture", exact=True
+                                "button", name="Update preview", exact=True
                             ).click()
                             expect(dialog.locator("#export-svg-button")).to_be_enabled(
                                 timeout=90000
@@ -444,10 +438,21 @@ def main():
                         + change
                         + "-change-rejects-capture-and-restores-interactions"
                     )
-                    close()
                     page.unroute(
                         "**/visualization/captures/*/validate", hold_validation
                     )
+                    retry = dialog.get_by_role("button", name="Retry preview", exact=True)
+                    for _ in range(40):
+                        if retry.evaluate("(button) => button === document.activeElement"):
+                            break
+                        page.keyboard.press("Tab")
+                    expect(retry).to_be_focused()
+                    page.keyboard.press("Enter")
+                    expect(dialog.locator("#export-svg-button")).to_be_enabled()
+                    expect(dialog.get_by_text("Figure preview ready.", exact=True)).to_be_visible()
+                    expect(dialog.get_by_role("alert")).to_have_count(0)
+                    record("keyboard-retry-recovers-first-" + change + "-capture")
+                    close()
                 # A single failed map tile must reject promptly, rather than freeze an incomplete scene.
                 failed_tiles = []
 

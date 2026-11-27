@@ -49,8 +49,6 @@ def main():
                 route.fulfill(status=200, headers=headers,
                               content_type="application/octet-stream" if binary else "application/json",
                               body=b"" if binary else json.dumps({"image": placeholder, "cancelled": True}))
-            elif request.url.startswith("http://localhost:5000/"):
-                route.continue_(url=args.api + request.url.removeprefix("http://localhost:5000"))
             else:
                 route.continue_()
 
@@ -72,7 +70,7 @@ def main():
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             page.evaluate("""async () => {const m=window.__hictBenchmark.manager();

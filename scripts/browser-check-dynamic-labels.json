@@ -1,0 +1,133 @@
+{
+  "Zoom to contig": {
+    "check_layout_rules_browser.py": "The menu composes the label from Zoom to and the entity kind."
+  },
+  "2 excluded bins masked.": {
+    "check_notification_lifecycle_browser.py": "The notice includes the excluded-bin count from the fixture."
+  },
+  "AGP: example.agp": {
+    "check_example_jobs_browser.py": "The source ribbon inserts the linked fixture filename."
+  },
+  "Aggregation for Signal": {
+    "check_track_formats_browser.py": "Aggregation label includes the user-provided BigWig track name."
+  },
+  "Color for Renamed annotations": {
+    "check_tracks_workspace_browser.py": "Color picker label includes the renamed track."
+  },
+  "Console-only diagnostic": {
+    "check_failure_reporting_browser.py": "Synthetic diagnostic submitted by the test."
+  },
+  "Convert 0 files": {
+    "check_batch_conversion_browser.py": "The conversion button inserts the current number of selected files."
+  },
+  "Convert 1 file": {
+    "check_batch_conversion_browser.py": "The conversion button inserts the current number of selected files.",
+    "check_matrix_input_formats_browser.py": "The conversion button inserts the current number of selected files."
+  },
+  "Curve point 1": {
+    "check_color_midpoint_browser.py": "Curve slider label uses the one-based point index."
+  },
+  "Estimated:": {
+    "check_approximate_export_browser.py": "Source chip composes its data-dependent qualifier and punctuation."
+  },
+  "Genes": {
+    "check_sequence_tracks_browser.py": "The test assigns this track display name."
+  },
+  "UX overlapping features feature rows": {
+    "check_sequence_result_feature_ux_browser.py": "The scroll region label includes the fixture track name."
+  },
+  "Move Renamed annotations down": {
+    "check_tracks_workspace_browser.py": "Reorder label includes the renamed track."
+  },
+  "Move Renamed annotations up": {
+    "check_tracks_workspace_browser.py": "Reorder label includes the renamed track."
+  },
+  "Rejected background operation": {
+    "check_failure_reporting_browser.py": "Synthetic rejected operation submitted by the test."
+  },
+  "Release verification preset": {
+    "check_workspace_controls_browser.py": "The test supplies this preset name."
+  },
+  "Remove snapshot Stored comparison": {
+    "check_figure_snapshots_browser.py": "Snapshot action includes the user-provided snapshot name."
+  },
+  "Rendering for Reads": {
+    "check_track_formats_browser.py": "Rendering label includes the user-provided BAM track name."
+  },
+  "Secondary (estimated):": {
+    "check_approximate_export_browser.py": "Source chip composes its data-dependent qualifier and punctuation."
+  },
+  "Select batch-new.mcool": {
+    "check_batch_conversion_browser.py": "File row label includes a synthetic fixture filename."
+  },
+  "Show Renamed annotations": {
+    "check_tracks_workspace_browser.py": "Visibility label includes the renamed track."
+  },
+  "Snapshots (1)": {
+    "check_figure_print_size_browser.py": "Snapshot control inserts the runtime count."
+  },
+  "Snapshots (2)": {
+    "check_sequence_lifecycle_browser.py": "Snapshot control inserts the runtime count."
+  },
+  "Track External annotation": {
+    "check_tracks_workspace_browser.py": "Track group includes the externally attached track’s name."
+  },
+  "Track Map weights - Primary": {
+    "check_tracks_workspace_browser.py": "Track group includes its server-generated source name."
+  },
+  "Track Newer annotations": {
+    "check_tracks_workspace_browser.py": "Track group includes the newly assigned display name."
+  },
+  "Track Reads": {
+    "check_track_formats_browser.py": "Track group includes the fixture-assisted BAM display name."
+  },
+  "Track Renamed annotations": {
+    "check_tracks_workspace_browser.py": "Track group includes the renamed track."
+  },
+  "Track Signal": {
+    "check_track_formats_browser.py": "Track group includes the fixture-assisted BigWig display name."
+  },
+  "Track Workspace annotations": {
+    "check_tracks_workspace_browser.py": "Track group includes the name assigned in this test."
+  },
+  "Track name for External annotation": {
+    "check_tracks_workspace_browser.py": "Name field includes the externally attached track’s name."
+  },
+  "Track name for Map weights - Primary": {
+    "check_tracks_workspace_browser.py": "Name field includes the server-generated source name."
+  },
+  "Track name for Map weights - Secondary": {
+    "check_tracks_workspace_browser.py": "Name field includes the server-generated source name."
+  },
+  "Track name for Newer annotations": {
+    "check_tracks_workspace_browser.py": "Name field includes the newly assigned display name."
+  },
+  "Track name for Release annotations": {
+    "check_track_controls_browser.py": "Name field includes the name assigned in this test."
+  },
+  "Track name for Workspace annotations": {
+    "check_tracks_workspace_browser.py": "Name field includes the name assigned in this test."
+  },
+  "Track name for annotations.bed": {
+    "check_responsive_workspace_browser.py": "Name field includes the imported fixture's filename."
+  },
+  "Transaction graph": {
+    "check_visualization_transactions_browser.py": "The rendering preset name is entered by this test."
+  },
+  "Type a color name or hex value": {
+    "check_oe_palette_browser.py": "The vanilla-picker dependency supplies the textbox label.",
+    "check_signal_controls_browser.py": "The vanilla-picker dependency supplies the textbox label."
+  },
+  "Undo Reverse selection": {
+    "check_ui_crawl_browser.py": "Undo includes the JVM journal’s label for the latest edit."
+  },
+  "Variants": {
+    "check_track_formats_browser.py": "The test assigns this display name to its VCF track."
+  },
+  "View snapshot Before cut": {
+    "check_figure_snapshots_browser.py": "Snapshot action includes the user-provided snapshot name."
+  },
+  "broken.hict.hdf5": {
+    "check_failed_primary_open_browser.py": "The file picker shows the deliberately malformed fixture filename."
+  }
+}

@@ -12,7 +12,7 @@ import threading
 import xml.etree.ElementTree as ET
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
@@ -62,13 +62,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(30000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url
-                    + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             checks = []
             restore_requests = []
@@ -90,6 +84,9 @@ def main():
             def open_export():
                 print("Opening export", flush=True)
                 page.locator("#export-dropdown-toggle").click()
+                dialog.wait_for()
+                check.advanced()
+                dialog.get_by_label("Figure print size", exact=True).select_option("0")
                 expect(dialog.locator("#export-svg-button")).to_be_enabled(
                     timeout=90000
                 )
@@ -180,7 +177,7 @@ def main():
                 record("snapshot-controls-fit-a-640-pixel-window")
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 close_export()
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 prompt = page.get_by_role(
                     "alertdialog", name="Unsaved figure snapshots", exact=True
                 )
@@ -350,7 +347,7 @@ def main():
                         close:async()=>{if(window.__snapshotWrite.hold)await new Promise(resolve=>{window.__snapshotWrite.pending=true;window.__snapshotWrite.release=resolve})},abort:async()=>{}
                     }),getFile:async()=>new File([window.__snapshotWrite.text],'snapshots-session.json',{type:'application/json'})});
                 }""")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function(
                     "()=>!window.__hictBenchmark.manager().figureSnapshots.dirty"
                 )
@@ -363,12 +360,12 @@ def main():
                 session_path = out / "snapshots-session.json"
                 session_path.write_text(session_text)
                 page.evaluate("window.showSaveFilePicker=undefined")
-                check.menu("File", "Close")
+                check.menu("File", "Close map")
                 expect(
                     page.get_by_role("heading", name="No contact map open", exact=True)
                 ).to_be_visible()
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(session_path)
                 page.get_by_text(
                     "Session restored. Undo history starts from the restored assembly.",
@@ -444,7 +441,7 @@ def main():
                 )
                 count_before_bad = len(restore_requests)
                 with page.expect_file_chooser() as chooser:
-                    check.menu("File", "Open session")
+                    check.menu("File", "Open session…")
                 chooser.value.set_files(bad_path)
                 page.get_by_text(
                     "Invalid figure snapshot: unsupported scene element script",
@@ -467,7 +464,7 @@ def main():
                         close:async()=>{if(window.__snapshotWrite.hold)await new Promise(resolve=>{window.__snapshotWrite.pending=true;window.__snapshotWrite.release=resolve})},abort:async()=>{}
                     }),getFile:async()=>new File([window.__snapshotWrite.text],'snapshots-session.json',{type:'application/json'})});
                 }""")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function("window.__snapshotWrite.pending")
                 open_export()
                 snapshot("Newer while saving")
@@ -491,7 +488,7 @@ def main():
                     == 4
                 )
                 record("late-session-write-does-not-mark-newer-snapshots-saved")
-                check.menu("File", "Save session")
+                check.menu("File", "Save session…")
                 page.wait_for_function(
                     "()=>!window.__hictBenchmark.manager().figureSnapshots.dirty"
                 )

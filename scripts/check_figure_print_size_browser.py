@@ -15,13 +15,15 @@ import xml.etree.ElementTree as ET
 import zlib
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("jar", "webui", "output"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--warning-recovery", action="store_true")
+    parser.add_argument("--fixture-java", default="java")
     args = parser.parse_args()
     out = Path(args.output).absolute()
     assert out == out.resolve() and out.is_relative_to("/tmp")
@@ -32,7 +34,7 @@ def main():
     with (out / "fixture.log").open("w") as log:
         subprocess.run(
             [
-                "java",
+                args.fixture_java,
                 "--class-path",
                 str(jar),
                 "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java",
@@ -65,13 +67,7 @@ def main():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.set_default_timeout(90000)
             page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-            page.route(
-                "http://localhost:5000/**",
-                lambda route: route.continue_(
-                    url=api.url
-                    + route.request.url.removeprefix("http://localhost:5000")
-                ),
-            )
+            configure_test_api(page, api.url)
             check = BrowserCheck(page, out)
             checks = []
             dialog = page.get_by_role("dialog", name="Export figure", exact=True)
@@ -134,6 +130,59 @@ def main():
                 check.settle()
                 page.locator("#export-dropdown-toggle").click()
                 expect(dialog.locator("#export-png-button")).to_be_enabled()
+                expect(dialog).to_contain_text("Smallest export text: 6.0 pt")
+                auto = save("auto-label-size", "svg")
+                assert metadata(auto)["outputSize"]["minimumTextPoints"] == 6
+                def smallest_svg_label_points(path):
+                    return page.evaluate("""source => {
+                    const doc = new DOMParser().parseFromString(source, "image/svg+xml");
+                    const svg = document.importNode(doc.documentElement, true);
+                    for (const image of svg.querySelectorAll("image")) image.remove();
+                    svg.style.position = "fixed";
+                    svg.style.opacity = "0";
+                    document.body.append(svg);
+                    try {
+                        const sizes = [...svg.querySelectorAll("text,tspan")]
+                            .filter(node => [...node.childNodes].some(child =>
+                                child.nodeType === Node.TEXT_NODE && child.textContent.trim()))
+                            .map(node => {
+                                const matrix = node.getScreenCTM();
+                                return matrix ? Number.parseFloat(getComputedStyle(node).fontSize) *
+                                    Math.hypot(matrix.c, matrix.d) * 0.75 : 0;
+                            }).filter(size => size > 0);
+                        return Math.min(...sizes);
+                    } finally { svg.remove(); }
+                }""", path.read_text())
+
+                printed = smallest_svg_label_points(auto)
+                assert 5.95 <= printed <= 6.05, printed
+                check.advanced()
+                label_size = dialog.get_by_label("Label size")
+                print_size = dialog.get_by_label("Figure print size", exact=True)
+                if args.warning_recovery:
+                    label_size.select_option("captured")
+                    print_size.select_option("custom")
+                    dialog.get_by_label("Width (mm)", exact=True).fill("22")
+                    warning = dialog.get_by_role("status").filter(
+                        has_text="It may be unreadable in print."
+                    )
+                    expect(warning).to_be_visible()
+                    expect(dialog.locator("#export-svg-button")).to_be_enabled()
+                    larger_labels = warning.get_by_role("button", name="Use larger labels", exact=True)
+                    larger_labels.focus()
+                    larger_labels.press("Enter")
+                    expect(label_size).to_have_value("auto")
+                    readable = dialog.get_by_role("status").filter(has_text="Smallest export text:")
+                    expect(readable).to_contain_text("6.0 pt")
+                    expect(readable).to_be_focused()
+                    enlarged = save("readable-22", "svg")
+                    assert 5.95 <= smallest_svg_label_points(enlarged) <= 6.05
+                    checks.append({
+                        "test": "small-print-text-warning-offers-keyboard-recovery-and-keeps-save-available",
+                        "status": "passed",
+                    })
+                label_size.select_option("captured")
+                print_size.select_option("0")
                 original = save("captured", "png")
                 original_metadata = metadata(original)
                 original_chunks = png_chunks(original)
@@ -188,11 +237,9 @@ def main():
                         == 1
                     )
                     root = ET.parse(paths["svg"]).getroot()
-                    # Independent fixture oracle: its smallest labels are 9 captured pixels.
-                    # The print readout must use physical points, not CSS px or nominal DPI.
-                    expected_points = 9 * mm * 72 / (25.4 * dimensions[0])
+                    expected_points = smallest_svg_label_points(paths["svg"])
                     expect(dialog).to_contain_text(
-                        f"Smallest vector text: {expected_points:.1f} pt at this width."
+                        f"Smallest export text: {expected_points:.1f} pt at this width."
                     )
                     assert root.attrib["width"] == str(mm) + "mm"
                     assert (

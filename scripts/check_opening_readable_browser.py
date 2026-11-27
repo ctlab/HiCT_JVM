@@ -5,6 +5,7 @@ Opens each fixture through File > Manual Open, the Open Wizard and Attach, with 
 measures how much of the main diagonal is drawn in a color that differs from the background. A blank map, or a
 pipeline that still multiplies by weights the options switched off, fails the check.
 """
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -42,7 +43,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1440, 'height': 900})
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(60000)
         page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
@@ -75,7 +76,7 @@ def main():
             page.wait_for_timeout(3500)
 
         def open_manual(fixture):
-            file_menu('Open…')
+            file_menu('Open map…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
             pick(dialog, fixture)
@@ -85,8 +86,6 @@ def main():
             file_menu('Open with options…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
-            dialog.get_by_role('button', name='Single map').click()
-            dialog.get_by_role('button', name='Next', exact=True).click()
             dialog.get_by_role('button', name='Browse…').first.click()
             picker = page.get_by_role('dialog').last
             pick(picker, fixture)
@@ -95,7 +94,7 @@ def main():
                   dialog.get_by_text('Track precomputing', exact=True).count() == 0)
             page.wait_for_timeout(800)
             for _ in range(14):
-                finish = dialog.get_by_role('button', name='Finish', exact=True)
+                finish = dialog.get_by_role('button', name='Open map', exact=True)
                 if finish.count() and finish.is_enabled():
                     finish.click()
                     break
@@ -110,7 +109,10 @@ def main():
             post('/open', {'filename': fixture})
             page.reload()
             page.wait_for_function('window.__hictBenchmark')
-            file_menu('Attach')
+            file_menu('Join running session')
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             wait_for_map()
 
         def server_state():
@@ -171,7 +173,10 @@ def main():
                 check(f'{tag}: pipeline weights match the weights option',
                       uses_weights(pipeline) == bool(options.get('applyCoolerWeights')),
                       f"pipeline={uses_weights(pipeline)} option={options.get('applyCoolerWeights')}")
-            upper = page.get_by_label('Upper signal threshold').input_value()
+            field = page.get_by_label('Upper signal threshold')
+            field.focus()
+            upper = field.input_value()
+            field.blur()
             expected = (pipeline['upperExpression'].get('maxSignal') if pipeline.get('enabled') else options['colormap']['maxSignal'])
             check(f'{tag}: sidebar upper threshold equals the rendered one', abs(float(upper) - float(expected)) <= 1e-6 * max(1.0, abs(float(expected))),
                   f'sidebar={upper} server={expected}')
@@ -238,7 +243,7 @@ def main():
                     check(f'{tag}: file weights are off in both options and pipeline',
                           state['options']['applyCoolerWeights'] is False and not uses_weights(state['pipeline']))
                     check(f'{tag}: no blocking prompt',
-                          page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
+                          page.get_by_role('button', name='Show raw contacts (no balancing)').count() == 0)
                     page.get_by_role('button', name='Open notifications', exact=True).click()
                     notice = page.get_by_role('dialog').get_by_text(
                         'This file has no usable Cooler weights. HiCT opened the map without file weights.',
@@ -251,7 +256,7 @@ def main():
                 for way, opener in (('manual', open_manual), ('wizard', open_wizard), ('attach', open_attach)):
                     fresh()
                     opener(fixture)
-                    check(f'{stem} {way}: the weights dialog is not shown', page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
+                    check(f'{stem} {way}: the weights dialog is not shown', page.get_by_role('button', name='Show raw contacts (no balancing)').count() == 0)
                     measure(f'{stem}-{way}')
                 # zoomed in on the diagonal the map must stay readable (the range is not tied to the first view)
                 fresh()
@@ -273,16 +278,17 @@ def main():
                 page.evaluate('()=>window.localStorage.clear()')
                 open_manual(fixture)
                 settle()
-                note = page.get_by_role('button', name='Change')
+                note = page.locator('#normalization-settings-dropdown').get_by_role('button', name='Change', exact=True)
                 if note.count():
                     check(f'{stem}: a one-line note offers Change', note.first.is_visible())
-                    note.first.click()
-                    page.get_by_role('button', name='Do not use Cooler weights').click()
+                    note.click()
+                    policy = page.locator('#cooler-weights-nan-policy')
+                    check(f'{stem}: Change opens and focuses the policy',
+                          policy.evaluate('element => element === document.activeElement'))
+                    policy.select_option('DISABLE_WEIGHTS')
                     measure(f'{stem}-excluded-off')
-                    page.locator('#signal-advanced > summary').click()
-                    page.get_by_text('Cooler weights', exact=True).first.click()
                     for value in ('REPLACE_NANS_WITH_ONE', 'REPLACE_NANS_WITH_ZERO'):
-                        page.locator('#cooler-weights-nan-policy').select_option(value)
+                        policy.select_option(value)
                         measure(f'{stem}-excluded-{value.split("_")[-1].lower()}')
                 else:
                     check(f'{stem}: no excluded bins, nothing to mask', fixture not in args.nan_files)

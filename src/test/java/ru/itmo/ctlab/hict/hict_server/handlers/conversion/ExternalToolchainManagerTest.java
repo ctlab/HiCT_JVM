@@ -38,7 +38,7 @@ class ExternalToolchainManagerTest {
     System.setProperty("HICT_SEQKIT_BIN", seqkit.toString());
     System.setProperty("HICT_MODDOTPLOT_CLI_BIN", upstream.toString());
     System.setProperty("HICT_MODDOTPLOT_BIN", adapter.toString());
-    final var manager = new ExternalToolchainManager();
+    final var manager = new ExternalToolchainManager(key -> null);
     assertEquals(seqkit.toAbsolutePath(), manager.requireSequenceCommand("seqkit"));
     assertEquals(upstream.toAbsolutePath(), manager.requireSequenceCommand("moddotplot"));
     assertEquals(adapter.toAbsolutePath(), manager.requireSequenceCommand("hict-moddotplot"));
@@ -58,11 +58,11 @@ class ExternalToolchainManagerTest {
       executable.toFile().setExecutable(false, false);
       var method = ExternalToolchainManager.class.getDeclaredMethod("extractBundledPayload", String.class, io.vertx.core.json.JsonObject.class);
       method.setAccessible(true);
-      assertEquals(root, method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+      assertEquals(root, method.invoke(new ExternalToolchainManager(key -> null), "test-platform", manifest));
       assertTrue(Files.isExecutable(executable));
       manifest.put("files", new io.vertx.core.json.JsonArray(java.util.List.of("../../../../escape")));
       var error = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
-        () -> method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+        () -> method.invoke(new ExternalToolchainManager(key -> null), "test-platform", manifest));
       assertTrue(error.getCause() instanceof java.io.IOException);
       assertTrue(error.getCause().getMessage().contains("escapes"));
     } finally { restoreSystemProperty("java.io.tmpdir", oldTemp); }
@@ -135,11 +135,18 @@ class ExternalToolchainManagerTest {
 
     System.setProperty("HICT_TOOLCHAIN_DIR", toolchainDir.toString());
 
-    final var status = new ExternalToolchainManager().inspect();
+    final var status = new ExternalToolchainManager(key -> null).inspect();
 
     assertTrue(status.hicConversionAvailable());
     assertEquals("external", status.source());
     assertEquals(hictk.toAbsolutePath().normalize().toString(), status.hictkCommand());
+
+    final var override = writeExecutable(tempDir.resolve("alternate-hictk.exe"));
+    final var inherited = new ExternalToolchainManager(
+      key -> "HICT_HICTK_BIN".equals(key) ? override.toString() : null
+    );
+    assertEquals(override.toAbsolutePath().normalize().toString(), inherited.inspect().hictkCommand());
+
     assertTrue(status.notices().contains("test notice"));
     assertTrue(status.citations().contains("test citation"));
     assertTrue(
@@ -159,7 +166,7 @@ class ExternalToolchainManagerTest {
 
     System.setProperty("HICT_TOOLCHAIN_DIR", toolchainDir.toString());
 
-    final var status = new ExternalToolchainManager().inspect();
+    final var status = new ExternalToolchainManager(key -> null).inspect();
 
     assertTrue(status.hicConversionAvailable());
     assertTrue(
@@ -205,13 +212,13 @@ class ExternalToolchainManagerTest {
     System.setProperty("HICT_TOOLCHAIN_DIR", toolchainDir.toString());
 
     ExternalToolchainManager.setDotplotAlignerPreference("mm2plus-avx2");
-    final var mm2PlusStatus = new ExternalToolchainManager().inspect();
+    final var mm2PlusStatus = new ExternalToolchainManager(key -> null).inspect();
     assertEquals("mm2plus-avx2", mm2PlusStatus.dotplotAlignerPreference());
     assertEquals("mm2-plus AVX2", mm2PlusStatus.selectedDotplotAligner());
     assertEquals(mm2PlusAvx2.toAbsolutePath().normalize().toString(), mm2PlusStatus.selectedDotplotAlignerCommand());
 
     ExternalToolchainManager.setDotplotAlignerPreference("minimap2");
-    final var minimap2Status = new ExternalToolchainManager().inspect();
+    final var minimap2Status = new ExternalToolchainManager(key -> null).inspect();
     assertEquals("minimap2", minimap2Status.dotplotAlignerPreference());
     assertEquals("minimap2", minimap2Status.selectedDotplotAligner());
     assertEquals(minimap2.toAbsolutePath().normalize().toString(), minimap2Status.selectedDotplotAlignerCommand());

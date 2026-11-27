@@ -9,6 +9,8 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 
+import ru.itmo.ctlab.hict.hict_server.util.WindowsPaths;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -37,6 +39,14 @@ public final class HictkConversionPipeline {
     "\\b(copying|generating)\\s+(\\d+)\\s+resolution\\b", Pattern.CASE_INSENSITIVE);
 
   private final @NotNull ExternalToolchainManager toolchainManager;
+  private final WindowsPaths windowsPaths = new WindowsPaths(System::getenv);
+
+  private WindowsPaths.StagedInput stageHictkInput(Path input) throws IOException {
+    final var data = System.getProperty("DATA_DIR", System.getenv().getOrDefault("DATA_DIR", "."));
+    final var processed = System.getProperty("PROCESSED_DIR", System.getenv().getOrDefault(
+      "PROCESSED_DIR", Path.of(data).resolve("processed").toString()));
+    return windowsPaths.hictkInput(input, Path.of(processed).toAbsolutePath().normalize());
+  }
 
   public HictkConversionPipeline(final @NotNull ExternalToolchainManager toolchainManager) {
     this.toolchainManager = toolchainManager;
@@ -94,10 +104,10 @@ public final class HictkConversionPipeline {
     }
 
     final var tmpDirectory = Files.createTempDirectory("hict-hic-pipeline-");
-    try {
+    try (final var input = stageHictkInput(options.inputPath())) {
       final var metadataStage = stagePlan.get(0);
       emitStage(logger, stagePlan, metadataStage.id(), 0.0d, "Reading .hic metadata");
-      final var metadata = readMetadata(options.inputPath(), toolchain, processSink, cancellationRequested);
+      final var metadata = readMetadata(input.path(), toolchain, processSink, cancellationRequested);
       final var targetResolutions = resolveTargetResolutions(options.resolutions(), metadata.resolutions());
       final var automaticZoomifyPyramid = shouldUseAutomaticZoomifyPyramid(options.resolutions(), targetResolutions);
       final var baseResolution = targetResolutions.stream().mapToLong(Long::longValue).min()
@@ -112,9 +122,9 @@ public final class HictkConversionPipeline {
           : "Resolved " + targetResolutions.size() + " output resolution(s); finest=" + baseResolution
       );
 
-      final var baseCoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".base.cool");
+      final var baseCoolPath = tmpDirectory.resolve(stripSuffix(input.path().getFileName().toString()) + ".base.cool");
       final var mcoolOutputPath = direction == ConversionDirection.HIC_TO_HICT
-        ? tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".generated.mcool")
+        ? tmpDirectory.resolve(stripSuffix(input.path().getFileName().toString()) + ".generated.mcool")
         : options.outputPath();
 
       final var convertStage = stagePlan.get(1);
@@ -123,7 +133,7 @@ public final class HictkConversionPipeline {
         List.of(
           toolchain.hictkCommand().toString(),
           "convert",
-          options.inputPath().toString(),
+          input.path().toString(),
           baseCoolPath.toString(),
           "--output-fmt",
           "cool",
@@ -289,16 +299,16 @@ public final class HictkConversionPipeline {
     logger.accept("HICT_LOAD_FORMAT direction=" + direction.wireName());
 
     final var tmpDirectory = Files.createTempDirectory("hict-hictk-load-pipeline-");
-    try {
+    try (final var input = stageHictkInput(options.inputPath())) {
       emitStage(logger, stagePlan, "prepare_load", 0.0d, "Resolving hictk load options");
       final var loadOptions = resolveLoadOptions(direction, options.inputPath(), requestedLoadOptions, tmpDirectory);
       emitStage(logger, stagePlan, "prepare_load", 1.0d, describeLoadOptions(direction, loadOptions));
 
-      final var baseCoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".base.cool");
-      final var mcoolOutputPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".generated.mcool");
+      final var baseCoolPath = tmpDirectory.resolve(stripSuffix(input.path().getFileName().toString()) + ".base.cool");
+      final var mcoolOutputPath = tmpDirectory.resolve(stripSuffix(input.path().getFileName().toString()) + ".generated.mcool");
 
       emitStage(logger, stagePlan, "load_base", 0.0d, "Loading interactions with hictk");
-      final var loadCommand = buildLoadCommand(direction, options, toolchain, loadOptions, baseCoolPath, tmpDirectory);
+      final var loadCommand = buildLoadCommand(direction, options, input.path(), toolchain, loadOptions, baseCoolPath, tmpDirectory);
       runStreamingCommand(
         loadCommand,
         tmpDirectory,
@@ -430,9 +440,9 @@ public final class HictkConversionPipeline {
 
     logger.accept("HICT_TOOLCHAIN source=" + toolchain.source() + " platform=" + toolchain.platform());
     final var tmpDirectory = Files.createTempDirectory("hict-mcool-pyramid-pipeline-");
-    try {
+    try (final var input = stageHictkInput(options.inputPath())) {
       emitStage(logger, stagePlan, "metadata", 0.0d, "Reading Cooler metadata");
-      final var metadata = readMetadata(options.inputPath(), toolchain, processSink, cancellationRequested);
+      final var metadata = readMetadata(input.path(), toolchain, processSink, cancellationRequested);
       final var baseResolution = metadata.resolutions().stream().mapToLong(Long::longValue).min()
         .orElseThrow(() -> new IllegalStateException("No input resolutions were resolved for " + options.inputPath().getFileName()));
       final var requestedPyramidResolutions = resolvePyramidTargetResolutions(options.resolutions(), metadata.resolutions());
@@ -444,9 +454,12 @@ public final class HictkConversionPipeline {
         "Resolved finest resolution " + baseResolution + " from " + metadata.resolutions().size() + " input resolution(s)"
       );
 
+      final boolean singleResolution = isSingleResolutionCooler(options.inputPath());
       if (!options.buildResolutionPyramid()) {
         emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing Cooler file for balanced import");
-        final var preparedCoolerPath = tmpDirectory.resolve(options.inputPath().getFileName().toString());
+        final var preparedName = input.path().equals(options.inputPath()) ? input.path().getFileName().toString()
+          : singleResolution ? "prepared.cool" : "prepared.mcool";
+        final var preparedCoolerPath = tmpDirectory.resolve(preparedName);
         Files.copy(options.inputPath(), preparedCoolerPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         emitStage(logger, stagePlan, "extract_base", 1.0d, "Prepared Cooler file " + preparedCoolerPath.getFileName());
         emitStage(logger, stagePlan, "zoomify", 1.0d, "Resolution pyramid generation disabled");
@@ -471,10 +484,10 @@ public final class HictkConversionPipeline {
       }
 
       emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing base .cool at resolution " + baseResolution);
-      final var baseCoolUri = coolerUriForResolution(options.inputPath(), baseResolution);
+      final var baseCoolUri = coolerUriForResolution(input.path(), baseResolution, singleResolution);
       emitStage(logger, stagePlan, "extract_base", 1.0d, "Using input Cooler group " + baseCoolUri);
 
-      final var generatedMcoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".pyramid.mcool");
+      final var generatedMcoolPath = tmpDirectory.resolve(stripSuffix(input.path().getFileName().toString()) + ".pyramid.mcool");
       emitStage(logger, stagePlan, "zoomify", 0.0d, "Zoomifying base .cool to .mcool");
       final var automaticPyramid = options.resolutions() == null || options.resolutions().isEmpty();
       final var zoomifyState = new ZoomifyProgressState(automaticPyramid ? 0 : requestedPyramidResolutions.size());
@@ -683,8 +696,11 @@ public final class HictkConversionPipeline {
   }
 
   private static @NotNull String coolerUriForResolution(final @NotNull Path coolerPath, final long resolution) {
-    return isSingleResolutionCooler(coolerPath)
-      ? coolerPath.toString()
+    return coolerUriForResolution(coolerPath, resolution, isSingleResolutionCooler(coolerPath));
+  }
+
+  private static String coolerUriForResolution(Path coolerPath, long resolution, boolean singleResolution) {
+    return singleResolution ? coolerPath.toString()
       : coolerPath + "::/resolutions/" + resolution;
   }
 
@@ -726,6 +742,16 @@ public final class HictkConversionPipeline {
                                                               final @NotNull Path inputPath,
                                                               final @NotNull HictkLoadOptions requested,
                                                               final @NotNull Path tmpDirectory) throws IOException {
+    if (direction == ConversionDirection.PAIRS_TO_HICT) {
+      if (requested.binTablePath() != null) {
+        if (requested.binSize() != null || requested.chromSizesPath() != null)
+          throw new IllegalArgumentException("Choose a bin table or a fixed bin size for pairs conversion.");
+        return requested;
+      }
+      // 4DN pairs contain chromosome lengths but have no native bin resolution.
+      final long size = requested.binSize() == null ? 1000L : requirePositiveBinSize(requested.binSize(), direction);
+      return new HictkLoadOptions(null, requested.chromSizesPath(), size, requested.oneBased(), requested.countAsFloat());
+    }
     final var binTable = requested.binTablePath() != null
       ? requested.binTablePath()
       : discoverSibling(inputPath, List.of(".bed", ".bins.bed", ".bin_table.bed"));
@@ -771,13 +797,13 @@ public final class HictkConversionPipeline {
         requested.oneBased(),
         requested.countAsFloat()
       );
-      case PAIRS_TO_HICT -> requested;
       default -> throw new IllegalArgumentException("Unsupported hictk load direction: " + direction.wireName());
     };
   }
 
   private static @NotNull List<String> buildLoadCommand(final @NotNull ConversionDirection direction,
                                                         final @NotNull ConversionOptions options,
+                                                        final @NotNull Path inputPath,
                                                         final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
                                                         final @NotNull HictkLoadOptions loadOptions,
                                                         final @NotNull Path baseCoolPath,
@@ -785,7 +811,7 @@ public final class HictkConversionPipeline {
     final var command = new ArrayList<String>();
     command.add(Objects.requireNonNull(toolchain.hictkCommand()).toString());
     command.add("load");
-    command.add(options.inputPath().toString());
+    command.add(inputPath.toString());
     command.add(baseCoolPath.toString());
     command.add("--format");
     command.add(hictkLoadFormat(direction));
@@ -820,7 +846,7 @@ public final class HictkConversionPipeline {
     if (loadOptions.countAsFloat()) {
       command.add("--count-as-float");
     }
-    if (direction == ConversionDirection.COO_TO_HICT || direction == ConversionDirection.HICPRO_MATRIX_TO_HICT) {
+    if (direction == ConversionDirection.PAIRS_TO_HICT || direction == ConversionDirection.COO_TO_HICT || direction == ConversionDirection.HICPRO_MATRIX_TO_HICT) {
       command.add("--transpose-lower-triangular-pixels");
     }
     return command;
@@ -1198,18 +1224,22 @@ public final class HictkConversionPipeline {
     double completedWeight = 0.0d;
     final double totalWeight = stagePlan.stream().mapToDouble(StageDefinition::weight).sum();
     double currentWeight = 0.0d;
+    int stageIndex = 1;
     for (final var stage : stagePlan) {
       if (stage.id().equals(stageId)) {
         currentWeight = stage.weight();
         break;
       }
       completedWeight += stage.weight();
+      stageIndex++;
     }
     final var overall = totalWeight <= 0.0d ? boundedStageProgress : (completedWeight + currentWeight * boundedStageProgress) / totalWeight;
+    final var step = stageIndex <= stagePlan.size() ? " step=" + stageIndex + "/" + stagePlan.size() : "";
     logger.accept(
       "HICT_STAGE stage=" + stageId
         + " progress=" + String.format(Locale.ROOT, "%.4f", boundedStageProgress)
         + " overall=" + String.format(Locale.ROOT, "%.4f", overall)
+        + step
         + " detail=" + sanitizeDetail(detail)
     );
   }

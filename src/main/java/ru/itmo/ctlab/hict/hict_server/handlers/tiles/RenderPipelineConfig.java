@@ -31,6 +31,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
+import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.SimpleLinearGradientDTO;
 import java.awt.*;
 import java.util.Collections;
 import java.util.HashSet;
@@ -202,6 +203,16 @@ public final class RenderPipelineConfig {
 
   public boolean requiresSecondarySource() {
     return enabled && (referencesSource(upperExpressionJson, "SECONDARY") || referencesSource(lowerExpressionJson, "SECONDARY"));
+  }
+
+  public java.util.Optional<String> secondaryDisplayMode() {
+    if (!enabled) return java.util.Optional.empty();
+    var upper = referencesSource(swapUpperLower ? lowerExpressionJson : upperExpressionJson, "SECONDARY");
+    var lower = referencesSource(swapUpperLower ? upperExpressionJson : lowerExpressionJson, "SECONDARY");
+    if (upper && lower) return java.util.Optional.of("overlay");
+    if (upper) return java.util.Optional.of("above");
+    if (lower) return java.util.Optional.of("below");
+    return java.util.Optional.empty();
   }
 
   private static boolean referencesSource(final @NotNull JsonObject node,
@@ -384,6 +395,10 @@ public final class RenderPipelineConfig {
     );
     if (options.getColormap() instanceof SimpleLinearGradient gradient && gradient.getGamma() != 1.0d)
       colorNode.put("gamma", gradient.getGamma());
+    if (options.getColormap() instanceof SimpleLinearGradient gradient && gradient.getCurve() != null)
+      colorNode.put("curve",new io.vertx.core.json.JsonArray(gradient.getCurve()));
+    if (options.getColormap() instanceof SimpleLinearGradient gradient && gradient.getCurveMode() != null)
+      colorNode.put("curveMode", gradient.getCurveMode());
     return colorNode;
   }
 
@@ -732,11 +747,15 @@ public final class RenderPipelineConfig {
         final var expressionKey = node.getJsonObject("input", defaultSourceNode("PRIMARY")).encode();
         final double gamma = node.getDouble("gamma", 1.0d);
         SimpleLinearGradient.validateGamma(gamma);
+        final var curve = SimpleLinearGradientDTO.readCurve(node);
+        final var transfer = SimpleLinearGradient.prepareTransfer(gamma, curve,
+          SimpleLinearGradient.validateCurveMode(node.getValue("curveMode")));
         if ("MODDOTPLOT_IDENTITY".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
           yield context -> {
             final var value = inputExpression.eval(context);
             if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
-            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context));
+            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context), transfer,
+              curve != null && !curve.isEmpty() && curve.getFirst() == 0);
           };
         }
         if ("OBSERVED_OVER_EXPECTED".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
@@ -758,7 +777,7 @@ public final class RenderPipelineConfig {
           if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
           final var minValue = minExpression.eval(context);
           final var maxValue = maxExpression.eval(context);
-          return mapLinearColor(value, minValue, maxValue, startColor, endColor, gamma);
+          return mapLinearColor(value, minValue, maxValue, startColor, endColor, transfer);
         };
       }
       case "RGB" -> {
@@ -917,11 +936,17 @@ public final class RenderPipelineConfig {
     0xffabd9e9, 0xffe0f3f8, 0xffffffbf, 0xfffee090, 0xfffdae61,
     0xfff46d43, 0xffd73027, 0xffa50026};
 
-  private static int mapIdentityColor(double value, double minimum, double maximum) {
+  private static int mapIdentityColor(double value, double minimum, double maximum,
+                                      java.util.function.DoubleUnaryOperator transfer, boolean hasLowerEndpoint) {
     if (!Double.isFinite(value) || !Double.isFinite(minimum) || !Double.isFinite(maximum)
-        || value <= 0 || value < minimum || minimum < 0 || maximum < minimum) return 0;
-    final double fraction = maximum == minimum ? 1 : Math.min(1, (value - minimum) / (maximum - minimum));
-    final double index = fraction * (IDENTITY_COLORS.length - 1);
+        || value <= 0 || minimum < 0 || maximum < minimum) return 0;
+    // The legacy percentage cutoff keeps absent and below-threshold cells transparent.
+    // An explicit lower endpoint can shade positive observations below the threshold.
+    if (value < minimum && !hasLowerEndpoint) return 0;
+    final double fraction = maximum == minimum
+      ? (value < minimum ? 0 : 1)
+      : (value - minimum) / (maximum - minimum);
+    final double index = transfer.applyAsDouble(fraction) * (IDENTITY_COLORS.length - 1);
     final int left = Math.min(IDENTITY_COLORS.length - 2, (int) index);
     final double mix = index - left;
     final int a = IDENTITY_COLORS[left], b = IDENTITY_COLORS[left + 1];
@@ -948,12 +973,12 @@ public final class RenderPipelineConfig {
                                     final double minValue,
                                     final double maxValue,
                                     final @NotNull Color startColor,
-                                    final @NotNull Color endColor, final double gamma) {
+                                    final @NotNull Color endColor, final java.util.function.DoubleUnaryOperator transfer) {
     final var safeMin = Double.isFinite(minValue) ? minValue : 0.0d;
     final var safeMaxCandidate = Double.isFinite(maxValue) ? maxValue : 1.0d;
     final var safeMax = safeMaxCandidate > safeMin ? safeMaxCandidate : safeMin + 1.0d;
     final var linear = Math.max(0.0d, Math.min((value - safeMin) / (safeMax - safeMin), 1.0d));
-    final var standardized = gamma == 1.0d ? linear : Math.pow(linear, gamma);
+    final var standardized = transfer.applyAsDouble(linear);
     final var red = interpolateColor(startColor.getRed(), endColor.getRed(), standardized);
     final var green = interpolateColor(startColor.getGreen(), endColor.getGreen(), standardized);
     final var blue = interpolateColor(startColor.getBlue(), endColor.getBlue(), standardized);

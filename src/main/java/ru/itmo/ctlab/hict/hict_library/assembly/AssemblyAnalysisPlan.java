@@ -9,7 +9,8 @@ import java.util.*;
 public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level> levels) {
   // Keep this layout in sync with overlay_store.py. Stored map levels use their own ATUs.
   private static final int SEQUENCE_STRIPE_WIDTH = 256;
-  private static final long MAX_SYNTHETIC_BINS = 4_000_000L;
+  // Per-stripe Java descriptors, ATUs and contig mappings are resident; unit weight rows are shared.
+  private static final long ESTIMATED_BYTES_PER_STRIPE = 1024;
 
   public record Region(long start, long end) {
     public Region { if (start < 0 || end <= start) throw new IllegalArgumentException("Choose a nonempty sequence interval"); }
@@ -20,8 +21,39 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
   public record Level(long resolution, List<Window> rows, List<Window> columns) {
     public Level { rows = List.copyOf(rows); columns = List.copyOf(columns); }
   }
-  public record ResourceEstimate(long windows, long cells, long outputBytes) { }
+  public record ResourceEstimate(long windows, long cells, long expectedBytes, long worstCaseBytes) {
+    public long outputBytes() { return worstCaseBytes; }
+  }
+
+  public static final class ResourceLimitException extends IllegalArgumentException {
+    private final long resolution;
+
+    ResourceLimitException(long resolution, String message) {
+      super(message);
+      this.resolution = resolution;
+    }
+
+    public long resolution() { return resolution; }
+  }
   public AssemblyAnalysisPlan { levels = List.copyOf(levels); }
+
+  public static List<Long> pyramidLevels(List<Long> requested, long[] primaryLevels) {
+    var anchors = new TreeSet<>(requested);
+    long finest = anchors.first();
+    if (finest <= 0) throw new IllegalArgumentException("Resolution must be positive");
+    for (long bp : primaryLevels) if (bp > finest) anchors.add(bp);
+    var levels = new ArrayList<Long>();
+    long current = finest;
+    for (long anchor : anchors) {
+      while (current <= (anchor - 1) / 4) {
+        current *= 4;
+        levels.add(current);
+      }
+      levels.add(anchor);
+      current = anchor;
+    }
+    return List.copyOf(levels);
+  }
 
   /**
    * Upper bound before materializing windows. Each nonzero stores three int64s.
@@ -29,13 +61,16 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
    * across successive rewrites, with a 64-entry minimum per physical block.
    */
   public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns) {
+    return estimate(map, resolutions, rows, columns, 0, false, (bp, estimate) -> {});
+  }
+
+  public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns,
+      long fastaBytes, boolean includesPaf, java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
     final var tuples = map.getAssemblyInfo().contigs();
     final long length = tuples.stream().mapToLong(t -> t.descriptor().getLengthBp()).reduce(0, Math::addExact);
     if (rows.end > length || columns.end > length) throw new IllegalArgumentException("Selection outside active assembly");
-    long windows = 0;
-    long cells = 0;
-    long outputBytes = 0;
-    long syntheticBins = 0;
+    var estimate = initialEstimate(fastaBytes, includesPaf);
+    long syntheticStripes = 0;
     for (long bp : resolutions) {
       final var order = map.getResolutionToIndex().get(bp);
       if (bp <= 0) throw new IllegalArgumentException("Resolution must be positive: " + bp);
@@ -43,30 +78,79 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       if (order == null) {
         final long bins = map.getOriginalDescriptors().values().stream()
           .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
-        syntheticBins = Math.addExact(syntheticBins, bins);
-        if (syntheticBins > MAX_SYNTHETIC_BINS) {
-          throw new IllegalArgumentException("Custom resolutions need more than " + MAX_SYNTHETIC_BINS
-            + " source bins. Choose a coarser resolution or open a smaller assembly.");
-        }
         stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
-        // All installed stripe weights are materialized by the reader.
-        outputBytes = Math.addExact(outputBytes, Math.multiplyExact(stripes, 4096L));
+        syntheticStripes = Math.addExact(syntheticStripes,stripes);
+        checkStripes(bp, stripes, syntheticStripes);
       } else {
         stripes = map.getStripeCount()[order];
       }
       final long rowBins = estimateAxis(tuples, rows, order, bp);
       final long colBins = rows.equals(columns) ? rowBins : estimateAxis(tuples, columns, order, bp);
-      final long levelCells = Math.multiplyExact(rowBins, colBins);
-      final long rowStripes = Math.min(rowBins, stripes);
-      final long colStripes = Math.min(colBins, stripes);
-      final long maxBlocks = Math.multiplyExact(rowStripes, colStripes);
-      final long bytes = Math.addExact(Math.multiplyExact(levelCells, 4L * 3 * Long.BYTES),
-        Math.multiplyExact(maxBlocks, (64L * 3 + 2) * Long.BYTES));
-      windows = Math.addExact(windows, Math.addExact(rowBins, colBins));
-      cells = Math.addExact(cells, levelCells);
-      outputBytes = Math.addExact(outputBytes, bytes);
+      final long rowStripes = Math.min(stripes, estimateStripes(tuples, rows, order, bp));
+      final long colStripes = rows.equals(columns) ? rowStripes : Math.min(stripes, estimateStripes(tuples, columns, order, bp));
+      estimate = addLevel(estimate, rowBins, colBins, rowStripes, colStripes, stripes, order == null);
+      levelEstimate.accept(bp, estimate);
     }
-    return new ResourceEstimate(windows, cells, outputBytes);
+    return estimate;
+  }
+
+  public static ResourceEstimate estimateFasta(List<Long> contigLengths, List<Long> resolutions,
+      long fastaBytes, boolean includesPaf, java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
+    var estimate = initialEstimate(fastaBytes, includesPaf);
+    long totalStripes = 0;
+    for (long bp : resolutions) {
+      long bins = contigLengths.stream().mapToLong(length -> Math.ceilDiv(length, bp)).reduce(0, Math::addExact);
+      long stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
+      totalStripes = Math.addExact(totalStripes, stripes);
+      checkStripes(bp, stripes, totalStripes);
+      estimate = addLevel(estimate, bins, bins, stripes, stripes, stripes, true);
+      levelEstimate.accept(bp, estimate);
+    }
+    return estimate;
+  }
+
+  private static ResourceEstimate initialEstimate(long fastaBytes, boolean includesPaf) {
+    long scratch = Math.addExact(Math.multiplyExact(3L, fastaBytes), includesPaf ? fastaBytes / 8 : 0);
+    return new ResourceEstimate(0, 0, scratch, 0);
+  }
+
+  private static void checkStripes(long bp, long stripes, long totalStripes) {
+    if (stripes > 1_000_000L)
+      throw new ResourceLimitException(bp, "Fine resolution exceeds the overlay stripe limit. Select a coarser level.");
+    if (Math.multiplyExact(totalStripes, ESTIMATED_BYTES_PER_STRIPE) > Runtime.getRuntime().maxMemory() / 4)
+      throw new ResourceLimitException(bp, "The fine-resolution overlay metadata exceeds the available heap. Select fewer fine levels.");
+  }
+
+  private static ResourceEstimate addLevel(ResourceEstimate cumulative, long rowBins, long colBins,
+      long rowStripes, long colStripes, long stripes, boolean synthetic) {
+    long windows = Math.addExact(rowBins, colBins);
+    long cells = Math.multiplyExact(rowBins, colBins);
+    long stripeBytes = Math.multiplyExact(stripes, 4096L);
+    long expected = Math.addExact(Math.multiplyExact(windows, 1024L), stripeBytes);
+    long blocks = Math.multiplyExact(rowStripes, colStripes);
+    long worstCase = Math.addExact(Math.multiplyExact(cells, 96L),
+      Math.multiplyExact(blocks, (64L * 3 + 2) * Long.BYTES));
+    if (synthetic) worstCase = Math.addExact(worstCase, stripeBytes);
+    return new ResourceEstimate(Math.addExact(cumulative.windows(), windows), Math.addExact(cumulative.cells(), cells),
+      Math.addExact(cumulative.expectedBytes(), expected), Math.addExact(cumulative.worstCaseBytes(), worstCase));
+  }
+
+  private static long estimateStripes(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {
+    long result = 0, start = 0;
+    for (var tuple : tuples) {
+      var descriptor = tuple.descriptor();
+      long end = Math.addExact(start, descriptor.getLengthBp());
+      long span = Math.min(end,region.end) - Math.max(start,region.start);
+      if (span > 0) {
+        long bins = Math.ceilDiv(span,bp) + 1;
+        // One extra stripe accounts for an unaligned first bin, including reversed fragments.
+        long stripes = order == null ? Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH) + 1 : descriptor.getAtus().get(order).size();
+        result = Math.addExact(result, Math.min(bins,stripes));
+      }
+      if (end >= region.end) break;
+      start = end;
+    }
+    return result;
   }
 
   private static long estimateAxis(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {
@@ -189,6 +273,97 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
 
   private record Owner(int first, int end, ContigDescriptor source, long ordinal, boolean reversed) {
     long ordinalOf(int bin) { return ordinal + (reversed ? end - 1 - bin : bin - first); }
+  }
+
+  public record RegionBounds(long start, long end, boolean split) { }
+
+  /** Translate recorded physical bins into the current assembly, including split and reversed contigs. */
+  public static List<RegionBounds> currentBounds(ChunkedFile map, long resolution, List<long[]> sortedAxes) {
+    var order = map.getResolutionToIndex().get(resolution);
+    var originals = map.getOriginalDescriptors().values();
+    var nativeOwners = order == null ? null : owners(originals, order, resolution);
+    var syntheticOwners = order == null ? sequenceBins(originals, resolution) : null;
+    var bounds = sortedAxes.stream().map(axis -> new BoundsAccumulator()).toList();
+    long position = 0;
+    for (var tuple : map.getAssemblyInfo().contigs()) {
+      var active = tuple.descriptor();
+      long length = active.getLengthBp();
+      boolean reversed = tuple.direction() == ContigDirection.REVERSED;
+      if (order == null) {
+        var source = findSourceBins(syntheticOwners, active);
+        long offset = active.getOffsetInSourceFASTA() - source.contig().getOffsetInSourceFASTA();
+        long first = source.firstBin() + offset / resolution;
+        long last = source.firstBin() + (offset + length - 1) / resolution;
+        for (int axis = 0; axis < sortedAxes.size(); axis++) {
+          var keys = sortedAxes.get(axis);
+          for (int i = lowerBound(keys, sequenceBinKey(first)); i < keys.length && keys[i] <= sequenceBinKey(last); i++) {
+            long bin = (keys[i] >>> 32) * SEQUENCE_STRIPE_WIDTH + (int) keys[i];
+            long start = (bin - source.firstBin()) * resolution - offset;
+            bounds.get(axis).add(position, length, reversed, start, start + resolution);
+          }
+        }
+      } else {
+        for (var atu : active.getAtus().get(order)) {
+          int stripe = atu.getStripeDescriptor().stripeId();
+          long first = (long) stripe << 32 | atu.getStartIndexInStripeIncl();
+          long end = (long) stripe << 32 | atu.getEndIndexInStripeExcl();
+          for (int axis = 0; axis < sortedAxes.size(); axis++) {
+            var keys = sortedAxes.get(axis);
+            for (int i = lowerBound(keys, first); i < keys.length && keys[i] < end; i++) {
+              int bin = (int) keys[i];
+              var owner = ownerAt(nativeOwners.get(stripe), bin);
+              long start = owner.source().getOffsetInSourceFASTA() + owner.ordinalOf(bin) * resolution
+                - active.getOffsetInSourceFASTA();
+              bounds.get(axis).add(position, length, reversed, start, start + resolution);
+            }
+          }
+        }
+      }
+      position += length;
+    }
+    return bounds.stream().map(BoundsAccumulator::finish).toList();
+  }
+
+  private static long sequenceBinKey(long bin) {
+    return (bin / SEQUENCE_STRIPE_WIDTH) << 32 | bin % SEQUENCE_STRIPE_WIDTH;
+  }
+
+  private static int lowerBound(long[] keys, long value) {
+    int lo = 0, hi = keys.length;
+    while (lo < hi) {
+      int mid = (lo + hi) >>> 1;
+      if (keys[mid] < value) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  private static final class BoundsAccumulator {
+    private final java.util.TreeMap<Long, Long> intervals = new java.util.TreeMap<>();
+
+    void add(long position, long length, boolean reversed, long start, long end) {
+      start = Math.max(0, start);
+      end = Math.min(length, end);
+      if (end <= start) return;
+      long a = position + (reversed ? length - end : start);
+      long b = position + (reversed ? length - start : end);
+      var previous = intervals.floorEntry(a);
+      if (previous != null && previous.getValue() >= a) {
+        a = previous.getKey();
+        b = Math.max(b, previous.getValue());
+        intervals.remove(a);
+      }
+      for (var next = intervals.ceilingEntry(a); next != null && next.getKey() <= b; next = intervals.ceilingEntry(a)) {
+        b = Math.max(b, next.getValue());
+        intervals.remove(next.getKey());
+      }
+      intervals.put(a, b);
+    }
+
+    RegionBounds finish() {
+      return intervals.isEmpty() ? new RegionBounds(0, 0, true)
+        : new RegionBounds(intervals.firstKey(), intervals.lastEntry().getValue(), intervals.size() > 1);
+    }
   }
   private static Map<Integer, List<Owner>> owners(Collection<ContigDescriptor> originals, int order, long resolution) {
     var result = new HashMap<Integer, List<Owner>>();

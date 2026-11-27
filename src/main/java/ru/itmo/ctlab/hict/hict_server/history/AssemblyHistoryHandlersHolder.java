@@ -1,5 +1,9 @@
 package ru.itmo.ctlab.hict.hict_server.history;
 
+import ru.itmo.ctlab.hict.hict_server.dto.RequestJson;
+
+import ru.itmo.ctlab.hict.hict_server.NoOpenFileException;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
@@ -18,7 +22,7 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.util.*;
 
-/** One journal for the open primary/overlay session. All calls run in the serial assembly queue. */
+/** A journal per assembly source within the open primary session. */
 public final class AssemblyHistoryHandlersHolder extends HandlersHolder implements RequestTaskScheduler.AssemblyTaskInterceptor {
   public static final String HEADER = "X-HiCT-History";
   private static final Map<String, String> EDITS = Map.ofEntries(
@@ -31,9 +35,10 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
     Map.entry("/names/import", "Import names"));
   private final LocalMap<String, Object> map;
   private final RequestTaskScheduler scheduler;
+  private final Map<ChunkedFile, EditJournal<List<ChunkedFile.AssemblySnapshot>>> journals = new IdentityHashMap<>();
   private EditJournal<List<ChunkedFile.AssemblySnapshot>> journal;
   private List<ChunkedFile> files = List.of();
-  private String source = "PRIMARY";
+  private ChunkedFile primary;
 
   public AssemblyHistoryHandlersHolder(Vertx vertx, RequestTaskScheduler scheduler) {
     this.map = vertx.sharedData().getLocalMap("hict_server"); this.scheduler = scheduler;
@@ -48,11 +53,28 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   }
   private List<ChunkedFile.AssemblySnapshot> capture() { return files.stream().map(ChunkedFile::snapshotAssembly).toList(); }
   private void ensureSession() {
-    var opened = openFiles(); var active = String.valueOf(map.getOrDefault("assemblyInfoSource", "PRIMARY"));
-    if (!files.equals(opened) || !source.equals(active)) {
-      files = opened; source = active;
-      journal = files.isEmpty() ? null : new EditJournal<>(capture());
+    final var opened = openFiles();
+    final boolean removedSource = files.stream().anyMatch(file -> !opened.contains(file));
+    files = opened;
+    final var currentPrimary = map.get("chunkedFile") instanceof ShareableWrappers.ChunkedFileWrapper wrapper
+      ? wrapper.getChunkedFile() : null;
+    if (primary != currentPrimary) {
+      journals.clear();
+      primary = currentPrimary;
     }
+    if (primary == null) {
+      journal = null;
+      return;
+    }
+    journals.keySet().removeIf(file -> !files.contains(file));
+    if (removedSource) {
+      for (var retained : journals.values()) {
+        retained.transformStates(states -> states.stream().filter(state -> opened.contains(state.owner())).toList());
+      }
+    }
+    final var active = "SECONDARY".equals(map.get("assemblyInfoSource")) && files.size() > 1
+      ? files.get(1) : primary;
+    journal = journals.computeIfAbsent(active, ignored -> new EditJournal<>(capture()));
   }
   private static boolean same(List<ChunkedFile.AssemblySnapshot> a, List<ChunkedFile.AssemblySnapshot> b) {
     if (a.size() != b.size()) return false;
@@ -67,7 +89,11 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   private void restore(List<ChunkedFile.AssemblySnapshot> states) {
     // Lock both sources in the same order for a coherent rollback, including failed overlay edits.
     for (var f : files) { f.getContigTree().getRootLock().writeLock().lock(); f.getScaffoldTree().getRootLock().writeLock().lock(); }
-    try { for (var state : states) state.owner().restoreAssembly(state); }
+    try {
+      for (var state : states) {
+        if (files.contains(state.owner())) state.owner().restoreAssembly(state);
+      }
+    }
     finally { for (int i=files.size()-1; i>=0; i--) {
       files.get(i).getScaffoldTree().getRootLock().writeLock().unlock(); files.get(i).getContigTree().getRootLock().writeLock().unlock();
     } }
@@ -105,7 +131,7 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
         final String revision = ctx.request().getHeader("X-HiCT-History-Revision");
         if (session == null || revision == null)
           throw new io.vertx.ext.web.handler.HttpException(400, "Exact cuts require the displayed history session and revision headers");
-        final long expected = ctx.body().asJsonObject().getLong("expectedRevision");
+        final long expected = RequestJson.requireLong(RequestJson.requireObject(ctx), "expectedRevision");
         final long displayedRevision;
         try { displayedRevision = Long.parseLong(revision); }
         catch (NumberFormatException invalid) { throw new io.vertx.ext.web.handler.HttpException(400, "Invalid displayed history revision"); }
@@ -139,22 +165,27 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   @Override public void addHandlersToRouter(Router router) {
     router.post("/assembly/history").handler(ctx -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY,
       null, () -> {
-        var body = ctx.body().asJsonObject();
+        var body = RequestJson.requireObject(ctx);
         if (journal == null) return new JsonObject().put("summary", null).put("entries", List.of());
         var summary = journal.summary();
-        int offset = body.getInteger("offset", Math.max(0, summary.position()-49));
+        int offset = body.getValue("offset") == null ? Math.max(0, summary.position() - 49) : RequestJson.requireInt(body, "offset");
+        int limit = body.getValue("limit") == null ? 100 : RequestJson.requireInt(body, "limit");
         return new JsonObject().put("summary", summary).put("offset", offset)
-          .put("entries", journal.page(offset, body.getInteger("limit", 100)));
+          .put("entries", journal.page(offset, limit));
       }, result -> ctx.response().end(Json.encodeToBuffer(result))));
     router.post("/assembly/history/restore").handler(ctx -> scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY,
       null, () -> {
-        if (journal == null) throw new IllegalStateException("Open a file before using history");
-        var body = ctx.body().asJsonObject();
-        requireVersion(body.getString("session"), body.getLong("revision", -1L));
-        int target = journal.target(body.getString("action"), body.getLong("id"));
-        var previous = journal.current();
+        if (journal == null) throw new NoOpenFileException("Open a file before using history");
+        var body = RequestJson.requireObject(ctx);
+        requireVersion(RequestJson.requireString(body, "session"), RequestJson.requireLong(body, "revision"));
+        int target = journal.target(RequestJson.requireString(body, "action"), RequestJson.optionalLong(body, "id"));
+        var previous = capture();
         try {
-          restore(journal.stateAt(target));
+          final var states = journal.stateAt(target);
+          restore(states);
+          if (files.stream().anyMatch(file -> states.stream().noneMatch(state -> state.owner() == file))) {
+            FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
+          }
           long version = invalidate();
           var response = CompactAssemblyInfoDTO.response(FileOpHandlersHolder.resolveActiveAssemblyChunkedFile(map),
             version, body.getValue("assemblyFormat"));

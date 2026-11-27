@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -32,12 +32,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
         try:
             page.goto(args.url)
@@ -45,7 +40,7 @@ def main():
             check.menu("File", "Open map…")
             dialog = page.get_by_role("dialog").last
             path = dialog.get_by_placeholder(
-                "Relative folder or file path under DATA_DIR"
+                "Relative path in the HiCT data folder"
             )
             filter_input = dialog.get_by_placeholder(
                 "Filter current folder by file name or path"
@@ -163,7 +158,7 @@ def main():
             before = page.evaluate(
                 "async () => (await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
             )
-            check.menu("File", "Open…")
+            check.menu("File", "Open map…")
             page.get_by_role("dialog").last.get_by_role(
                 "button", name="Dismiss", exact=True
             ).click()

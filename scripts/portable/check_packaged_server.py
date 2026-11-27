@@ -70,16 +70,13 @@ def clean_up(directory, retry_seconds):
 def check(launcher, expected_version, work):
     data = work / "data"
     data.mkdir()
-    with socket.socket() as api_socket, socket.socket() as web_socket:
-        for listener in (api_socket, web_socket):
-            listener.bind(("127.0.0.1", 0))
-        api_port = api_socket.getsockname()[1]
-        web_port = web_socket.getsockname()[1]
-    api = f"http://127.0.0.1:{api_port}"
-    web = f"http://127.0.0.1:{web_port}"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    base_url = f"http://127.0.0.1:{port}"
     env = dict(
         os.environ, DATA_DIR=str(data), PROCESSED_DIR=str(data / "processed"),
-        HICT_PORTABLE_DATA_DIR=str(data), VXPORT=str(api_port), WEBUI_PORT=str(web_port),
+        HICT_PORTABLE_DATA_DIR=str(data), HICT_PORT=str(port),
         HICT_BIND_HOST="127.0.0.1", AUTO_OPEN_BROWSER="false", HICT_LAUNCHER_MODE="cli",
     )
     for key in ("WEBUI_ROOT", "HICT_APP_HOME", "HICT_TOOLCHAIN_DIR", "HICT_JAR_PATH",
@@ -105,9 +102,9 @@ def check(launcher, expected_version, work):
                 if process.poll() is not None:
                     raise RuntimeError(f"Packaged launcher exited with status {process.returncode}")
                 try:
-                    with http.open(api + "/version", timeout=3) as response:
+                    with http.open(base_url + "/version", timeout=3) as response:
                         versions = json.load(response)
-                    with http.open(web + "/", timeout=3) as response:
+                    with http.open(base_url + "/", timeout=3) as response:
                         index = response.read().decode("utf-8")
                     break
                 except OSError:
@@ -121,7 +118,7 @@ def check(launcher, expected_version, work):
             entrypoints.feed(index)
             scripts = []
             for asset in entrypoints.scripts:
-                with http.open(web + asset, timeout=10) as response:
+                with http.open(base_url + asset, timeout=10) as response:
                     scripts.append(response.read(16 << 20))
             if not scripts or any(not script.strip() for script in scripts):
                 raise RuntimeError("Packaged index did not serve its JavaScript entrypoints")

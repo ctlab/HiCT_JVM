@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify mixed resolution projection through real viewport rendering."""
 
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -9,11 +10,12 @@ from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output"):
     parser.add_argument("--" + name, required=True)
+parser.add_argument("--inline-source-info", action="store_true")
 args = parser.parse_args()
 output = Path(args.output)
 output.mkdir(parents=True, exist_ok=True)
@@ -30,8 +32,7 @@ with sync_playwright() as pw:
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         pending = set()
         peak_pending = [0]
         requests = []
@@ -119,6 +120,36 @@ with sync_playwright() as pw:
             assert any(q.get("gridBpResolution") == [str(primary)] for q in requests), requests
             blue = landmark(f"{label}-{primary}-{iteration}", 960, 1001)
             results.append({"fixture": label, "view": primary, "state": state, "landmarkPixels": blue})
+            if label == "fine" and iteration == 1:
+                info_toggle = page.get_by_role("button", name="Map Info", exact=True)
+                was_visible = info_toggle.get_attribute("aria-pressed") == "true"
+                if not was_visible:
+                    info_toggle.click()
+                viewport = page.locator("#hic-contact-map .ol-viewport").bounding_box()
+                page.mouse.move(viewport["x"] + viewport["width"] * 0.4,
+                                viewport["y"] + viewport["height"] * 0.45)
+                info = page.locator(".ol-mouse-position")
+                if args.inline_source_info:
+                    rows = info.locator(".hict-source-resolutions")
+                    expect(rows.locator(".source-placement")).to_have_text(["upper", "lower"])
+                    expect(rows.locator(".source-resolution")).to_have_text(["1:4", "1:1"])
+                more = info.get_by_role("button", name="More…", exact=True)
+                if more.is_visible():
+                    more.click()
+                if args.inline_source_info:
+                    expect(info).to_contain_text("Showing data from: upper")
+                    expect(info).to_contain_text("1:4; lower")
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.setSecondaryCaptureVisible(false)")
+                    expect(rows).to_have_count(0)
+                    expect(info).to_contain_text("Resolution: 4 bp")
+                    page.evaluate("window.__hictBenchmark.manager().viewAndLayersManager.setSecondaryCaptureVisible(true)")
+                    expect(rows.locator(".source-resolution")).to_have_text(["1:4", "1:1"])
+                else:
+                    expect(info).to_contain_text("Available resolutions: Primary 4 bp; Secondary 1 bp")
+                page.screenshot(path=str(output / "info-two-source-resolutions.png"))
+                results.append({"fixture": label, "infoResolutions": {"primary": 4, "secondary": 1}})
+                if not was_visible:
+                    info_toggle.click()
         if label == "disjoint":
             with page.expect_response(lambda r: r.url.endswith("/reverse_selection_range") and r.ok):
                 page.evaluate("""() => {

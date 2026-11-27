@@ -7,14 +7,9 @@ DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 TOOLS_DIR="${PROJECT_DIR}/build/tools"
 APP_NAME="HiCT"
-VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 PORTABLE_PLATFORM="linux-x86_64"
 APPIMAGE_ARCH="x86_64"
 DESKTOP_ID="org.itmo.ctlab.hict"
-PORTABLE_APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PORTABLE_PLATFORM}"
-APPDIR="${DIST_ROOT}/${APP_NAME}-${VERSION}.AppDir"
-APPIMAGE_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage"
-SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage.sha256"
 APPIMAGETOOL_URL="${APPIMAGETOOL_URL:-https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage}"
 APPIMAGE_RUNTIME_URL="${APPIMAGE_RUNTIME_URL:-https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64}"
 APPIMAGE_COMPRESSION="${APPIMAGE_COMPRESSION:-gzip}"
@@ -22,7 +17,6 @@ APPIMAGE_ZSTD_LEVEL="${APPIMAGE_ZSTD_LEVEL:-19}"
 APPIMAGE_MKSQUASHFS_BLOCK_SIZE="${APPIMAGE_MKSQUASHFS_BLOCK_SIZE:-1048576}"
 APPIMAGE_VALIDATE="${APPIMAGE_VALIDATE:-0}"
 HICT_APPIMAGE_BUNDLE_GLIBC="${HICT_APPIMAGE_BUNDLE_GLIBC:-1}"
-GLIBC_DIR="${APPDIR}/usr/lib/hict/glibc"
 
 usage() {
   cat <<'EOF'
@@ -66,6 +60,7 @@ require_cmd chmod
 require_cmd file
 require_cmd find
 require_cmd ldd
+require_cmd python3
 require_cmd mkdir
 require_cmd readelf
 require_cmd readlink
@@ -157,7 +152,7 @@ bundle_appimage_glibc_runtime() {
 
   while IFS= read -r -d '' candidate; do
     queue_elf_for_glibc_scan "${candidate}"
-  done < <(find "${APPDIR}/usr/lib/hict" -type f -print0)
+  done < <(find "${APPDIR}/usr/lib/hict" -path "${APPDIR}/usr/lib/hict/browsers" -prune -o -type f -print0)
 
   local elf real_elf
   while [[ ${#APPIMAGE_GLIBC_QUEUE[@]} -gt 0 ]]; do
@@ -335,16 +330,21 @@ EOF
       install_glibc_exec_wrapper "${candidate}"
     done < <(find "${APPDIR}/usr/lib/hict/toolchains/linux_x86_64/bin" -maxdepth 1 -type f -perm -0100 -print0)
   fi
-  if [[ -d "${APPDIR}/usr/lib/hict/browsers/linux_x86_64" ]]; then
-    while IFS= read -r -d '' candidate; do
-      install_glibc_exec_wrapper "${candidate}"
-    done < <(find "${APPDIR}/usr/lib/hict/browsers/linux_x86_64" -type f -perm -0100 -print0)
-  fi
+  # Tauri loads the host GTK/WebKit stack. Electron resolves its sibling helper
+  # executables, libraries and resources relative to its executable directory.
+  # Keep the native desktop payloads in their original layout and loader context.
 }
 
-if [[ "${HICT_SKIP_PORTABLE:-0}" != "1" || ! -x "${PORTABLE_APP_DIR}/bin/hict" ]]; then
+if [[ "${HICT_SKIP_PORTABLE:-0}" != "1" ]]; then
   "${SCRIPT_DIR}/build_portable_linux.sh"
 fi
+
+VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/build/resources/main/version.txt")"
+PORTABLE_APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PORTABLE_PLATFORM}"
+APPDIR="${DIST_ROOT}/${APP_NAME}-${VERSION}.AppDir"
+APPIMAGE_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage"
+SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage.sha256"
+GLIBC_DIR="${APPDIR}/usr/lib/hict/glibc"
 
 if [[ ! -x "${PORTABLE_APP_DIR}/bin/hict" ]]; then
   echo "Portable app was not found at ${PORTABLE_APP_DIR}" >&2
@@ -354,6 +354,8 @@ if [[ ! -f "${PORTABLE_APP_DIR}/webui/index.html" ]]; then
   echo "Portable app does not contain extracted WebUI assets." >&2
   exit 1
 fi
+
+python3 "${SCRIPT_DIR}/verify_package_inputs.py" "${PORTABLE_APP_DIR}/lib/hict.jar" linux_x86_64
 
 rm -rf "${APPDIR}"
 mkdir -p \
@@ -457,8 +459,8 @@ if [[ "${HICT_APPIMAGE_BUNDLE_GLIBC}" == "1" || "${HICT_APPIMAGE_BUNDLE_GLIBC}" 
     echo "=============================="
     echo
     echo "This AppImage includes a glibc dynamic loader and runtime library closure"
-    echo "under usr/lib/hict/glibc. AppRun starts HiCT through that bundled loader,"
-    echo "and bundled executable tool/browser payloads are wrapped to do the same."
+    echo "under usr/lib/hict/glibc. AppRun can start the JVM through that loader."
+    echo "Native tool launchers use the bundled loader. Desktop shells use the host loader."
     echo "The glibc runtime is redistributed under the GNU LGPL/GPL notices supplied"
     echo "by the build distribution. Keep the bundled glibc manifest and license files"
     echo "with redistributed AppImage artifacts."

@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck, HictTestServer
+from sequence_browser_harness import BrowserCheck, HictTestServer, configure_test_api
 
 
 def digest(path):
@@ -25,6 +25,7 @@ def digest(path):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for key in ('jar','webui','data-dir','output'):parser.add_argument('--'+key,required=True)
+    parser.add_argument("--browser-executable")
     args=parser.parse_args();data,out=Path(args.data_dir).absolute(),Path(args.output).absolute()
     if any(p!=p.resolve() or not p.is_relative_to('/tmp') for p in (data,out)):parser.error('Use fresh nonsymlinked /tmp directories')
     data.mkdir(parents=True,exist_ok=False);out.mkdir(parents=True,exist_ok=False)
@@ -39,14 +40,10 @@ def main():
     try:
         with HictTestServer(args.jar,data,out/'server.log') as app,sync_playwright() as pw:
             app.http('/open',{'filename':native.name});app.http('/link_fasta',{'fastaFilename':'sequence.fa'})
-            context=pw.chromium.launch_persistent_context(str(out/'chromium-profile'),headless=True,viewport={'width':1600,'height':1100},accept_downloads=True);page=context.pages[0]
+            context=pw.chromium.launch_persistent_context(str(out/'chromium-profile'),headless=True,executable_path=args.browser_executable,viewport={'width':1600,'height':1100},accept_downloads=True);page=context.pages[0]
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            forwarding=lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000'))
-            page.route('http://localhost:5000/**',forwarding)
-            check=BrowserCheck(page,out);page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
-            # Do not intercept the large response: qualify the actual fetch network path.
-            page.evaluate('host=>window.__hictBenchmark.manager().networkManager.onHostChanged(host)',app.url)
-            page.unroute('http://localhost:5000/**',forwarding)
+            configure_test_api(page, app.url)
+            check=BrowserCheck(page,out);page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             page.evaluate('''async()=>{
               const root=await navigator.storage.getDirectory();
               window.__streamHandle=await root.getFileHandle('assembly.fa',{create:true});
@@ -134,7 +131,9 @@ def main():
             assert digest(readback('after-cancel.fa'))==completed_hash
             reset('fail');begin();wait_for('aborted');check.settle();failed=state();assert not failed['closed']
             assert digest(readback('after-failure.fa'))==completed_hash
-            page.get_by_text('Injected disk write failure',exact=True).last.wait_for();page.screenshot(path=str(out/'failed-stream-export.png'))
+            page.get_by_role('button', name='Open notifications', exact=True).click()
+            page.get_by_text('Injected disk write failure', exact=True).last.wait_for()
+            page.screenshot(path=str(out/'failed-stream-export.png'))
             assert not check.errors,check.errors
             assert digest(native)==source_hash and digest(data/'sequence.fa')==fasta_hash
             (out/'results.json').write_text(json.dumps({'status':'ok','checks':['512 Mb ordered exact-sequence transfer through native OPFS writer','sampled persistent Chromium JS heap and Linux process RSS','frame/input acknowledgement during transfer','cancel aborts writer and preserves previous file','injected write failure aborts and preserves previous file','unchanged native/FASTA inputs'],'success':success,'cancelled':cancelled,'failed':failed,'sourceSha256':source_hash,'fastaSha256':fasta_hash,'outputSha256':completed_hash,'baselineMemoryBytes':baseline,'peakMemoryBytes':peak,'peakDeltaBytes':delta,'frameP95Ms':frame_p95,'inputAcknowledgementP95Ms':input_p95,'frameSamples':len(latency['frames']),'inputSamples':len(latency['inputs']),'pageErrors':[]},indent=2))

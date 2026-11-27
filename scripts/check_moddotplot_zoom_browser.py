@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real generated identity overlays, source contrast and zoom rendering."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import io
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from browser_review_helpers import expand_slider_limits, link_fasta, select_visualization_source
+from browser_review_helpers import expand_signal_advanced, link_fasta, select_visualization_source
 
 
 def main():
@@ -37,8 +38,7 @@ def main():
         page.on("response", lambda response: failures.append({"url": response.url, "status": response.status})
                 if response.status >= 500 else None)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
 
         def settled():
             page.wait_for_function("""() => {const map=window.__hictBenchmark.manager().getMap();
@@ -47,7 +47,9 @@ def main():
 
         def snapshot(name):
             settled()
-            raw = page.locator("#hic-contact-map").screenshot()
+            raw = page.locator("#hic-contact-map").screenshot(style="""
+                .dotplot-region-outlines, [data-sonner-toaster] { visibility: hidden !important; }
+            """)
             (output / f"{name}.png").write_bytes(raw)
             return np.array(Image.open(io.BytesIO(raw)).convert("RGB"))
 
@@ -71,7 +73,7 @@ def main():
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.evaluate("() => { window.__hictBenchmark.manager().getMap().on('rendercomplete', () => {}); }")
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             link_fasta(page, "quad_combined_ind2.fasta")
@@ -98,22 +100,24 @@ def main():
             page.evaluate("""() => {window.frameGaps=[];let last=performance.now();
                 window.frameTimer=setInterval(()=>{const now=performance.now();window.frameGaps.push(now-last);last=now;},50);}""")
             for iteration in range(2):
-                page.evaluate("""i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
-                    s.leftBP=[1000000+i*40000,1000000+i*40000];s.rightBP=[1040000+i*40000,1040000+i*40000];}""", iteration)
+                page.evaluate("""i => {const start=1000000+i*40000,end=start+40000;
+                    window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds(
+                      {rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});}""", iteration)
                 page.get_by_role("link", name="Tools", exact=True).click()
-                page.get_by_role("button", name="Generate ModDotPlot…", exact=True).click()
-                dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
+                page.get_by_role("button", name="ModDotPlot…", exact=True).click()
+                dialog = page.get_by_role("dialog", name="ModDotPlot", exact=True)
                 page.get_by_label("Analysis scope").select_option("selection")
                 # This check isolates the primary triangle; selection analyses
                 # otherwise default to an intentional overlay on both halves.
-                dialog.get_by_label("Display completed result", exact=True).select_option("below")
-                for checkbox in dialog.locator(".resolution-options input").all():
-                    checkbox.uncheck()
-                dialog.locator('.resolution-options input[value="5000"]').check()
+                dialog.get_by_label("Show result as", exact=True).select_option("below")
+                dialog.get_by_label("Finest detail", exact=True).select_option("5000")
+                if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                    dialog.locator("details.hict-advanced:not([open]) > summary").click()
                 page.get_by_label("Worker threads").fill("4")
                 start = time.monotonic()
-                dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
-                dialog.wait_for(state="hidden", timeout=180000)
+                dialog.get_by_role("button", name="Generate", exact=True).click()
+                dialog.get_by_role("button", name="Generate another region", exact=True).click(timeout=180000)
+                page.evaluate("window.__hictBenchmark.manager().eventManager.resetSelection()")
                 set_view(5000, 16)
                 current = snapshot(f"generated-{iteration + 1}")
                 assert graph()["upperExpression"] == original_primary
@@ -121,10 +125,10 @@ def main():
                 results.append({"test": "real 5K generation preserves primary pixels", "iteration": iteration + 1,
                                 "seconds": time.monotonic() - start, "comparedPixels": int(upper.sum())})
             select_visualization_source(page, "SECONDARY")
-            expand_slider_limits(page)
+            expand_signal_advanced(page)
             page.wait_for_function("document.querySelector('[data-testid=exact-range-status]')?.textContent.includes('Percentage scale')")
-            assert float(page.get_by_label("Slider minimum signal", exact=True).input_value()) == 0
-            assert float(page.get_by_label("Slider maximum signal", exact=True).input_value()) == 100
+            assert float(page.get_by_label("Histogram view from", exact=True).input_value()) == 0
+            assert float(page.get_by_label("Histogram view to", exact=True).input_value()) == 100
             page.locator(".threshold-number-input").first.fill("90")
             page.locator(".threshold-number-input").first.press("Enter")
             page.wait_for_timeout(500)

@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -20,12 +20,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, out)
         checks = []
         try:
@@ -54,7 +49,7 @@ def main():
             before = state()
             assert before["dirty"]
             for attempt in range(2):
-                check.menu("File", "Open…")
+                check.menu("File", "Open map…")
                 check.choose_file("incomplete.hict.hdf5")
                 with page.expect_response(
                     lambda response: response.url.endswith("/open")

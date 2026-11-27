@@ -145,6 +145,49 @@ class SessionSnapshotDecoderTest {
     assertTrue(assertThrows(IllegalArgumentException.class, () -> SessionSnapshotDecoder.decode(json)).getMessage().contains("axisScopes.row.endBp"));
   }
 
+  @Test void roundTripsRegionIsolationAndRejectsInvalidBounds() {
+    var row = new JsonObject().put("kind", "selection").put("label", "Selection").put("startBp", 0).put("endBp", 17);
+    var column = row.copy().put("startBp", 3).put("endBp", 12);
+    var json = valid();
+    json.getJsonObject("workspace").put("workspaceState", new JsonObject().put("version", 1)
+      .put("axisScopes", new JsonObject().put("row", row).put("column", column)));
+    assertEquals(json, JsonObject.mapFrom(SessionSnapshotDecoder.decode(json).snapshot()));
+
+    for (var end : new Number[]{0, 18, 1.25}) {
+      row.put("endBp", end);
+      assertTrue(assertThrows(IllegalArgumentException.class, () -> SessionSnapshotDecoder.decode(json))
+        .getMessage().contains("axisScopes.row.endBp"));
+    }
+    row.remove("endBp");
+    assertTrue(assertThrows(IllegalArgumentException.class, () -> SessionSnapshotDecoder.decode(json))
+      .getMessage().contains("axisScopes.row.endBp"));
+  }
+
+  @Test void validatesContigSelectionsAndTheirSavedBounds() {
+    var json = valid();
+    var contigs = json.getJsonObject("primary").getJsonObject("assemblyInfo").getJsonArray("contigDescriptors");
+    contigs.add(contig(json).copy().put("contigId", 1)).add(contig(json).copy().put("contigId", 2));
+    var column = new JsonObject().put("kind", "selection").put("label", "Selection")
+      .put("contigIds", new JsonArray().add(2).add(1)).put("startBp", 17).put("endBp", 51);
+    json.getJsonObject("workspace").put("workspaceState", new JsonObject().put("version", 1)
+      .put("axisScopes", new JsonObject().put("row", new JsonObject().put("kind", "all").put("label", "All rows"))
+        .put("column", column)));
+    assertEquals(json, JsonObject.mapFrom(SessionSnapshotDecoder.decode(json).snapshot()));
+    column.put("startBp", 18);
+    assertTrue(assertThrows(IllegalArgumentException.class, () -> SessionSnapshotDecoder.decode(json))
+      .getMessage().contains("axisScopes.column.startBp"));
+    column.remove("startBp");
+    column.remove("endBp");
+    assertEquals(json, JsonObject.mapFrom(SessionSnapshotDecoder.decode(json).snapshot()));
+
+    for (var invalidIds : new JsonArray[]{new JsonArray().add(0).add(2), new JsonArray().add(1).add(1),
+        new JsonArray().add(99), new JsonArray().add(1.5)}) {
+      column.put("contigIds", invalidIds);
+      assertTrue(assertThrows(IllegalArgumentException.class, () -> SessionSnapshotDecoder.decode(json))
+        .getMessage().contains("axisScopes.column.contigIds"));
+    }
+  }
+
   @Test void boundsAllFieldsIncludingUnknownExtensionsBeforeCopyOrCompilation() {
     rejects("nesting", x -> {
       var nested = new JsonObject();

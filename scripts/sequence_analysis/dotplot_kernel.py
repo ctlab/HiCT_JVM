@@ -27,7 +27,7 @@ def sample_paf(path, rows, columns, row_offset, col_offset, step_bp, min_length,
     """Emit canonical physical-bin pairs; reject points in unowned bin gaps."""
     if step_bp < 1 or min_length < 1:
         raise ValueError('Sample interval and minimum alignment length must be positive')
-    with open(path) as stream:
+    with open(path, encoding="utf-8") as stream:
         for line in stream:
             fields = line.rstrip().split('\t')
             if len(fields) < 12:
@@ -70,9 +70,11 @@ def run(plan, log=print):
         source.close()
     with open(plan['aligner'], 'rb') as stream:
         aligner_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
-    settings = dict(kind='alignment-dotplot', parameters=options, alignerSha256=aligner_sha,
+    settings = dict(kind='alignment-dotplot',
+                    parameters={key: value for key, value in options.items() if key != 'threads'}, alignerSha256=aligner_sha,
                     sourceFasta=plan['sourceFastaIdentity'], sampling='paf-linear-endpoints-v1', gapPolicy=plan.get('gapPolicy', 'legacy-gap-free'))
-    command = [plan['aligner'], '-t', str(options['threads']), '-k', str(options['k']), '-w', str(options['window']),
+    threads = plan.get('execution', {}).get('threads', options.get('threads', 1))
+    command = [plan['aligner'], '-t', str(threads), '-k', str(options['k']), '-w', str(options['window']),
                '-m', str(options['chainScore']), '-P', '--no-long-join', str(root / 'columns.fasta'), str(root / 'rows.fasta')]
     log('Aligning selected sequence axes with ' + str(plan['aligner']))
     with open(root / 'alignment.paf', 'xb') as paf:
@@ -87,7 +89,9 @@ def run(plan, log=print):
                 process.kill()
                 process.wait()
     with OverlayWriter(plan['template'], plan['output'], [x['resolution'] for x in plan['levels']], settings,
-                       previous=plan.get('previous'), unit='alignment_sample_count', scale=1) as writer:
+                       overviews=plan.get('overviewLevels', ()), previous=plan.get('previous'),
+                       unit='alignment_sample_count', scale=1,
+                       template_name=plan.get('templateName'), job_id=plan.get('jobId')) as writer:
         for level in plan['levels']:
             resolution = level['resolution']
             rows, cols = np.asarray(level['rows'], dtype=np.int64), np.asarray(level['columns'], dtype=np.int64)

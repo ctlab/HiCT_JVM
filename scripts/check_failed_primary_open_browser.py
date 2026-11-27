@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify failed manual replacement retains the live map and its linked sources."""
+from sequence_browser_harness import configure_test_api
 import argparse
 import json
 import time
@@ -22,8 +23,7 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1440, 'height': 1000})
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-        context.route('http://localhost:5000/**', lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(context, args.api)
         page = context.new_page()
         page.set_default_timeout(15000)
         page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
@@ -51,7 +51,10 @@ def main():
             assert edited.ok, edited.text()
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             page.evaluate('() => {window.__retainedManager=window.__hictBenchmark.manager();}')
 
@@ -72,8 +75,8 @@ def main():
             assert before['history']['summary']['position'] > 0, before['history']
             for attempt in range(2):
                 page.get_by_role('link', name='File', exact=True).click()
-                page.get_by_role('link', name='Open…', exact=True).click()
-                dialog = page.locator('.modal.show').filter(has_text='Open Hi-C dataset')
+                page.get_by_role('link', name='Open map…', exact=True).click()
+                dialog = page.get_by_role('dialog', name='Open Hi-C dataset', exact=True)
                 dialog.locator('span[title]').filter(has_text='broken.hict.hdf5').click()
                 with page.expect_response(lambda response: response.url.endswith('/open')) as failed:
                     dialog.get_by_role('button', name='Load', exact=True).click()
@@ -88,7 +91,10 @@ def main():
             # also verifies that another client can recover the same live session.
             page.reload()
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.wait_for_function('window.__hictBenchmark.manager()')
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
             after_attach = snapshot()

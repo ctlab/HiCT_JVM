@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker, configure_test_api
 from check_edited_view_browser import first_sequence
 from browser_review_helpers import link_fasta
 
@@ -52,6 +53,7 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        install_download_picker(page)
         page.set_default_timeout(90000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("request", lambda request: requests.append(request.post_data_json)
@@ -69,14 +71,13 @@ def main():
                 if(this.canvas.classList.contains('sequence-axis'))(this.canvas.__letters ||= []).push({value,x,y,color:this.fillStyle});
                 return text.call(this,value,x,y,...args);
             };""")
-        page.route("http://localhost:5000/**", lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.wait_for_timeout(1500)
-            button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
+            button = page.get_by_role("button", name="Show raw contacts (no balancing)", exact=True)
             if button.is_visible():
                 button.click()
             start = time.monotonic()

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import install_download_picker
+from sequence_browser_harness import install_download_picker, configure_test_api
 
 
 def rendered_signal_pixels(page):
@@ -87,18 +87,13 @@ with sync_playwright() as pw:
       document.addEventListener('click',event=>{if(event.isTrusted)
         window.quickStartClicks.push((event.target.textContent||event.target.ariaLabel||'').trim());},true);"""
     )
-    page.route(
-        "http://localhost:5000/**",
-        lambda route: route.continue_(
-            url=args.api + route.request.url.removeprefix("http://localhost:5000")
-        ),
-    )
+    configure_test_api(page, args.api)
     try:
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         started = time.monotonic()
         page.get_by_role("link", name="File", exact=True).click()
-        page.get_by_role("link", name="Open Examples…", exact=True).click()
+        page.get_by_role("link", name="Examples…", exact=True).click()
         dialog = page.get_by_role("dialog", name="Examples", exact=True)
         card = dialog.locator(f'[data-example="{args.example}"]')
         card.get_by_role("button", name="Open example", exact=True).click()
@@ -112,9 +107,9 @@ with sync_playwright() as pw:
         )
         page.wait_for_timeout(1500)
         clicks = page.evaluate("window.quickStartClicks")
-        assert clicks == ["File", "Open Examples…", "Open example"], clicks
+        assert clicks == ["File", "Examples…", "Open example"], clicks
         assert (
-            page.get_by_role("dialog", name="Open File Wizard", exact=True).count() == 0
+            page.get_by_role("dialog", name="Open with options", exact=True).count() == 0
         )
         state = page.evaluate(
             """() => {const m=window.__hictBenchmark.manager();return {
@@ -299,17 +294,17 @@ with sync_playwright() as pw:
                 "Exact Split preserves the assembly length and Undo restores the reversed layout"
             )
             with page.expect_download() as session_download:
-                file_action("Save session")
+                file_action("Save session…")
             session_path = out / "first-run-session.json"
             session_download.value.save_as(session_path)
             saved = json.loads(session_path.read_text())["snapshot"]["primary"]
             assert saved["agpSha256"] == expected["agpSha256"]
-            file_action("Close")
+            file_action("Close map")
             page.get_by_role(
                 "heading", name="No contact map open", exact=True
             ).wait_for()
             with page.expect_file_chooser() as chooser:
-                file_action("Open session")
+                file_action("Open session…")
             chooser.value.set_files(session_path)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",
@@ -322,7 +317,7 @@ with sync_playwright() as pw:
             journey.append("Save, Close and Open session retain the layout and FASTA")
             page.get_by_role("link", name="Assembly", exact=True).click()
             with page.expect_download() as agp_download:
-                page.get_by_role("link", name="Export to AGP", exact=True).click()
+                page.get_by_role("link", name="Export AGP…", exact=True).click()
             agp_path = out / "first-run.agp"
             agp_download.value.save_as(agp_path)
             components = [

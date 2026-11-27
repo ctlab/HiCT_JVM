@@ -1,0 +1,216 @@
+import hashlib
+import json
+from pathlib import Path
+from subprocess import CompletedProcess
+from tempfile import TemporaryDirectory
+import unittest
+from unittest.mock import patch
+
+from portable_release_notes import notes
+from publish_versioned_release import file_digest, publish
+
+
+class DraftPublicationTest(unittest.TestCase):
+    repo = "ctlab/HiCT_JVM"
+    source = "0123456" + "7" * 33
+    version = "2.0.500-ci1-0123456"
+    tag = f"jvm-sfx-native-{version}"
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.dist = root / "release-dist"
+        self.dist.mkdir()
+        self.notes = root / "release-body.md"
+        self.notes.write_text(notes(
+            self.repo, self.tag, self.version, self.source, "44",
+            [f"HiCT-{self.version}-linux-x86_64.run"], ["Portable build."],
+        ), encoding="utf-8")
+        self.origin = self.dist / f"HiCT-{self.version}-build-origin.txt"
+        self.manifest = self.dist / f"HiCT-{self.version}-release-assets.sha256"
+        self.package = self.dist / f"HiCT-{self.version}-linux-x86_64.run"
+        self.package.write_bytes(b"portable installer")
+        self.origin.write_text(f"source_sha: {self.source}\nrun_attempt: 1\n")
+        self.write_manifest()
+        self.release = None
+        self.assets = {}
+        self.contents = {}
+        self.writes = []
+        self.upload_failures = 0
+        self.draft_reads_to_delay = 0
+        self.asset_reads_to_delay = {}
+        self.uploads_with_lost_response = {}
+
+    def write_manifest(self):
+        self.manifest.write_text("".join(
+            f"{file_digest(file)}  {file.name}\n" for file in (self.origin, self.package)
+        ))
+
+    def save_asset(self, file):
+        self.contents[file.name] = file.read_bytes()
+        self.assets[file.name] = {
+            "name": file.name, "state": "uploaded", "size": file.stat().st_size,
+            "digest": f"sha256:{file_digest(file)}",
+        }
+
+    def fake_gh(self, *args):
+        command = args[:2]
+        if command == ("api", f"repos/{self.repo}/git/ref/tags/{self.tag}"):
+            return json.dumps({"object": {"type": "commit", "sha": self.source}})
+        if command == ("release", "create"):
+            self.assertIn("--verify-tag", args)
+            self.assertIn("--draft", args)
+            self.assertIn("--latest=false", args)
+            self.writes.append("create")
+            self.release = {"id": 8, "tag_name": self.tag, "draft": True,
+                            "prerelease": "--prerelease=false" not in args, "body": self.notes.read_text()}
+            return ""
+        if command == ("release", "download"):
+            path = Path(args[args.index("--output") + 1])
+            path.write_bytes(self.contents[path.name])
+            return ""
+        if command == ("release", "edit"):
+            self.assertIn("--draft=false", args)
+            self.assertEqual({self.origin.name, self.package.name, self.manifest.name}, set(self.assets))
+            self.release["draft"] = False
+            self.writes.append("publish")
+            return ""
+        raise AssertionError(args)
+
+    def fake_upload(self, args):
+        self.assertEqual(args[:4], ["gh", "release", "upload", self.tag])
+        self.assertNotIn("--clobber", args)
+        file = Path(args[-1])
+        self.assertNotIn(file.name, self.assets)
+        self.writes.append(file.name)
+        if self.upload_failures:
+            self.upload_failures -= 1
+            return CompletedProcess(args, 1)
+        self.save_asset(file)
+        if file.name in self.uploads_with_lost_response:
+            return CompletedProcess(args, 1)
+        return CompletedProcess(args, 0)
+
+    def fake_pages(self, endpoint):
+        if endpoint == f"repos/{self.repo}/releases?per_page=100":
+            if self.release and self.draft_reads_to_delay:
+                self.draft_reads_to_delay -= 1
+                return []
+            return [self.release] if self.release else []
+        self.assertEqual(endpoint, f"repos/{self.repo}/releases/8/assets?per_page=100")
+        visible = []
+        for name, asset in self.assets.items():
+            if self.asset_reads_to_delay.get(name, 0):
+                self.asset_reads_to_delay[name] -= 1
+                continue
+            if self.uploads_with_lost_response.get(name, 0):
+                self.uploads_with_lost_response[name] -= 1
+                asset = dict(asset, state="starter", size=0, digest=None)
+            visible.append(asset)
+        return visible
+
+    def publish(self, channel="jvm-sfx-native"):
+        with (
+            patch("publish_versioned_release.gh", self.fake_gh),
+            patch("publish_versioned_release.github_pages", self.fake_pages),
+            patch("publish_versioned_release.subprocess.run", self.fake_upload),
+            patch("publish_versioned_release.time.sleep"),
+        ):
+            publish(self.repo, self.tag, self.version, self.source, self.dist, self.notes, channel=channel)
+
+    def test_main_publishes_a_versioned_release_without_reassigning_latest(self):
+        self.tag = f"main-{self.version}"
+        self.publish(channel="main")
+        self.assertFalse(self.release["prerelease"])
+        self.assertFalse(self.release["draft"])
+
+    def test_uploads_serially_and_retries_before_publishing(self):
+        self.upload_failures = 1
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.origin.name, self.origin.name,
+                                       self.package.name, self.manifest.name, "publish"])
+
+    def test_waits_for_new_draft_to_appear_in_release_listing(self):
+        self.draft_reads_to_delay = 2
+        self.publish()
+        self.assertEqual(self.draft_reads_to_delay, 0)
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_waits_for_an_accepted_asset_to_appear_without_uploading_again(self):
+        self.asset_reads_to_delay[self.package.name] = 2
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_pending_asset_after_lost_response_finishes_without_uploading_again(self):
+        self.uploads_with_lost_response[self.package.name] = 2
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name,
+                                       self.manifest.name, "publish"])
+
+    def test_draft_stays_unpublished_if_an_accepted_asset_never_appears(self):
+        self.asset_reads_to_delay[self.package.name] = 100
+        with self.assertRaisesRegex(RuntimeError, "Could not verify uploaded asset"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create", self.origin.name, self.package.name])
+
+    def test_unlisted_draft_stays_unpublished_when_lookup_expires(self):
+        self.draft_reads_to_delay = 50
+        with self.assertRaisesRegex(RuntimeError, "draft.*did not become visible"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create"])
+
+    def test_invalid_notes_are_rejected_before_creating_draft(self):
+        self.notes.write_text("Source revision omitted.", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "notes must identify"):
+            self.publish()
+        self.assertEqual(self.writes, [])
+        self.assertIsNone(self.release)
+
+    def test_existing_release_for_wrong_commit_is_untouched(self):
+        self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
+        self.release["body"] = "Automated build from `different-commit`."
+        with self.assertRaisesRegex(RuntimeError, "Unexpected release metadata"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create"])
+
+    def test_checksum_spans_multiple_read_blocks(self):
+        contents = b"HiCT installer\n" * 100_000
+        self.package.write_bytes(contents)
+        self.assertEqual(file_digest(self.package), hashlib.sha256(contents).hexdigest())
+
+    def test_resumes_draft_with_original_origin(self):
+        self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
+        self.save_asset(self.origin)
+        self.origin.write_text(self.origin.read_text().replace("run_attempt: 1", "run_attempt: 2"))
+        self.write_manifest()
+        self.publish()
+        self.assertEqual(self.writes, ["create", self.package.name, self.manifest.name, "publish"])
+        self.assertIn("run_attempt: 1", self.origin.read_text())
+        self.assertIn(file_digest(self.origin), self.manifest.read_text())
+
+    def test_mismatched_existing_asset_leaves_draft_and_assets_intact(self):
+        self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
+        self.save_asset(self.package)
+        self.assets[self.package.name]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(RuntimeError, "mismatched existing asset"):
+            self.publish()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(self.writes, ["create"])
+
+    def test_existing_public_release_is_read_only(self):
+        self.fake_gh("release", "create", "--verify-tag", "--draft", "--latest=false")
+        self.release["draft"] = False
+        self.save_asset(self.origin)
+        with self.assertRaisesRegex(RuntimeError, "complete manifest"):
+            self.publish()
+        self.assertEqual(self.writes, ["create"])
+
+
+if __name__ == "__main__":
+    unittest.main()

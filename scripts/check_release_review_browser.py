@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker, configure_test_api
 from browser_review_helpers import link_fasta
 
 
@@ -33,12 +34,13 @@ def main():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+        install_download_picker(page)
         page.set_default_timeout(90000)
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('requestfailed', lambda request: network_errors.append({'url': request.url, 'error': request.failure}))
         page.on('response', lambda response: network_errors.append({'url': response.url, 'status': response.status}) if response.status >= 400 else None)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
-        page.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        configure_test_api(page, args.api)
         try:
             page.goto(args.url)
             page.wait_for_function('window.__hictBenchmark')
@@ -46,7 +48,7 @@ def main():
             page.evaluate('(api) => window.__hictBenchmark.open("combined_ind2_4DN.hict.hdf5", api)', args.api)
             page.wait_for_function('window.__hictBenchmark.manager()?.getView().getCenter()?.every(Number.isFinite)')
             page.wait_for_timeout(2000)
-            nan_button = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
+            nan_button = page.get_by_role('button', name='Show raw contacts (no balancing)', exact=True)
             if nan_button.is_visible(): nan_button.click()
             results.append({'test': 'primary open', 'seconds': time.monotonic() - start})
             # Noninteractive capture still exercises the real renderer, not a mock map.
@@ -92,6 +94,9 @@ def main():
 
             page.get_by_role('link', name='View', exact=True).click()
             page.get_by_role('link', name='Rendering pipeline…', exact=True).click()
+            advanced = page.locator(".pipeline-root details.hict-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
             page.locator('.graph-canvas').wait_for(state='visible')
             page.wait_for_timeout(500)
             graph = page.evaluate('''() => {const c=document.querySelector('.graph-canvas').data;
@@ -131,7 +136,10 @@ def main():
             pipeline_before_attach = page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig()')
             attached_before = page.evaluate('''() => {const m=window.__hictBenchmark.manager();return {view:[m.getView().getCenter(),m.getView().getResolution()],styles:m.viewAndLayersManager.getTrackStylePreset()}}''')
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_role('link', name='Join running session', exact=True).click()
+            page.get_by_role("dialog", name="Join running session", exact=True).get_by_role(
+                "button", name="Connect", exact=True
+            ).click()
             page.wait_for_timeout(2500)
             attached_after = page.evaluate('''() => {const m=window.__hictBenchmark.manager();return {view:[m.getView().getCenter(),m.getView().getResolution()],styles:m.viewAndLayersManager.getTrackStylePreset()}}''')
             assert attached_before == attached_after, (attached_before, attached_after)
@@ -162,20 +170,23 @@ def main():
             for iteration in range(2):
                 primary_before = page.evaluate('''async () => {const p=await window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig();
                     return p.upperExpression.type==='pixel_blend'?p.upperExpression.bottom:p.upperExpression;}''')
-                page.evaluate('''i => {const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
-                    s.leftBP=[i*40000,i*40000];s.rightBP=[(i+1)*40000,(i+1)*40000];}''', iteration)
+                page.evaluate('''i => {const start=i*40000,end=start+40000;
+                    window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds(
+                      {rowStart:start,rowEnd:end,columnStart:start,columnEnd:end});}''', iteration)
                 page.get_by_role('link', name='Tools', exact=True).click()
-                page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
-                dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
+                page.get_by_role('button', name='ModDotPlot…', exact=True).click()
+                dialog = page.get_by_role('dialog', name='ModDotPlot', exact=True)
                 page.get_by_label('Analysis scope').select_option('selection')
-                for checkbox in dialog.locator('.resolution-options input').all(): checkbox.uncheck()
-                dialog.locator('.resolution-options input[value="5000"]').check()
+                dialog.get_by_label("Finest detail", exact=True).select_option("5000")
+                if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                    dialog.locator('details.hict-advanced:not([open]) > summary').click()
                 page.get_by_label('Worker threads').fill('4')
-                dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                dialog.get_by_role('button', name='Generate', exact=True).click()
                 dialog.wait_for(state='hidden', timeout=180000)
                 page.wait_for_timeout(1500)
-                primary_after = page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig().then(p=>p.upperExpression)')
-                assert primary_before == primary_after, (primary_before, primary_after)
+                overlay_after = page.evaluate('window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig().then(p=>p.upperExpression)')
+                assert overlay_after['type'] == 'pixel_blend', overlay_after
+                assert overlay_after['bottom'] == primary_before, (primary_before, overlay_after)
                 results.append({'test':f'ModDotPlot selection {iteration+1} retains primary graph'})
             page.screenshot(path=str(out/'moddotplot-repeated.png'))
             for width in (900, 390):

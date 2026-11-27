@@ -62,6 +62,20 @@ class LauncherResetAcceptance {
     if (!condition) throw new AssertionError(message);
   }
 
+  static boolean awaitServerVersion(java.net.http.HttpClient client, java.net.http.HttpRequest request)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + 30_000_000_000L;
+    while (System.nanoTime() < deadline) {
+      try {
+        if (client.send(request, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) return true;
+      } catch (java.io.IOException ignored) {
+        // The child owns the endpoint once the server is ready.
+      }
+      Thread.sleep(100);
+    }
+    return false;
+  }
+
   static Properties settings() throws Exception {
     return edt(() -> (Properties) ((Properties) field("settings")).clone());
   }
@@ -81,7 +95,7 @@ class LauncherResetAcceptance {
     var bundle = constructor.newInstance("reset-fixture", "electron", 0, output, Path.of("/bin/sh"), List.of("-c", script));
     var method = launcher.getClass().getDeclaredMethod("tryOpenBundledBrowser", type, String.class);
     method.setAccessible(true);
-    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:" + System.getenv("WEBUI_PORT") + "/");
+    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:" + System.getenv("HICT_PORT") + "/");
   }
 
   static void confirm(String action, String title, boolean accept, String screenshot) throws Exception {
@@ -132,6 +146,9 @@ class LauncherResetAcceptance {
         return null;
       });
       var fields = (Map<String, JTextField>) field("fields");
+      require(!fields.containsKey("VXPORT") && !fields.containsKey("WEBUI_PORT"), "Legacy port fields are still visible");
+      require(edt(() -> fields.get("HICT_PORT").getText()).equals(System.getenv("HICT_PORT")), "Saved WebUI port did not migrate");
+      ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("one-port.png").toFile());
       var expectedData = output.resolve("retained-data").toString();
       var expectedProcessed = output.resolve("retained-processed").toString();
       edt(() -> {
@@ -248,15 +265,14 @@ class LauncherResetAcceptance {
         return null;
       });
       var client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(1)).build();
-      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + System.getenv("VXPORT") + "/version"))
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + System.getenv("HICT_PORT") + "/version"))
         .timeout(java.time.Duration.ofSeconds(2)).build();
-      boolean ready = false;
-      deadline = System.nanoTime() + 30_000_000_000L;
-      while (!ready && System.nanoTime() < deadline) {
-        try { ready = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode() == 200; }
-        catch (java.io.IOException ex) { Thread.sleep(100); }
-      }
-      require(ready, "Launcher did not start a reachable real server");
+      require(awaitServerVersion(client, request), "Launcher did not start a reachable real server");
+      final var indexUrl = java.net.URI.create((String) invoke("webUiUrl"));
+      final var index = client.send(java.net.http.HttpRequest.newBuilder(indexUrl).build(),
+        java.net.http.HttpResponse.BodyHandlers.ofString());
+      require(index.statusCode() == 200 && index.body().contains("<script"), "Launcher port did not serve the map viewer");
+      require(((String) invoke("webUiLaunchUrl")).startsWith(indexUrl + "?hict_launch="), "Viewer launch port differs");
       var owned = (Process) field("serverProcess");
       require(owned != null && owned.isAlive(), "Launcher lost ownership of its real server");
       var serverChildren = owned.descendants().toList();
@@ -293,7 +309,92 @@ class LauncherResetAcceptance {
         return start.isShowing() && start.isEnabled();
       }), "Stop did not restore the Start action");
       ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("after-stop.png").toFile());
-      results.add("Stop returns to the simple launcher with configuration and logs hidden");
+      edt(() -> {
+        var card = (Container) ((Container) field("logCardsPanel")).getComponent(0);
+        var hero = button(card, "Start HiCT");
+        require(hero.isShowing() && frame.getBounds().contains(
+          new java.awt.Rectangle(hero.getLocationOnScreen(), hero.getSize())), "Large Start button is clipped");
+        var scale = field("uiScale");
+        var scaled = scale.getClass().getDeclaredMethod("scaled", int.class);
+        scaled.setAccessible(true);
+        int width = 2 * (int) scaled.invoke(scale, 260);
+        int height = 2 * (int) scaled.invoke(scale, 72);
+        require(hero.getWidth() >= width && hero.getHeight() >= height,
+          "Stopped Start button is smaller than twice the original design size: " + hero.getSize());
+        results.add("Stopped Start button meets its doubled design size: "
+          + hero.getWidth() + " × " + hero.getHeight() + " px");
+        var logs = button(card, "View console log");
+        require(logs.isShowing() && logs.getVisibleRect().getSize().equals(logs.getSize()), "Stopped launcher clips console access");
+        logs.doClick();
+        var console = (javax.swing.JTextArea) field("logArea");
+        require(console.isShowing() && console.getText().contains("Stopping HiCT server process"), "Stop log missing");
+        button(frame, "Back to start").doClick();
+        require(hero.isShowing(), "Cannot return to Start after viewing logs");
+        ((Timer) field("statusTimer")).start();
+        hero.doClick();
+        return null;
+      });
+
+      require(awaitServerVersion(client, request), "Launcher could not restart for the unexpected-exit check");
+      var crashingServer = edt(() -> (Process) field("serverProcess"));
+      require(crashingServer != null && crashingServer.isAlive() && crashingServer.pid() != owned.pid(),
+        "Unexpected-exit check must target the fresh Launcher-owned child");
+      crashingServer.destroyForcibly();
+      require(crashingServer.waitFor(15, java.util.concurrent.TimeUnit.SECONDS), "Test child did not exit");
+      int crashCode = crashingServer.exitValue();
+      require(crashCode != 0, "Test child reported a successful exit");
+      deadline = System.nanoTime() + 15_000_000_000L;
+      JButton dismissCrash = null;
+      while (dismissCrash == null && System.nanoTime() < deadline) {
+        dismissCrash = edt(() -> {
+          for (var window : Window.getWindows()) {
+            if (window instanceof JDialog dialog && dialog.isShowing() && "HiCT Launcher".equals(dialog.getTitle())) {
+              return button(dialog, "OK");
+            }
+          }
+          return null;
+        });
+        if (dismissCrash == null) Thread.sleep(20);
+      }
+      require(dismissCrash != null, "Launcher did not report the unexpected server exit");
+      var dismiss = dismissCrash;
+      edt(() -> {
+        dismiss.doClick();
+        require(field("lastExitCode") instanceof Integer code && code == crashCode, "Unexpected exit code was lost");
+        var logs = button(frame, "View console log");
+        require(logs != null && logs.isShowing(), "Unexpected exit hides console access");
+        logs.doClick();
+        var console = (javax.swing.JTextArea) field("logArea");
+        require(console.isShowing() && console.getText().contains("exited with code " + crashCode)
+          && console.getText().contains("Stopping HiCT server process"), "Unexpected exit discarded console output");
+        return null;
+      });
+      ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())),
+        "png", output.resolve("after-unexpected-exit.png").toFile());
+      results.add("Unexpected exit of a running server leaves its exit code and prior console output available");
+      edt(() -> {
+        ((Timer) field("statusTimer")).stop();
+        button(frame, "Back to start").doClick();
+        fields.get("HICT_JAVA_OPTS").setText("-XX:HictInvalidOptionForTest");
+        var card = (Container) ((Container) field("logCardsPanel")).getComponent(0);
+        button(card, "Start HiCT").doClick();
+        return null;
+      });
+      deadline = System.nanoTime() + 15_000_000_000L;
+      while (!edt(() -> field("lastExitCode") != null && button(frame, "View console log").isShowing())
+        && System.nanoTime() < deadline) Thread.sleep(20);
+      edt(() -> {
+        require(field("lastExitCode") instanceof Integer code && code != 0, "Expected failed child exit");
+        var logs = button(frame, "View console log");
+        require(logs.isShowing(), "Failed session hides console access");
+        logs.doClick();
+        var console = (javax.swing.JTextArea) field("logArea");
+        require(console.isShowing() && console.getText().contains("Unrecognized VM option")
+          && console.getText().contains("exited with code " + field("lastExitCode")), "Failed child diagnostics missing");
+        require(console.getText().contains("Stopping HiCT server process"), "Restart discarded previous log");
+        return null;
+      });
+      results.add("Manual stop and failed restart retain console output, exit diagnostics and navigation");
       Files.write(output.resolve("results.txt"), results);
       results.forEach(System.out::println);
     } finally {

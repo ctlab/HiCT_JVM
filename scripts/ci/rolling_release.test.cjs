@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const { prepare, prune } = require('./rolling_release.cjs');
+const { ensureVersionedTarget, prepare, prune, verifyAssets, verifyVersionedTarget } = require('./rolling_release.cjs');
 
 const context = {
   repo: { owner: 'ctlab', repo: 'HiCT_JVM' },
@@ -105,6 +105,98 @@ test('successful upload removes only obsolete snapshotted automated assets', asy
   await withUpload([old, next, concurrent], async c => {
     await prune(c);
     assert.deepEqual(c.deleted, [old.id]);
+  });
+});
+
+test('both branch release tag forms are protected from rolling publication', async () => {
+  for (const tag of ['latest-jvm-sfx-native', 'jvm-sfx-native-2.0.418-ci1-0702614']) {
+    const c = { ...client(), tag };
+    c.github.rest.repos.getReleaseByTag = async () => assert.fail('Unexpected API read');
+    await assert.rejects(prepare(c), /Rolling publication is disabled/);
+    await assert.rejects(prune(c), /Rolling publication is disabled/);
+    assert.deepEqual(c.outputs, {});
+    assert.deepEqual(c.deleted, []);
+  }
+});
+
+test('versioned tag preflight permits new tags or an exact retry', async () => {
+  const c = { ...client(), tag: 'jvm-sfx-native-2.0.418-ci1-0702614' };
+  const allowMissing = true;
+  c.github.rest.git = { getRef: async () => { throw { status: 404 }; } };
+  await verifyVersionedTarget({ ...c, allowMissing });
+  await assert.rejects(verifyVersionedTarget(c), error => error.status === 404);
+  c.github.rest.git.getRef = async ({ ref }) => {
+    assert.equal(ref, `tags/${c.tag}`);
+    return { data: { object: { type: 'commit', sha: context.sha } } };
+  };
+  await verifyVersionedTarget(c);
+  for (const object of [{ type: 'commit', sha: 'other-sha' }, { type: 'tag', sha: context.sha }]) {
+    c.github.rest.git.getRef = async () => ({ data: { object } });
+    await assert.rejects(verifyVersionedTarget({ ...c, allowMissing }), /does not point to/);
+  }
+  c.github.rest.git.getRef = async () => { throw { status: 403 }; };
+  await assert.rejects(verifyVersionedTarget({ ...c, allowMissing }), error => error.status === 403);
+  assert.deepEqual(c.deleted, []);
+});
+
+test('versioned tag preparation creates an exact ref and reuses it on retry', async () => {
+  const c = { ...client(), tag: 'jvm-sfx-native-2.0.418-ci1-0702614' };
+  let target;
+  let creates = 0;
+  c.github.rest.git = {
+    getRef: async () => {
+      if (!target) throw { status: 404 };
+      return { data: { object: { type: 'commit', sha: target } } };
+    },
+    createRef: async ({ ref, sha }) => {
+      assert.equal(ref, `refs/tags/${c.tag}`);
+      assert.equal(sha, context.sha);
+      target = sha;
+      creates++;
+    },
+  };
+  await ensureVersionedTarget(c);
+  await ensureVersionedTarget(c);
+  assert.equal(creates, 1);
+  assert.deepEqual(c.deleted, []);
+});
+
+test('versioned tag preparation rechecks races and stops on permission failures', async () => {
+  const c = { ...client(), tag: 'jvm-sfx-native-2.0.418-ci1-0702614' };
+  for (const sha of [context.sha, 'wrong-target']) {
+    let visible = false;
+    c.github.rest.git = {
+      getRef: async () => {
+        if (!visible) throw { status: 404 };
+        return { data: { object: { type: 'commit', sha } } };
+      },
+      createRef: async () => {
+        visible = true;
+        throw { status: 422 };
+      },
+    };
+    if (sha === context.sha) {
+      await ensureVersionedTarget(c);
+    } else {
+      await assert.rejects(ensureVersionedTarget(c), /does not point to/);
+    }
+  }
+  c.github.rest.git = {
+    getRef: async () => { throw { status: 404 }; },
+    createRef: async () => { throw { status: 403 }; },
+  };
+  await assert.rejects(ensureVersionedTarget(c), /authorized Git push/);
+  assert.deepEqual(c.deleted, []);
+});
+
+test('a versioned release verifies one asset set and rejects assets from another version', async () => {
+  await withUpload([next], async c => {
+    await verifyAssets({ ...c, exact: true });
+    assert.deepEqual(c.deleted, []);
+  });
+  await withUpload([old, next], async c => {
+    await assert.rejects(verifyAssets({ ...c, exact: true }), /Unexpected versioned release assets/);
+    assert.deepEqual(c.deleted, []);
   });
 });
 

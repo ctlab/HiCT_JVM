@@ -163,3 +163,24 @@ provenance, target-format limitations and intended use are listed in the adjacen
 fixture README. Later packages implement the remaining capability lifecycle and
 the catalog/session/preset validators; declaring these contracts is not their
 runtime implementation.
+
+### Browser fixture setup
+
+Use a disposable data directory and a local HiCT server whose `DATA_DIR`
+points to that directory. Give browser checks the WebUI URL, API URL and a
+fresh output directory. Use the matching bundled toolchain for checks that
+request hictk conversion or balancing.
+
+| Browser check | Required input and setup |
+| --- | --- |
+| `check_source_capabilities_browser.py` | Run the two fixture preparation commands above. They create `tiny-weighted.hict.hdf5` and `tiny-identity.hict.hdf5`. Copy a HiCT map without a declared source capability into the same directory and pass its name as `--legacy-file`. The default name is `combined_ind2_4DN.hict.hdf5`. |
+| `check_signal_controls_browser.py` | Generate the tiny fixtures and run `cp --reflink=never /tmp/hict-fixtures-new/tiny-primary.hict.hdf5 /tmp/hict-fixtures-new/old-secondary.hict.hdf5`. The copied source lets the test independently open the same matrix as Secondary. |
+| `check_matrix_export_browser.py` | Run `python scripts/prepare_matrix_export_fixture.py --jar <server-fat.jar> --data-dir /tmp/hict-export-fixture`. It writes a dense 4,000 bp source at 100 and 200 bp and an independent `export-fixture.hict.hdf5`. Pass that physical directory as `--data-dir`. Use a full copy per run so the check can test overwrite and cancellation safely. |
+| `check_matrix_input_formats_browser.py` | Download the two small datasets in [the public hictk v2.2.0 fixture provenance](reinforcement-validation.md#u13-assembly-strand-correction), verify their digests below and save them as `public-hic8.hic` and `public-hic9.hic` in the disposable directory. Pass that directory as `--data-dir`. |
+
+The public input fixture digests are:
+
+```text
+cef8c89214b977e4ca09d08cfa58d339818aa3fddc576f7217c082e675fdeb80  public-hic8.hic
+a710aca0fef452c367636b7d8d29bd2bf6ab4d03aba3e6eba678e7cbebf89971  public-hic9.hic
+```

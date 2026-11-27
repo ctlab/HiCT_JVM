@@ -2,26 +2,32 @@
 """Apply every built-in sidebar preset and verify independent signals and colors."""
 
 import argparse
+from io import BytesIO
 import json
 import math
 import re
+import time
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("url", "api", "output"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument(
+        "--webui-source", type=Path,
+        default=Path(__file__).resolve().parents[2] / "HiCT_WebUI",
+    )
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
-    webui = Path(__file__).resolve().parents[2] / "HiCT_WebUI"
     catalog = json.loads(
-        (webui / "src/app/core/visualization/colormap/default_options.json").read_text()
+        (args.webui_source / "src/app/core/visualization/colormap/default_options.json").read_text()
     )["data"]["savedVisualizationPresets"]
     results = []
     with sync_playwright() as playwright:
@@ -29,12 +35,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def api(path, payload=None):
@@ -86,7 +87,11 @@ def main():
                     """() => document.querySelector('#app').__vue_app__
                     .config.globalProperties.$pinia._s.get('notificationCenter').entries.at(-1).message"""
                 )
-                assert "Attach a generated overlay first" in message, message
+                assert (
+                    "Attach a generated overlay" in message
+                    and "Tools → ModDotPlot…" in message
+                    and "Sources and layers…" in message
+                ), message
                 results.append({"preset": preset["name"], "missingOverlay": message})
                 return
 
@@ -158,28 +163,41 @@ def main():
                 1, max(0, (float(signal[4, 4]) - minimum) / (maximum - minimum))
             )
             expected_rgba = [a + (b - a) * fraction for a, b in zip(start, end)]
-            page.wait_for_function(
-                """expected=>{
-                const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
-                const p=l.getPixelResolutionForBpResolution(4);
-                const pixel=m.getMap().getPixelFromCoordinate([4.5*p,-4.5*p]);
-                return l.layersHolder.primaryHiCDataLayers.filter(layer=>layer.getVisible()).some(layer=>{
-                    const rgba=layer.getData(pixel);
-                    window.__presetSample=rgba?Array.from(rgba):null;
-                    if(!rgba)return false;
-                    if(expected[3]<1)return rgba[3]===0;
-                    return expected.every((value,index)=>Math.abs(value-rgba[index])<=2);
-                });
-            }""",
-                arg=expected_rgba,
-            )
+            background = preset.get("backgroundColor", "rgb(255,255,255)")
+            background_rgb = [float(part) for part in re.findall(r"[\d.]+", background)[:3]]
+            alpha = expected_rgba[3] / 255
+            expected_rgb = [
+                channel * alpha + base * (1 - alpha)
+                for channel, base in zip(expected_rgba[:3], background_rgb)
+            ]
+            deadline = time.monotonic() + 15
+            while True:
+                x, y = page.evaluate("""() => {
+                    const m = window.__hictBenchmark.manager(), map = m.getMap();
+                    const d = m.viewAndLayersManager.currentViewState.resolutionDesciptor;
+                    const center = m.contigDimensionHolder.getFractionalPxOfBp(16.5, d.bpResolution)
+                        * d.pixelResolution;
+                    const [x, y] = map.getPixelFromCoordinate([center, -center]);
+                    const viewport = map.getViewport().getBoundingClientRect();
+                    if (!(0 <= x && x < viewport.width && 0 <= y && y < viewport.height))
+                        throw Error("The known contact fell outside the viewport");
+                    return [Math.floor(viewport.left + x), Math.floor(viewport.top + y)];
+                }""")
+                raw_pixel = page.screenshot(clip={"x": x, "y": y, "width": 1, "height": 1})
+                with Image.open(BytesIO(raw_pixel)) as screenshot:
+                    actual_rgb = list(screenshot.convert("RGB").getpixel((0, 0)))
+                if np.allclose(actual_rgb, expected_rgb, rtol=0, atol=2):
+                    break
+                assert time.monotonic() < deadline, (preset["name"], expected_rgb, actual_rgb, (x, y))
+                page.wait_for_timeout(80)
             results.append(
                 {
                     "preset": preset["name"],
                     "signals": actual,
                     "renderedSignals": rendered,
                     "expectedRgba": expected_rgba,
-                    "actualRgba": page.evaluate("window.__presetSample"),
+                    "expectedCompositedRgb": expected_rgb,
+                    "actualCompositedRgb": actual_rgb,
                 }
             )
 

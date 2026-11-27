@@ -12,7 +12,7 @@ import pandas as pd
 import time
 
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -65,28 +65,30 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-        page.route(
-            "http://localhost:5000/**",
-            lambda route: route.continue_(
-                url=args.api + route.request.url.removeprefix("http://localhost:5000")
-            ),
-        )
+        configure_test_api(page, args.api)
         check = BrowserCheck(page, output)
 
         def selected(dialog):
             return set(
-                dialog.locator(".file-row-checkbox:checked").evaluate_all(
+                dialog.locator("tbody .file-row-checkbox:checked").evaluate_all(
                     "nodes=>nodes.map(n=>n.getAttribute('aria-label').replace(/^Select /,''))"
                 )
             )
 
         def converter():
-            check.menu("File", "Convert matrices")
+            check.menu("File", "Convert matrices…")
             dialog = page.locator(".converter-dialog")
             dialog.get_by_role(
                 "checkbox", name="Select batch-new.mcool", exact=True
             ).wait_for()
             return dialog
+
+        def choose_files(dialog, action):
+            selector = dialog.locator(".dropdown").filter(
+                has=page.get_by_role("button", name="Select", exact=True)
+            )
+            selector.get_by_role("button", name="Select", exact=True).click()
+            selector.get_by_role("button", name=action, exact=True).click()
 
         try:
             page.goto(args.url)
@@ -94,27 +96,32 @@ def main():
             dialog = converter()
             assert not selected(dialog)
             expect(
-                dialog.get_by_role("button", name="Continue", exact=True)
+                dialog.get_by_role("button", name="Convert 0 files", exact=True)
             ).to_be_disabled()
             for action, wanted in [
-                ("Select All", expected),
-                ("Select None", set()),
-                ("Invert Selection", expected),
-                ("Invert Selection", set()),
-                ("Select All Converted", converted),
-                ("Select All Unconverted", expected - converted),
+                ("All", expected),
+                ("None", set()),
+                ("Invert", expected),
+                ("Invert", set()),
+                ("All converted", converted),
+                ("All not converted", expected - converted),
             ]:
-                dialog.get_by_role("button", name=action, exact=True).click()
+                choose_files(dialog, action)
                 assert selected(dialog) == wanted, (action, selected(dialog), wanted)
-            dialog.get_by_role("button", name="Continue", exact=True).click()
-            dialog.get_by_role("button", name="Back", exact=True).click()
+            advanced = dialog.locator('[data-advanced-id="convert-matrices"]')
+            summary = advanced.locator(":scope > summary")
+            summary.click()
+            expect(advanced).to_have_attribute("open", "")
+            summary.click()
+            expect(advanced).not_to_have_attribute("open", "")
             assert selected(dialog) == {"batch-new.mcool"}
             results.append(
                 {
-                    "test": "All, None, Invert, Converted, Unconverted and settings Back preserve exact file sets",
+                    "test": "All, None, Invert, Converted, Unconverted and Advanced preserve exact file sets",
                     "files": sorted(expected),
                 }
             )
+            summary.click()
             notice = dialog.locator("details.toolchain-details")
             notice.locator("summary").click()
             assert notice.inner_text().strip()
@@ -124,11 +131,10 @@ def main():
                 )
                 == "https://github.com/paulsengroup/hictk"
             )
-            dialog.get_by_role("button", name="Continue", exact=True).click()
             with page.expect_response(
-                lambda r: r.request.method == "POST" and "/convert/" in r.url
+                lambda r: r.request.method == "POST" and r.url.endswith("/convert/jobs/batch")
             ) as started:
-                dialog.get_by_role("button", name="Start", exact=True).click()
+                dialog.get_by_role("button", name="Convert 1 file", exact=True).click()
             assert started.value.ok, started.value.text()
             request = started.value.request.post_data_json
             assert (
@@ -136,7 +142,7 @@ def main():
             ), request
             jobs = started.value.json()["jobIds"]
             assert len(jobs) == 1
-            dialog.get_by_role("button", name="Dismiss", exact=True).last.click()
+            dialog.get_by_role("button", name="Close", exact=True).last.click()
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
                 response = page.request.get(args.api + "/convert/jobs/" + jobs[0])
@@ -166,11 +172,10 @@ def main():
                 }
             )
             dialog = converter()
-            dialog.get_by_role("button", name="Select None", exact=True).click()
+            choose_files(dialog, "None")
             dialog.get_by_role(
                 "checkbox", name="Select batch-new.mcool", exact=True
             ).check()
-            dialog.get_by_role("button", name="Continue", exact=True).click()
             output_path = data / "batch-new.hict.hdf5"
             before_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()
             before_response = page.request.post(
@@ -179,15 +184,15 @@ def main():
             assert before_response.ok, before_response.text()
             before_jobs = before_response.json()
             assert len(before_jobs) == 1 and before_jobs[0]["status"] == "finished"
-            dialog.get_by_role("button", name="Start", exact=True).click()
-            dialog.get_by_role("button", name="Cancel", exact=True).click()
+            dialog.get_by_role("button", name="Convert 1 file", exact=True).click()
+            dialog.locator(".overwrite-confirm").get_by_role("button", name="Cancel", exact=True).click()
             assert hashlib.sha256(output_path.read_bytes()).hexdigest() == before_hash
             assert (
                 page.request.post(args.api + "/convert/jobs/list", data={}).json()
                 == before_jobs
             )
             assert (data / "batch-new.hict.hdf5").is_file()
-            dialog.get_by_role("button", name="Dismiss", exact=True).last.click()
+            dialog.get_by_role("button", name="Cancel", exact=True).click()
             results.append(
                 {
                     "test": "Existing converted output is protected by overwrite cancellation"
@@ -198,7 +203,7 @@ def main():
                 lambda r: r.url.endswith("/convert/jobs/list")
             ) as listed:
                 dialog.get_by_role(
-                    "button", name="View current conversion jobs", exact=True
+                    "button", name="View conversion jobs", exact=True
                 ).click()
             assert listed.value.ok
             assert all(
@@ -208,7 +213,7 @@ def main():
             expect(
                 dialog.get_by_text("No active conversion jobs.", exact=True)
             ).to_be_visible()
-            dialog.get_by_role("button", name="Dismiss", exact=True).last.click()
+            dialog.get_by_role("button", name="Close", exact=True).last.click()
             results.append(
                 {
                     "test": "Current conversion jobs agrees with the empty active server set"

@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 from playwright.sync_api import expect, sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, configure_test_api
 
 
 def main():
@@ -45,13 +45,7 @@ def main():
                 assert version in (8, 9)
                 context = browser.new_context(viewport={"width": 1440, "height": 1000})
                 context.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
-                context.route(
-                    "http://localhost:5000/**",
-                    lambda route: route.continue_(
-                        url=args.api
-                        + route.request.url.removeprefix("http://localhost:5000")
-                    ),
-                )
+                configure_test_api(context, args.api)
                 page = context.new_page()
                 page.set_default_timeout(60000)
                 check = BrowserCheck(page, output)
@@ -62,7 +56,7 @@ def main():
                     return response.json() if response.body() else None
 
                 def pick(name):
-                    check.menu("File", "Open…")
+                    check.menu("File", "Open map…")
                     picker = page.get_by_role("dialog").filter(
                         has=page.get_by_role(
                             "heading", name="Open Hi-C dataset", exact=True
@@ -84,13 +78,18 @@ def main():
                             "checkbox", name="Select " + filename, exact=True
                         )
                     ).to_be_checked()
-                    converter.get_by_role("button", name="Continue", exact=True).click()
-                    converter.locator(
+                    converter.get_by_role(
+                        "checkbox", name="Open the map when it is ready"
+                    ).uncheck()
+                    threads = converter.locator(
                         'input[title="-1: automatic server CPU allocation"]'
-                    ).fill("1")
+                    )
+                    if not threads.is_visible():
+                        converter.locator("details.hict-advanced:not([open]) > summary").click()
+                    threads.fill("1")
                     with page.expect_response("**/convert/jobs/batch") as started:
                         converter.get_by_role(
-                            "button", name="Start", exact=True
+                            "button", name="Convert 1 file", exact=True
                         ).click()
                     assert started.value.ok, started.value.text()
                     job_ids = started.value.json()["jobIds"]
@@ -109,9 +108,9 @@ def main():
                     converted = filename.removesuffix(".hic") + ".hict.hdf5"
                     assert (data / converted).is_file()
                     expect(
-                        converter.locator(".overall-status .status-pill")
-                    ).to_have_text("Finished")
-                    converter.get_by_role("button", name="Dismiss", exact=True).click()
+                        converter.locator(".conversion-job .status-pill")
+                    ).to_have_text("finished")
+                    converter.get_by_role("button", name="Close", exact=True).last.click()
                     pick(converted)
                     page.wait_for_function(
                         "name=>window.__hictBenchmark.manager()?.getOptions().filename===name",
@@ -203,11 +202,9 @@ def main():
                     if advanced.get_attribute("open") is None:
                         advanced.locator(":scope > summary").click()
                     page.locator("#scaling-across-zoom").select_option("none")
-                    page.get_by_role(
-                        "spinbutton", name="Lower signal threshold", exact=True
+                    page.get_by_label("Lower signal threshold", exact=True
                     ).fill("0")
-                    page.get_by_role(
-                        "spinbutton", name="Upper signal threshold", exact=True
+                    page.get_by_label("Upper signal threshold", exact=True
                     ).fill(str(float(expected.max())))
                     page.get_by_role("button", name="Apply", exact=True).click()
                     check.settle()
@@ -239,7 +236,7 @@ def main():
                     )
                     page.screenshot(path=str(output / (filename + ".png")))
                     jobs_before = {item["jobId"] for item in post("/convert/jobs/list")}
-                    check.menu("File", "Close")
+                    check.menu("File", "Close map")
                     page.get_by_role(
                         "heading", name="No contact map open", exact=True
                     ).wait_for()

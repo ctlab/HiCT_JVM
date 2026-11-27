@@ -24,6 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,11 +54,60 @@ class Track1DManagerValidationTest {
   }
 
   @Test
+  void indexedDensityTracksHalfOpenSourceIntervalsAcrossSplitAndReverse() throws Exception {
+    final var map = ReinforcementHdf5Fixture.create(tempDir, "density", List.of(4L));
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(map, 1, 2)); var tracks = manager()) {
+      final String feature = "tiny\t4\t11\tinterval\t0\t-\n";
+      tracks.openTrack(write("dense.bed", feature.repeat(12_001) + "tiny\t0\t17\tall\ntiny\t7\t8\tmiddle\n"), null, null);
+      for (int state = 0; state < 3; state++) {
+        if (state == 1) file.scaffoldingOperations().splitContigAtBp(0, 7);
+        if (state == 2) file.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
+        var bins = tracks.querySequenceTracks(file, null, 0, 17, 17, 4).getTracks().getFirst().getBins();
+        assertEquals(17, bins.size());
+        var overview = tracks.querySequenceTracks(file, null, 0, 17, 1, 4).getTracks().getFirst().getBins();
+        assertEquals(12_003, overview.getFirst().getCount());
+        for (int bp = 0; bp < 17; bp++) {
+          int source = state == 2 ? 16 - bp : bp;
+          assertEquals(1 + (source >= 4 && source < 11 ? 12_001 : 0) + (source == 7 ? 1 : 0), bins.get(bp).getCount());
+        }
+      }
+      file.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
+      int right = file.getAssemblyInfo().contigs().getLast().descriptor().getContigId();
+      file.scaffoldingOperations().splitContigAtBp(right, 2);
+      file.scaffoldingOperations().moveSelectionRangeBp(7, 9, 17);
+      // The first 15 assembly bases now cover source [0,7) and [9,17).
+      var moved = tracks.querySequenceTracks(file, null, 0, 15, 1, 4).getTracks().getFirst().getBins();
+      assertEquals(12_002, moved.getFirst().getCount());
+    }
+  }
+
+  @Test
   void cleanFileOpensWithoutWarnings() throws IOException {
     try (var m = manager()) {
       final var summary = m.openTrack(write("clean.bed", "ctg1\t0\t10\tgeneA\nctg1\t20\t30\tgeneB\n"), null, null);
       assertEquals(2, summary.getFeatureCount());
       assertTrue(summary.getImportWarnings().isEmpty());
+    }
+  }
+
+  @Test
+  void bedTrackColorAndExplicitItemRgbRemainSeparate() throws Exception {
+    final var map = ReinforcementHdf5Fixture.create(tempDir, "color", List.of(4L));
+    final String content = """
+      track name=blue color="10, 20, 30"
+      tiny	0	4	file-color	0	+
+      tiny	4	8	item-color	0	-	4	8	200,50,0
+      track description="no color=200,200,200"
+      tiny	8	12	strand-color	0	-
+      """;
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(map, 1, 2)); var tracks = manager()) {
+      tracks.openTrack(write("colors.bed", content), null, null);
+      final var bins = tracks.querySequenceTracks(file, null, 0, 17, 100, 4).getTracks().getFirst().getBins();
+      assertEquals(3, bins.size());
+      assertEquals("10, 20, 30", bins.getFirst().getAttributes().get("trackRgb"));
+      assertEquals("10, 20, 30", bins.get(1).getAttributes().get("trackRgb"));
+      assertEquals("200,50,0", bins.get(1).getAttributes().get("itemRgb"));
+      assertTrue(!bins.getLast().getAttributes().containsKey("trackRgb"));
     }
   }
 

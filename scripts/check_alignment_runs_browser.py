@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import HictTestServer, BrowserCheck
+from sequence_browser_harness import HictTestServer, BrowserCheck, configure_test_api
 
 
 def main():
@@ -43,9 +43,9 @@ def main():
             browser=pw.chromium.launch(headless=True)
             page=browser.new_page(viewport={'width':1600,'height':1100},accept_downloads=True)
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
-            page.route('http://localhost:5000/**',lambda r:r.continue_(url=app.url+r.request.url.removeprefix('http://localhost:5000')))
+            configure_test_api(page, app.url)
             check=BrowserCheck(page,out);api_results=[]
-            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Attach');check.settle()
+            page.goto(f'http://127.0.0.1:{static.server_port}/');check.menu('File','Join running session');check.settle()
             def alignment(rs,re,cs,ce):
                 response=json.loads(app.http('/sequence/alignment_detail',{'rowStart':rs,'rowEnd':re,'columnStart':cs,'columnEnd':ce}))
                 deadline=time.monotonic()+30
@@ -103,6 +103,12 @@ def main():
                     features:a.source.getFeatures().map(f=>({type:f.getGeometry().getType(),coordinates:f.getGeometry().getCoordinates(),segment:f.get('alignmentSegment'),color:f.getStyle().at(-1).getStroke().getColor()}))};}''')
             scope('row',names['100']);scope('column',names['200']);focus(205,106)
             def regular_lines():
+                minimum = page.get_by_role("spinbutton", name="Minimum alignment length (bp)")
+                assert minimum.input_value() == "10"
+                page.wait_for_function("""()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().length===2""")
+                assert all(f["segment"]["rowEnd"] - f["segment"]["rowStart"] == 10 for f in rendered()["features"])
+                minimum.fill("2")
+                minimum.press("Tab")
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10;}''')
                 state=rendered();assert all(f['type']=='LineString' and f['color']=='#047857' for f in state['features']),state
                 assert all(len(f['coordinates'])==f['segment']['rowEnd']-f['segment']['rowStart']+1 for f in state['features']),state
@@ -114,10 +120,15 @@ def main():
             check.step('regular-lines-align-with-letter-boundaries',regular_lines)
             scope('column',names['300']);focus(305,106)
             def rendered_substitution():
-                page.wait_for_function('''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().some(f=>f.get('alignmentSegment').operation==='SUBSTITUTION')''')
+                has_substitution = '''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().some(f=>f.get('alignmentSegment').operation==='SUBSTITUTION')'''
+                page.wait_for_function(has_substitution)
                 state=rendered();assert any(f['color']=='#c2410c' for f in state['features']),state
                 assert all(f['type']=='LineString' for f in state['features'])
+                # Keep both aligner windows in view while zooming. Trimming this
+                # repetitive fixture can legitimately turn a mismatch into an indel.
+                page.set_viewport_size({'width':1600,'height':1750})
                 focus(305,106,1/12000)
+                page.wait_for_function(has_substitution)
                 assert any(f['segment']['operation']=='SUBSTITUTION' for f in rendered()['features'])
             check.step('substitution-lines-survive-further-zoom',rendered_substitution)
             def exports():
@@ -131,9 +142,9 @@ def main():
                 assert any(f['segment']['operation']=='SUBSTITUTION' for f in rendered()['features'])
             check.step('vector-png-svg-pdf-exports-and-restoration',exports)
             def toggle():
-                check.menu('View','Automatically align visible FASTA');check.settle()
+                check.menu('View','Align visible FASTA automatically');check.settle()
                 assert not rendered()['visible'] and not rendered()['features']
-                check.menu('View','Automatically align visible FASTA');check.settle()
+                check.menu('View','Align visible FASTA automatically');check.settle()
                 page.wait_for_function('''()=>window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().length>0''')
             check.step('disable-and-resume-automatic-alignment',toggle)
             def no_hit():
@@ -142,7 +153,7 @@ def main():
                 assert not rendered()['features']
             check.step('empty-alignment-is-explicit',no_hit)
             def reverse_assembly():
-                scope('row','All Rows');scope('column','All Columns')
+                scope('row','All rows');scope('column','All columns')
                 page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,4000)')
                 with page.expect_response('**/reverse_selection_range') as response:page.get_by_role('button',name='Reverse Selection',exact=True).click()
                 assert response.value.ok;check.settle()
@@ -159,10 +170,10 @@ def main():
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10&&a.source.getFeatures().every(f=>f.get('alignmentSegment').rowStart>=3888&&f.get('alignmentSegment').rowEnd<=3900);}''')
             check.step('undo-redo-refreshes-alignment-geometry',undo_redo)
             def session():
-                with page.expect_download() as download:check.menu('File','Save session')
+                with page.expect_download() as download:check.menu('File','Save session…')
                 path=out/'alignment-session.json';download.value.save_as(path)
-                check.menu('File','Close')
-                with page.expect_file_chooser() as chooser:check.menu('File','Open session')
+                check.menu('File','Close map')
+                with page.expect_file_chooser() as chooser:check.menu('File','Open session…')
                 chooser.value.set_files(path)
                 page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for();check.settle()
                 page.wait_for_function('''()=>{const a=window.__hictBenchmark.manager().alignmentDetail;return a.state.message.value===''&&a.source.getFeatures().length===10;}''')
