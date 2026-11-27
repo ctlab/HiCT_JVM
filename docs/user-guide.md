@@ -9,7 +9,12 @@ values to keep the old two-port layout.
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press
 Enter. The picker lists files inside the server's data directory. Use
 **Open with options…** for `.hic`, `.cool` and `.mcool` conversion and optional
-inputs. **File → Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
+inputs. For a conversion, use **Open the map when it is ready** to open the result
+automatically, or choose **Open map** when it finishes. While it runs, the converter
+shows elapsed and estimated remaining time. **Show log** lets you see or copy
+the timestamped conversion output.
+
+**File → Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
 or tardigrade with matching FASTA. Borrelia downloads about 2.31 MB and yeast
 about 170.76 MB. The Borrelia preparation selects its 19 mapped replicons and
 changes their headers while preserving every original base. Downloads need
@@ -112,7 +117,18 @@ normalization, then Apply. Slider scale below the histogram changes the spacing
 of the slider and histogram. Displayed signal changes the values used to color
 the map. Drag the square curve handles up or down to change the color at and
 beyond the Lower and Upper limits. Square-root coverage uses a single
-whole-map domain at each resolution. Bins without contacts remain empty.
+whole-map domain at each resolution. HiCT saves it with the map's processed data
+and reuses it on the next open. Bins without contacts remain empty.
+
+Set the two **View** fields under the histogram to narrow the axis. Scroll
+over the histogram to zoom at the pointer and drag the strip below it to pan.
+The threshold handles, histogram and curve share that axis. Out-of-view handles
+stay at the edges and can be dragged inward. **Fit view to colour range** puts
+a margin around the colour thresholds. **Whole data** or a double-click on the
+strip restores Auto, which includes the data range and both thresholds.
+**Fit levels** updates the colour thresholds and preserves a manual view.
+A new curve uses the Slider scale active when you create it. Changing Slider
+scale preserves the curve's colours. **Reset curve** lets you start again.
 In Advanced, use **Ignore values near the diagonal** to hide nearby contacts
 and exclude them from displayed signal statistics. Enter the distance in bp,
 kb or Mb. Figures preserve the mask and record its distance in their metadata.
@@ -178,11 +194,17 @@ FASTA changes clear it, and transient measurements are not saved in sessions.
 See [the method and limitations](repeat-measurement.md).
 
 Tools offers sequence search, alignment dotplots and ModDotPlot identity maps.
-The generation dialog lists each requested analysis level, the automatic overview
-levels, the selected spans and estimated storage. Each requested level runs the
+Use **Finest detail** or enter **Custom sizes**. The dialog lists the requested
+analysis levels, automatic overviews, selected spans and estimated storage. Each requested level runs the
 chosen analysis. Overviews summarize finer positive identity scores by overlap area
 or record alignment presence. Both the original scores and their coverage remain
 in the saved matrix. Use **Advanced** for worker and scaffold separator settings.
+Regions that use compatible settings can accumulate in the same result set
+across several zoom levels. **Tools → Dotplot results…** lists the sets for the
+open map and lets you show them, hide them, go to a region and save a copy.
+Use **Open dotplot file…** with the same map to open a saved copy. Analysis
+output goes under `DATA_DIR/processed`. **Processed data** shows the storage
+used by saved result sets and square-root coverage.
 For an attached fine-only layer that exceeds the tile read budget, open its overview
 job and use the completed cache as the secondary source.
 

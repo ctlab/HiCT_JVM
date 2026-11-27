@@ -7,6 +7,37 @@ historical 2.0.0 CI results do not qualify it. Complete this checklist on each
 target when desktop access is available. Allow about ten minutes per platform with the small example. Use a
 fresh writable data folder and retain the screenshots and logs.
 
+## Final release acceptance
+
+Record the result and attach evidence for the exact artifact. The Windows and
+macOS desktop rows are pending the owner's run.
+
+| Step | What to verify in the packaged app | Windows | macOS |
+|---|---|---|---|
+| B1 | Launch with one port and confirm the WebUI and API share an origin. Verify the legacy two-port configuration separately. | NOT TESTED | NOT TESTED |
+| B2 | Shift-click and Shift-drag whole scaffolds and the contigs between them. Confirm Orlando chrX stays exact through Reverse, Undo and Redo. | NOT TESTED | NOT TESTED |
+| B3 | Click the first and last translocation triangles. Confirm the selection moves to each end and View can hide the zoom controls. | NOT TESTED | NOT TESTED |
+| B4 | Change the selection and check that the ribbon controls stay in place. | NOT TESTED | NOT TESTED |
+| B5 | Generate both kinds of dotplot using Finest detail and Custom sizes. Verify storage estimates and disk-limit feedback. | NOT TESTED | NOT TESTED |
+| B6 | Add a bookmark and confirm it appears first and is highlighted. Pan a focused, unlocked map with the arrow keys. | NOT TESTED | NOT TESTED |
+| B7 | Re-test the Windows cases below. Verify FASTA retry, file-picker contrast and focus restoration on the desktop. | NOT TESTED | NOT TESTED |
+| B8 (now B16) | Confirm release notes link to the exact platform downloads and include the compatibility and re-test notes. | NOT TESTED | NOT TESTED |
+| B9 | Open the contact map with the operating system set to dark mode. The workspace stays white. | NOT TESTED | NOT TESTED |
+| B10 | Convert a map. Check elapsed time, ETA and the log. Verify both automatic and manual opening. | NOT TESTED | NOT TESTED |
+| B11 | Prepare square-root coverage on a large contact map. Reopen to reuse it, return to a visited zoom and verify its colour limits. | NOT TESTED | NOT TESTED |
+| B12 | Generate two regions at different resolutions in one result set. Check transparency where detail is missing and reverse a contig to verify projection. | NOT TESTED | NOT TESTED |
+| B13 | Show, hide and go to a result region. Save and reopen the set with the original map and verify the other-map error. | NOT TESTED | NOT TESTED |
+| B14 | Add a Log-scale curve point and verify the inflection. Change Slider scale without changing colours and try Reset curve. | NOT TESTED | NOT TESTED |
+| B15 | Narrow the histogram view. Type bounds, wheel-zoom and pan. Fit levels preserves the manual view and Whole data restores Auto. | NOT TESTED | NOT TESTED |
+
+| Windows case | What to try | Result |
+|---|---|---|
+| F1 | Convert a valid MCOOL with a Unicode path. | NOT TESTED |
+| F2 | Generate ModDotPlot from a FASTA with a Unicode path. | NOT TESTED |
+| F3 | Launch from a Unicode working directory and verify that an early exit is reported as a failure. | NOT TESTED |
+| F5 | Make an assembly edit in another client, then retry the export preview. | NOT TESTED |
+| F8 | Generate ModDotPlot from a deeply nested portable installation. | NOT TESTED |
+
 ## Evidence record
 
 | Field | Value |
@@ -91,12 +122,12 @@ whether the engine is native to the machine's architecture.
 
 | Case | Expected behavior |
 |---|---|
-| Startup and provenance | The launcher starts both services. About and the API report the same real JVM and WebUI commits as the package receipt. |
+| Startup and provenance | The launcher starts the viewer and API on one port. About and the API report the same real JVM and WebUI commits as the package receipt. |
 | Map and sequence | Open Examples, then open a native map or convert a pairs file. Link the matching FASTA. Use the FASTA chip to inspect its name, zoom to letters and change the alignment minimum. |
 | Contrast and layers | Display two sources with distinct colors. Check exact limits across zoom and assembly edits. Square-root coverage remains readable. Observed and O/E each retain their own limits. |
 | Editing and regions | Reverse, group, move and split. Use toolbar Undo and Redo. Cancel removal of all scaffolds and verify the AGP is unchanged. Select coordinates, check centering, resize a region and test Square selection on subsequent drags. |
-| Tracks | Drag and wheel-scroll a dense BED track on both axes, then zoom the map. Verify strand direction, item colors, and readable signal ticks. |
-| Analysis | Generate ModDotPlot and an alignment dotplot from small regions. Use both resolution sliders and individual checkboxes. Confirm a result opens as a source. Try the signal histogram and local sequence search. |
+| Tracks | Resize a dense BED track on both axes. Verify wheel zoom and turn on track scrolling in View to scroll the track. Verify strand direction, item colors, and readable signal ticks. |
+| Analysis | Generate ModDotPlot and an alignment dotplot from small regions. Use Finest detail and Custom sizes. Confirm a result opens as a source. Try the signal histogram and local sequence search. |
 | Guidance and errors | Request FASTA export without a linked FASTA. Verify guidance appears before the save picker. Exercise failed AGP import and a failed job. Check Details and Show log. |
 | Guide and options | Open Help and read the bundled guide offline. Open each Advanced section, check its options, and reopen it to verify the remembered state. |
 | Selection export | Open Edit, Copy, Export and Analyse with the keyboard. Export a region in three formats. Verify the cost warning with an expensive selection and cancel. Clipboard output is PNG. |

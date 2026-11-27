@@ -1,93 +1,113 @@
 # HiCT Changelog
 
 ## Unreleased
-- Zoom, pan or type a histogram view range independently of the map colours.
-- Draw and render smooth colour curves in the scale used to create them. Existing curves retain their colours.
-- List dotplot result sets, jump to their regions, and save or reopen complete result files. Region outlines follow assembly edits.
-- Add Dotplot and ModDotPlot regions to compatible results across different levels of detail. Missing regions remain transparent and computed regions follow assembly edits.
-- Save square-root coverage once per map and reuse colour limits when returning to a zoom level. Manage saved coverage under Processed data.
-- See elapsed time, an estimated time left, and a timestamped log for each conversion. Open a converted map automatically or from the finished job.
-- Keep the contact map workspace white when the operating system uses a dark theme.
-- Recover from failed FASTA searches and stale export previews. On Windows, handle Unicode paths, shorten deep tool paths, and report failures before server readiness.
-- Show new bookmarks first in Entities and highlight them briefly. Pan the focused, unlocked contact map with arrow keys or Shift+arrows.
-- Choose one finest detail or enter custom sizes for Dotplot and ModDotPlot. Review expected storage and acknowledge large worst cases before generating. Jobs stop if free disk space runs low.
-- Keep search, scope and signal controls in place as the selection changes. Find Selection and Square selection at the end of the left ribbon group.
-- Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.
-- Select whole scaffolds with Shift and keep the selected contigs highlighted across edits. Use the contig menu to move one contig.
-- Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session.
-- Selecting a scaffold followed by short hidden contigs now highlights and edits exactly that scaffold at every zoom level.
-- Keep BED feature labels beside their blocks when there is room.
 
-- Put exact operating-system downloads, startup guidance, and a short changelog in each portable release.
-- Move contigs and scaffolds to either end of the assembly using the outer translocation triangles.
-- Zoom the map from 1D tracks by default, or turn on track scrolling in View. Drag the dividers to resize tracks.
-- Browse FASTA files while discovery runs, and generate a standalone ModDotPlot from the Tools menu.
+### Start HiCT and connect
 
-- Wait briefly for Windows to release temporary files in the cancellation tests.
-- Record map startup and sustained idle CPU separately in the Linux browser check.
-- Provide stable Main and Development download links alongside versioned releases.
-- Save and restore isolated coordinate regions and contig selections in sessions.
-- Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
-- Show Print width and Label size together. Offer larger labels when the smallest text may be unreadable in print.
-- Confirm expensive selection exports and clipboard copies with the sampled bin count and figure dimensions.
+- Serve the map viewer and API on one port, with a single Port field in the Launcher and a prefilled server address when joining a running session. Set distinct `VXPORT` and `WEBUI_PORT` values to keep the legacy two-port layout.
 - Keep Launcher console logs available after a manual stop or startup failure.
-- Publish each branch preview once all platform files and checksums are verified.
-- Keep the opening wizard compact, label the current step, and put the primary and optional maps in reading order.
-- Put both visible bin sizes in the main Info overlay and figure notes, including the outgoing level while a finer overlay loads. Keep Apply accessible with both sources open.
-- Show the ModDotPlot storage estimate below the resolution controls. Keep the budget warning and its recovery action together on desktop.
-- Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
-- Zoom around the center with +, =, and − while the map has keyboard focus.
 - Show the packaged version and WebUI revision in About.
-- Hide contacts near the current assembly diagonal and exclude them from displayed statistics on request. Save the mask with presets, sessions and figures.
-- Drag or use the keyboard on the square histogram endpoints to set colors at and beyond the Lower and Upper limits.
-- Render BED coding blocks, UTRs and directional intron chevrons on both axes and in figures, with file colors taking precedence over strand colors.
-- Put Slider scale beside Fit levels below the histogram and label the map's value transform Displayed signal.
-- Keep 1D tracks within their query limits when jumping to FASTA zoom with a dotplot open.
-- Show the custom rendering toggle only on the Observed tab, where it takes effect.
-- Put the Normalization label above its full-width selector and keep Apply visible at desktop window sizes.
-- Keep the map context menu within nine rows with contig and scaffold submenus, and restore the full map directly after isolating a region.
-- Refresh the map after scoped zoom when queued tiles have no active transfers.
-- Show each visible source's bin size in expanded Info and name the Shift-selection isolation action in the map menu.
-- Keep the viewport steady at the finest zoom and leave visualization settings intact when the server rejects a preset.
-- Stop repeated coverage-status requests on idle maps while keeping progress updates during normalization.
-- Shorten the selected region's context menu, show the region and contig sizes, and keep Analyse and export within reach in projector-sized windows.
-- Put map and session commands first in File, add Open and Save shortcuts, and name the next undo action. Make Advanced visualization settings easier to scan and show the map resolution in base-pair units.
-- Show the full region dimensions in the desktop ribbon while keeping it on one row. Align the empty workspace card and its opening actions.
-- Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
-- Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.
-- Dim Find and Go to along with the other disabled ribbon controls before a map opens.
-- Keep the replacement map open when a previous Close map request is slow.
-- Keep signal scales readable when the track background changes.
-- Keep the opening wizard controls in view, clarify menu guidance, and move optional gap and compatibility settings under Advanced.
-- Retry failed figure previews with the keyboard, keep export settings in place, and announce when the preview is ready.
-- Keep the map wider in narrow windows, with expandable map tools and full filenames in Sources.
 - Show the release and both source revisions in `--version`. Keep runtime libraries and temporary conversion files out of file pickers.
-- Prefer per-user working folders in the Windows portable launcher and recover when redirected temporary folders are unwritable.
-- Preserve Unicode command-line filenames in the Windows EXE and portable ZIP.
-- Reduce browser memory use when saving large FASTA and AGP exports.
-- Reclaim unused native heap pages periodically in the bundled Linux JVM during long sessions.
-- Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
-- Make edited, original and AGP assembly order explicit when exporting a Cooler matrix.
 - Add section links to the bundled user guide and keep notifications behind active dialogs.
-- Keep Notifications visible in short windows while the editing tools scroll independently.
-- Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
-- Refresh the threshold fields immediately when a visualization preset changes the signal range.
-- Publish branch previews as versioned prereleases with one verified asset set per build.
-- Keep the Selection menu accessible in short windows and replace rounded thresholds cleanly when entering exact values.
-- Keep the empty workspace focused on opening a map, and retain full signal threshold precision while editing rounded values.
-- Add browser checks for assembly safeguards, export destinations, error feedback, and contrast across zoom levels.
-- Keep everyday dialog controls visible and move detailed options under Advanced. Open maps with optional sequence and layout in three steps, and read the user guide inside HiCT.
+- Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
+
+### Select and edit assemblies
+
+- Select whole scaffolds with Shift and keep the selected contigs highlighted across edits. Use the contig menu to move one contig.
+- Selecting a scaffold followed by short hidden contigs now highlights and edits exactly that scaffold at every zoom level.
+- Save and restore isolated coordinate regions and contig selections in sessions.
+- Keep the map context menu within nine rows with contig and scaffold submenus, and restore the full map directly after isolating a region.
+- Show each visible source's bin size in expanded Info and name the Shift-selection isolation action in the map menu.
+- Shorten the selected region's context menu, show the region and contig sizes, and keep Analyse and export within reach in projector-sized windows.
 - Group region commands into Edit, Copy, Export and Analyse. Print figures at a chosen width with an adjustable minimum label size.
 - Undo and redo from the toolbar, confirm scaffold removal, and link the matching FASTA directly from export guidance.
-- Show readable errors with diagnostic details, check for an open map before joining a running session, and show the tool log when dotplot generation fails.
-
-- Keep square-root coverage readable when zooming, restore exact contrast limits for each source, and keep zoom controls within the available detail levels.
-
 - Keep assembly edits available while opening tracks or linking FASTA, retain Undo when overlays change, and protect open maps from replacement.
-
 - Reject invalid map edits and file requests without changing the assembly, and refresh tiles after applying an AGP.
 
-- Report the JVM and WebUI revisions in local builds and reject stale browser assets or analysis tools when packaging.
+### Move, zoom and navigate tracks
+
+- Keep zoom controls off the map diagonal and make assembly-edge translocation targets easier to click. Show or hide map zoom controls from View.
+- Move contigs and scaffolds to either end of the assembly using the outer translocation triangles.
+- Zoom the map from 1D tracks by default, or turn on track scrolling in View. Drag the dividers to resize tracks.
+- Keep BED feature labels beside their blocks when there is room.
+- Render BED coding blocks, UTRs and directional intron chevrons on both axes and in figures, with file colors taking precedence over strand colors.
+- Keep 1D tracks within their query limits when jumping to FASTA zoom with a dotplot open.
+- Refresh the map after scoped zoom when queued tiles have no active transfers.
+- Keep the viewport steady at the finest zoom and leave visualization settings intact when the server rejects a preset.
+- Keep every map tool visible in desktop windows and indicate when more tools are below in shorter windows.
+- Keep signal scales readable when the track background changes.
+
+### Use the map ribbon
+
+- Keep search, scope and signal controls in place as the selection changes. Find Selection and Square selection at the end of the left ribbon group.
+- Show the full region dimensions in the desktop ribbon while keeping it on one row. Align the empty workspace card and its opening actions.
+- Dim Find and Go to along with the other disabled ribbon controls before a map opens.
+- Keep the map wider in narrow windows, with expandable map tools and full filenames in Sources.
+- Keep the Selection ribbon steady while selecting a region, clarify file-picker labels, and allow Escape to close matrix export.
+- Keep Notifications visible in short windows while the editing tools scroll independently.
+- Keep the Selection menu accessible in short windows and replace rounded thresholds cleanly when entering exact values.
+
+### Choose dotplot detail and review estimates
+
+- Choose one finest detail or enter custom sizes for Dotplot and ModDotPlot. Review expected storage and acknowledge large worst cases before generating. Jobs stop if free disk space runs low.
+- Browse FASTA files while discovery runs, and generate a standalone ModDotPlot from the Tools menu.
+- Show the ModDotPlot storage estimate below the resolution controls. Keep the budget warning and its recovery action together on desktop.
+- Align the analysis dialog footers and keep the visualization Apply button visible in short windows.
+- Open ModDotPlot and assembly dotplots on the selected rectangle from either menu. If the selected sizes exceed the budget, use coarser sizes that fit.
+- Show readable errors with diagnostic details, check for an open map before joining a running session, and show the tool log when dotplot generation fails.
+
+### Accumulate, save and reopen dotplot results
+
+- Add Dotplot and ModDotPlot regions to compatible results across different levels of detail. Missing regions remain transparent and computed regions follow assembly edits.
+- List dotplot result sets, jump to their regions, and save or reopen complete result files. Region outlines follow assembly edits.
+
+### Follow matrix conversions
+
+- See elapsed time, an estimated time left, and a timestamped log for each conversion. Open a converted map automatically or from the finished job.
+- Keep the opening wizard compact, label the current step, and put the primary and optional maps in reading order.
+- Put map and session commands first in File, add Open and Save shortcuts, and name the next undo action. Make Advanced visualization settings easier to scan and show the map resolution in base-pair units.
+- Keep the replacement map open when a previous Close map request is slow.
+- Keep the opening wizard controls in view, clarify menu guidance, and move optional gap and compatibility settings under Advanced.
+- Keep everyday dialog controls visible and move detailed options under Advanced. Open maps with optional sequence and layout in three steps, and read the user guide inside HiCT.
+
+### Work on a light contact map
+
+- Keep the contact map workspace white when the operating system uses a dark theme.
+- Keep the empty workspace focused on opening a map, and retain full signal threshold precision while editing rounded values.
+
+### Reuse square-root coverage and zoom-level colour limits
+
+- Save square-root coverage once per map and reuse colour limits when returning to a zoom level. Manage saved coverage under Processed data.
+- Stop repeated coverage-status requests on idle maps while keeping progress updates during normalization.
+- Choose square-root coverage independently for each contact map, including when the other source is a ModDotPlot. Sessions restore each source's normalization choice.
+- Keep square-root coverage readable when zooming, restore exact contrast limits for each source, and keep zoom controls within the available detail levels.
+- Keep whole-map contrast limits when switching visualization sources and requesting a scan immediately.
+- Hide contacts near the current assembly diagonal and exclude them from displayed statistics on request. Save the mask with presets, sessions and figures.
+- Show the custom rendering toggle only on the Observed tab, where it takes effect.
+- Put the Normalization label above its full-width selector and keep Apply visible at desktop window sizes.
+- Refresh the threshold fields immediately when a visualization preset changes the signal range.
+
+### Shape the colour curve
+
+- Draw S-shaped colour curves on the Log slider scale, with an inflection through the control point. Linear curves also retain the interpolation used to create them.
+- Drag or use the keyboard on the square histogram endpoints to set colors at and beyond the Lower and Upper limits.
+
+### Set the histogram view
+
+- Zoom, pan or type a histogram view range independently of the map colours.
+- Put Slider scale beside Fit levels below the histogram and label the map's value transform Displayed signal.
+
+### Use bookmarks and keyboard controls
+
+- Show new bookmarks first in Entities and highlight them briefly. Pan the focused, unlocked contact map with arrow keys or Shift+arrows.
+- Zoom around the center with +, =, and − while the map has keyboard focus.
+
+### Windows launch and tool fixes
+
+- Recover from failed FASTA searches and stale export previews. On Windows, handle Unicode paths, shorten deep tool paths, and report failures before server readiness.
+- Wait briefly for Windows to release temporary files in the cancellation tests.
+- Prefer per-user working folders in the Windows portable launcher and recover when redirected temporary folders are unwritable.
+- Preserve Unicode command-line filenames in the Windows EXE and portable ZIP.
 
 ### Open, save and recover
 
@@ -107,6 +127,7 @@
 
 ### Render maps and analyse sequences
 
+- Put both visible bin sizes in the main Info overlay and figure notes, including the outgoing level while a finer overlay loads. Keep Apply accessible with both sources open.
 - Manage 1D tracks separately from sources and layers. Add a track file or Cooler weights, resize the track panels, and examine signed BigWig values and aligned-base BAM depth.
 - Show BED blocks, strand arrows and per-feature colors. Scroll each annotation track independently, and keep annotation density anchored to its source across assembly edits.
 - Use the resolution pyramid appropriate to each map when comparing or overlaying sources, including in the minimap.
@@ -118,12 +139,24 @@
 
 ### Capture and share figures
 
+- Show Print width and Label size together. Offer larger labels when the smallest text may be unreadable in print.
+- Confirm expensive selection exports and clipboard copies with the sampled bin count and figure dimensions.
+- Retry failed figure previews with the keyboard, keep export settings in place, and announce when the preview is ready.
+- Reduce browser memory use when saving large FASTA and AGP exports.
+- Make edited, original and AGP assembly order explicit when exporting a Cooler matrix.
 - Preview and export the map, rulers, tracks and ModDotPlot as PNG, SVG or PDF. Compare named snapshots of cuts and scaffolds, set print width, and reopen PNG or SVG inside HiCT.
 - Review the dimensions and bin count before rendering a large region. Copy a region as PNG or choose PNG, SVG or PDF from the Export submenu.
 - Reproduce the public-data Borrelia editing figure using the pinned inputs, caption, vector artwork and 900-dpi TIFF in the [figure guide](docs/publication/borrelia-editing/README.md).
 
 ### Portable packages
 
+- Put exact operating-system downloads, startup guidance, and a short changelog in each portable release.
+- Record map startup and sustained idle CPU separately in the Linux browser check.
+- Provide stable Main and Development download links alongside versioned releases.
+- Publish each branch preview once all platform files and checksums are verified.
+- Reclaim unused native heap pages periodically in the bundled Linux JVM during long sessions.
+- Publish branch previews as versioned prereleases with one verified asset set per build.
+- Add browser checks for assembly safeguards, export destinations, error feedback, and contrast across zoom levels.
 - Linux, Windows and macOS packages include the pinned WebUI and the native tools needed for the supported workflows. Release publication verifies the requested installers and their checksums while keeping the previous downloads available through an interrupted upload.
 - Linux launchers use fewer glibc allocation arenas by default, reducing resident memory during repeated map opening and editing.
 - Linux launchers start with a smaller Java heap and release idle heap more readily. The existing extra JVM options still take precedence.
@@ -132,7 +165,10 @@
 
 ### Known limitations
 
-- Windows: please re-test F1, F2, F3, F5, F8 on a real machine.
+- Sequence-analysis output goes under `DATA_DIR/processed`.
+- Windows re-tests for Unicode input paths, Launcher startup, export preview retry and deeply nested installs are pending the owner's live run (F1, F2, F3, F5 and F8).
+- A curve keeps the smoothing of the Slider scale it was created on. Reset curve starts again.
+- A dotplot file opens only with the map it was made for.
 
 ## 2.0.0
 
